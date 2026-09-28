@@ -7,3 +7,6 @@ dist/
 *.log
 .DS_Store
 Thumbs.db
+
+# Cópia criada pelo GitHub Desktop numa tentativa anterior (não faz parte do sistema)
+route/
