@@ -1,0 +1,43 @@
+# Blueprint do Render (render.com) — publica o Sistema ADM:
+#   - route-delivery-db: banco PostgreSQL
+#   - route-delivery:    API + painel ADM no mesmo endereço (https://route-delivery-XXXX.onrender.com)
+# No Render: New > Blueprint > escolha este repositório. Ele pede ADMIN_EMAIL, ADMIN_SENHA e ADMIN_NOME
+# (o primeiro login do painel, criado automaticamente no primeiro início).
+# Guia completo: PUBLICAR.md
+
+databases:
+  - name: route-delivery-db
+    databaseName: route_delivery
+    user: route_delivery
+    plan: basic-256mb
+    region: virginia
+
+services:
+  - type: web
+    name: route-delivery
+    runtime: node
+    plan: starter
+    region: virginia
+    # Monta o painel (admin/dist), instala a API, gera o Prisma e aplica as migrações do banco.
+    buildCommand: >-
+      cd admin && npm ci && npm run build &&
+      cd ../backend && npm ci && npx prisma generate && npx prisma migrate deploy
+    startCommand: cd backend && node src/server.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: route-delivery-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: INTEGRACOES_CHAVE
+        generateValue: true
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_SENHA
+        sync: false
+      - key: ADMIN_NOME
+        sync: false

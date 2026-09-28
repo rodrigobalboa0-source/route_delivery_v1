@@ -1,0 +1,781 @@
+// ============================================================
+// Route Delivery — schema de banco de dados (PostgreSQL + Prisma)
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Enums ----------
+
+enum CargoConta {
+  ADMINISTRADOR
+  FINANCEIRO
+  SUPORTE
+  OPERACOES
+}
+
+enum PermissaoConta {
+  TOTAL
+  FINANCEIRO
+  OPERACIONAL
+  LEITURA
+}
+
+enum Veiculo {
+  MOTO
+  BIKE
+  CARRO
+}
+
+enum TipoPrecificacaoModal {
+  PADRAO
+  ZONA
+  BAIRRO
+  DISTANCIA
+  ZERAR
+}
+
+enum TipoDocumentoComercio {
+  CPF
+  CNPJ
+}
+
+enum CadastroVia {
+  SISTEMA_DO_COMERCIANTE
+  APP_DO_COMERCIANTE
+  PAINEL_ADMIN
+  IMPORTACAO
+}
+
+enum TipoEntregaEntregador {
+  PROPRIO
+  TERCEIRIZADO
+  PARCEIRO
+}
+
+enum StatusEntregador {
+  EM_ANALISE
+  ATIVO
+  INATIVO
+}
+
+enum PermissaoColeta {
+  TODOS_CLIENTES
+  SOMENTE_SELECIONADOS
+}
+
+// Fluxo: PREPARANDO (Criado) -> PENDENTE (Pedido pronto) -> ATRIBUIDO (Atribuída) -> NA_LOJA (Na loja)
+//        -> EM_ROTA (Em rota) -> NO_CLIENTE (Cheguei no cliente) -> ENTREGUE. CANCELADO em qualquer etapa.
+//        ATRASADO: marcação manual de atraso de um pedido em andamento.
+enum StatusPedido {
+  PREPARANDO
+  PENDENTE
+  ATRIBUIDO
+  NA_LOJA
+  EM_ROTA
+  NO_CLIENTE
+  ENTREGUE
+  ATRASADO
+  CANCELADO
+}
+
+// Por onde o pedido entrou no sistema.
+enum OrigemPedido {
+  PAINEL_ADMIN
+  SISTEMA_COMERCIANTE
+  APP_COMERCIANTE
+  INTEGRACAO
+}
+
+enum TipoCalculoTabela {
+  DESLOCAMENTO
+  FIXO
+}
+
+enum TipoRetornoTabela {
+  PORCENTAGEM
+  VALOR_FIXO
+}
+
+// Como uma regra de preço dinâmico altera o valor: multiplica ou soma um valor fixo.
+enum TipoAplicacaoPreco {
+  MULTIPLICADOR
+  VALOR_FIXO
+}
+
+enum TipoPromocao {
+  DESCONTO_PERCENTUAL
+  CUPOM_FIXO
+  FRETE_GRATIS
+}
+
+enum TipoConversa {
+  CLIENTE
+  ENTREGADOR
+}
+
+enum RemetenteMensagem {
+  NOS
+  ELES
+}
+
+// ---------- Contas gerenciais / autenticação ----------
+
+model ContaGerencial {
+  id         String         @id @default(cuid())
+  nome       String
+  cargo      CargoConta
+  email      String         @unique
+  senhaHash  String
+  permissao  PermissaoConta
+  createdAt  DateTime       @default(now())
+  resetTokens PasswordResetToken[]
+  comissoesManuais ComissaoManual[]
+}
+
+model PasswordResetToken {
+  id        String         @id @default(cuid())
+  token     String         @unique
+  contaId   String
+  conta     ContaGerencial @relation(fields: [contaId], references: [id], onDelete: Cascade)
+  expiraEm  DateTime
+  usado     Boolean        @default(false)
+  createdAt DateTime       @default(now())
+}
+
+// ---------- Franquias e Hubs ----------
+
+model Franquia {
+  id   String @id @default(cuid())
+  nome String
+}
+
+model Hub {
+  id   String @id @default(cuid())
+  nome String
+}
+
+// ---------- Comércio ----------
+
+model Comercio {
+  id                String    @id @default(cuid())
+  fotoUrl           String?
+  segmento          String?
+  dataInicio        DateTime?
+  razaoSocial        String?
+  nomeFantasia      String
+  tabelaComissaoId  String?
+  tabelaComissao    TabelaComissao? @relation(fields: [tabelaComissaoId], references: [id])
+  cadastroVia       CadastroVia?
+  tipoDocumento     TipoDocumentoComercio @default(CNPJ)
+  documento         String?
+  franquia          String?
+  hub               String?
+  leadCadastradoPor String?
+  nomeCompleto      String?
+  dataNascimento    DateTime?
+  telefone          String?
+  email             String?
+  metodoPagamento   String?
+  observacoes       String?
+  // Comércio bloqueado não consegue entrar no sistema do comerciante nem criar pedidos.
+  bloqueado         Boolean   @default(false)
+  createdAt         DateTime  @default(now())
+
+  enderecos           ComercioEndereco[]
+  precificacoesModal  PrecificacaoModal[]
+  usuariosAdicionais  ComercioUsuario[]
+  pedidos             Pedido[]
+  faturas             Fatura[]
+  entregadoresPermitidos EntregadorComercioPermitido[]
+  lojasIntegracao     IntegracaoLoja[]
+  creditos            CreditoMovimento[]
+  comissoesManuais    ComissaoManual[]
+}
+
+model ComercioEndereco {
+  id         String    @id @default(cuid())
+  comercioId String
+  comercio   Comercio  @relation(fields: [comercioId], references: [id], onDelete: Cascade)
+  rua        String
+  numero     String?
+  complemento String?
+  bairro     String?
+  cidade     String?
+  cep        String?
+  // Ponto de referência para o entregador achar a coleta.
+  referencia String?
+  lat        Float?
+  lng        Float?
+  principal  Boolean   @default(true)
+}
+
+model PrecificacaoModal {
+  id                String  @id @default(cuid())
+  comercioId        String
+  comercio          Comercio @relation(fields: [comercioId], references: [id], onDelete: Cascade)
+  veiculo           Veiculo
+  precoPorPonto     Float?
+  tipoPrecificacao  TipoPrecificacaoModal @default(PADRAO)
+  tabelaPrecoKmId   String?
+  tabelaPrecoKm     TabelaPrecoKm? @relation(fields: [tabelaPrecoKmId], references: [id])
+
+  @@unique([comercioId, veiculo])
+}
+
+model ComercioUsuario {
+  id         String   @id @default(cuid())
+  comercioId String
+  comercio   Comercio @relation(fields: [comercioId], references: [id], onDelete: Cascade)
+  // Login do sistema do comerciante.
+  email      String   @unique
+  senhaHash  String
+}
+
+// ---------- Entregadores ----------
+
+model Entregador {
+  id                    String   @id @default(cuid())
+  fotoUrl               String?
+  nomeCompleto          String
+  cpf                   String?
+  rg                    String?
+  dataNascimento        DateTime?
+  telefone              String?
+  // Login do app do entregador (senhaHash nulo = ainda sem acesso ao app).
+  email                 String?  @unique
+  senhaHash             String?
+  cep                   String?
+  rua                   String?
+  numero                String?
+  complemento           String?
+  bairro                String?
+  cidade                String?
+  veiculoTipo           Veiculo  @default(MOTO)
+  veiculoModelo         String?
+  veiculoPlaca          String?
+  veiculoAno            String?
+  cnhValida             Boolean  @default(true)
+  fotoCnhUrl            String?
+  comprovanteResidenciaUrl String?
+  documentoVeiculoUrl   String?
+  tipoEntrega           TipoEntregaEntregador
+  status                StatusEntregador @default(EM_ANALISE)
+  prioridadeBusca       Int?
+  taxaEntrega           Float?
+  // Comissão automática: ao finalizar cada entrega, cai esta comissão para o entregador.
+  // É um extra pago pela empresa — não é descontada do repasse dele nem cobrada do comércio.
+  comissaoAutoAtiva     Boolean  @default(false)
+  comissaoAutoValor     Float?
+  permissaoColeta       PermissaoColeta @default(TODOS_CLIENTES)
+  bloqueado             Boolean  @default(false)
+  // Estado enviado pelo app do entregador.
+  online                Boolean  @default(false)
+  lat                   Float?
+  lng                   Float?
+  localizacaoEm         DateTime?
+  createdAt             DateTime @default(now())
+
+  pedidos               Pedido[]
+  comerciosPermitidos   EntregadorComercioPermitido[]
+  historicoStatus       EntregadorStatusHistorico[]
+  localizacoes          EntregadorLocalizacao[]
+  avisosVistos          PromocaoAvisoVisto[]
+  acertos               AcertoEntregador[]
+  comissoesManuais      ComissaoManual[]
+}
+
+// Mudanças do próprio entregador: cadastro, aprovação/inativação, bloqueio, online/offline.
+model EntregadorStatusHistorico {
+  id           String     @id @default(cuid())
+  entregadorId String
+  entregador   Entregador @relation(fields: [entregadorId], references: [id], onDelete: Cascade)
+  tipo         String     // CADASTRO | STATUS | BLOQUEIO | ONLINE
+  de           String?
+  para         String
+  autorTipo    String     // ADMIN | ENTREGADOR | SISTEMA
+  autorNome    String?
+  createdAt    DateTime   @default(now())
+
+  @@index([entregadorId, createdAt])
+  @@index([createdAt])
+}
+
+// Rastro de posições enviadas pelo app (para o relatório de trajeto).
+model EntregadorLocalizacao {
+  id           String     @id @default(cuid())
+  entregadorId String
+  entregador   Entregador @relation(fields: [entregadorId], references: [id], onDelete: Cascade)
+  lat          Float
+  lng          Float
+  createdAt    DateTime   @default(now())
+
+  @@index([entregadorId, createdAt])
+}
+
+model EntregadorComercioPermitido {
+  id           String     @id @default(cuid())
+  entregadorId String
+  entregador   Entregador @relation(fields: [entregadorId], references: [id], onDelete: Cascade)
+  comercioId   String
+  comercio     Comercio   @relation(fields: [comercioId], references: [id], onDelete: Cascade)
+
+  @@unique([entregadorId, comercioId])
+}
+
+// ---------- Estrutura operacional ----------
+
+model GrupoOperacional {
+  id          String @id @default(cuid())
+  nome        String
+  regiao      String?
+  responsavel String?
+  capacidade  Int?
+}
+
+model Modal {
+  id               String @id @default(cuid())
+  nome             Veiculo
+  capacidadeCargaKg Float?
+  taxaBase         Float?
+}
+
+// ---------- Precificação ----------
+
+model TabelaPrecoKm {
+  id             String            @id @default(cuid())
+  nome           String
+  tipoCalculo    TipoCalculoTabela @default(DESLOCAMENTO)
+  kmAdicional    Float?
+  tipoRetorno    TipoRetornoTabela @default(PORCENTAGEM)
+  retorno        Float?
+  valorMinimo    Float?
+  valorPorPonto  Float?
+  valorMultiplo  Float?
+  createdAt      DateTime @default(now())
+
+  precificacoesModal PrecificacaoModal[]
+}
+
+model TabelaComissao {
+  id          String  @id @default(cuid())
+  categoria   Veiculo
+  percentual  Float
+  valorMinimo Float?
+
+  comercios   Comercio[]
+}
+
+model PrecificacaoPadrao {
+  id             String @id @default(cuid())
+  taxaBase       Float  @default(6.0)
+  valorMinimo    Float  @default(12.0)
+  taxaPorKm      Float  @default(1.8)
+  taxaServico    Float  @default(8.0)
+  atualizadoEm   DateTime @updatedAt
+}
+
+model PrecoEspera {
+  id             String @id @default(cuid())
+  tolerancia     Int    @default(5)
+  valorMinuto    Float  @default(0.5)
+  limiteMaximo   Int    @default(30)
+  atualizadoEm   DateTime @updatedAt
+}
+
+// Regras de preço dinâmico: sobre o valor cobrado (demanda) e sobre o ganho do entregador.
+model PrecoDinamicoDemanda {
+  id            String             @id @default(cuid())
+  nome          String
+  tipoAplicacao TipoAplicacaoPreco @default(MULTIPLICADOR)
+  valor         Float
+  ativo         Boolean            @default(true)
+}
+
+model PrecoDinamicoEntregador {
+  id            String             @id @default(cuid())
+  nome          String
+  tipoAplicacao TipoAplicacaoPreco @default(VALOR_FIXO)
+  valor         Float
+  ativo         Boolean            @default(true)
+}
+
+// ---------- Promoções para entregadores (aparecem no app) ----------
+
+model PromocaoEntregador {
+  id        String    @id @default(cuid())
+  titulo    String
+  descricao String?
+  premio    String?   // ex.: "R$ 20 de bônus"
+  fotoUrl   String?   // imagem reduzida, em data URL
+  veiculos  Veiculo[] // vazio = todos os entregadores
+  inicio    DateTime?
+  fim       DateTime?
+  ativa     Boolean   @default(false)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  eventos   PromocaoEvento[]
+}
+
+// Cada ativação/desativação vira um aviso (pop-up) no app do entregador.
+model PromocaoEvento {
+  id         String             @id @default(cuid())
+  promocaoId String
+  promocao   PromocaoEntregador @relation(fields: [promocaoId], references: [id], onDelete: Cascade)
+  tipo       String             // ATIVADA | DESATIVADA
+  autorNome  String?
+  createdAt  DateTime           @default(now())
+
+  @@index([createdAt])
+}
+
+// Avisos que o entregador já viu (para o pop-up aparecer uma vez só).
+model PromocaoAvisoVisto {
+  id           String     @id @default(cuid())
+  entregadorId String
+  entregador   Entregador @relation(fields: [entregadorId], references: [id], onDelete: Cascade)
+  avisoId      String     // id do PromocaoEvento, ou "fim:<promocaoId>" quando a promoção venceu
+  createdAt    DateTime   @default(now())
+
+  @@unique([entregadorId, avisoId])
+}
+
+model ServicoOpcional {
+  id     String  @id @default(cuid())
+  nome   String
+  valor  Float
+  ativo  Boolean @default(true)
+}
+
+model Promocao {
+  id       String       @id @default(cuid())
+  nome     String
+  tipo     TipoPromocao
+  valor    String?
+  validade DateTime?
+  ativo    Boolean @default(true)
+}
+
+// ---------- Pedidos ----------
+
+model Pedido {
+  id              String       @id @default(cuid())
+  codigo          String       @unique
+  clienteNome     String
+  clienteTelefone String?
+  endereco        String
+  latDestino      Float?
+  lngDestino      Float?
+  comercioId      String
+  comercio        Comercio     @relation(fields: [comercioId], references: [id])
+  entregadorId    String?
+  entregador      Entregador?  @relation(fields: [entregadorId], references: [id])
+  status          StatusPedido @default(PREPARANDO)
+  origem          OrigemPedido?
+  valor           Float?
+  distanciaKm     Float?
+  formaPagamento  String?
+  prazoDesejado   String?
+  observacao      String?
+  // Nota fiscal da mercadoria entregue (opcional).
+  notaFiscalNumero String?
+  notaFiscalChave  String?
+  notaFiscalValor  Float?
+  // Carimbos de cada etapa, usados nos relatórios de tempo.
+  prontoEm        DateTime?
+  aceitoEm        DateTime?
+  naLojaEm        DateTime?   // motoboy chegou na loja para coletar
+  saiuEm          DateTime?   // saiu para entrega (Em rota)
+  noClienteEm     DateTime?   // motoboy chegou no cliente
+  entregueEm      DateTime?
+  canceladoEm     DateTime?
+  // Pedidos recebidos por integração: qual integração e o id do pedido lá.
+  integracaoSlug  String?
+  idExterno       String?
+  // Financeiro: fatura em que o pedido foi cobrado do comércio e acerto em que foi pago ao entregador.
+  faturaId           String?
+  fatura             Fatura?           @relation(fields: [faturaId], references: [id], onDelete: SetNull)
+  acertoId           String?
+  acerto             AcertoEntregador? @relation(fields: [acertoId], references: [id], onDelete: SetNull)
+  comissaoEntregador Float?            // valor pago ao entregador, gravado no acerto
+  comissaoAutomatica ComissaoManual?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  logs            PedidoLog[]
+  historicoStatus PedidoStatusHistorico[]
+
+  @@unique([integracaoSlug, idExterno])
+  @@index([createdAt])
+  @@index([entregadorId, entregueEm])
+}
+
+// ---------- Integrações ----------
+// O catálogo (nomes, campos, tipo) fica no código: src/integracoes/catalogo.js.
+
+model Integracao {
+  id               String    @id @default(cuid())
+  slug             String    @unique
+  ativa            Boolean   @default(false)
+  credenciais      String?   // JSON criptografado (AES-256-GCM); nunca volta para o painel
+  config           Json?     // opções não sensíveis (liberar automaticamente, eventos de saída...)
+  webhookToken     String    @unique // identifica a URL de entrada e assina os webhooks de saída
+  webhookSaidaUrl  String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  lojas            IntegracaoLoja[]
+  eventos          IntegracaoEvento[]
+}
+
+// Loja na plataforma externa <-> comércio no sistema.
+model IntegracaoLoja {
+  id           String     @id @default(cuid())
+  integracaoId String
+  integracao   Integracao @relation(fields: [integracaoId], references: [id], onDelete: Cascade)
+  comercioId   String
+  comercio     Comercio   @relation(fields: [comercioId], references: [id], onDelete: Cascade)
+  idExterno    String
+
+  @@unique([integracaoId, idExterno])
+}
+
+model IntegracaoEvento {
+  id           String     @id @default(cuid())
+  integracaoId String
+  integracao   Integracao @relation(fields: [integracaoId], references: [id], onDelete: Cascade)
+  direcao      String     // ENTRADA | SAIDA
+  tipo         String     // pedido.recebido, pedido.status, teste...
+  sucesso      Boolean
+  mensagem     String?
+  payload      Json?
+  pedidoId     String?
+  createdAt    DateTime   @default(now())
+
+  @@index([integracaoId, createdAt])
+}
+
+// Cada mudança de status do pedido, com quem fez (painel, comerciante, entregador, sistema).
+model PedidoStatusHistorico {
+  id           String        @id @default(cuid())
+  pedidoId     String
+  pedido       Pedido        @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  de           StatusPedido?
+  para         StatusPedido
+  entregadorId String?       // entregador envolvido na mudança
+  autorTipo    String        // ADMIN | COMERCIANTE | ENTREGADOR | SISTEMA
+  autorNome    String?
+  createdAt    DateTime      @default(now())
+
+  @@index([createdAt])
+  @@index([entregadorId, createdAt])
+  @@index([pedidoId, createdAt])
+}
+
+model PedidoLog {
+  id        String   @id @default(cuid())
+  pedidoId  String
+  pedido    Pedido   @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  texto     String
+  createdAt DateTime @default(now())
+}
+
+// Conta a receber (cobrança de comércio ou avulsa).
+model Fatura {
+  id              String    @id @default(cuid())
+  numero          Int       @unique @default(autoincrement())
+  comercioId      String?
+  comercio        Comercio? @relation(fields: [comercioId], references: [id], onDelete: SetNull)
+  descricao       String
+  vencimento      DateTime
+  valor           Float
+  paga            Boolean   @default(false)
+  pagaEm          DateTime?
+  formaPagamento  String?
+  periodoInicio   DateTime? // faturamento: período das entregas cobradas
+  periodoFim      DateTime?
+  observacao      String?
+  createdAt       DateTime  @default(now())
+
+  pedidos         Pedido[]
+}
+
+// Acerto (pagamento) de um entregador pelas entregas de um período.
+model AcertoEntregador {
+  id                String     @id @default(cuid())
+  numero            Int        @unique @default(autoincrement())
+  entregadorId      String
+  entregador        Entregador @relation(fields: [entregadorId], references: [id], onDelete: Restrict)
+  inicio            DateTime
+  fim               DateTime
+  entregas          Int
+  valorComissao     Float      // soma do ganho por entrega
+  comissoesAutomaticas Float   @default(0) // comissão automática por entrega (paga pela empresa, fora da taxa)
+  ajustes           Float      @default(0) // bônus (+) ou descontos (-)
+  descricaoAjustes  String?
+  valorTotal        Float
+  pago              Boolean    @default(false)
+  pagoEm            DateTime?
+  formaPagamento    String?
+  observacao        String?
+  autorNome         String?
+  createdAt         DateTime   @default(now())
+
+  pedidos           Pedido[]
+  contaPagar        ContaPagar?
+  comissoes         ComissaoManual[]
+}
+
+model ContaPagar {
+  id              String            @id @default(cuid())
+  numero          Int               @unique @default(autoincrement())
+  descricao       String
+  favorecido      String?
+  categoria       String            @default("OUTROS") // ENTREGADOR | FORNECEDOR | IMPOSTO | SALARIO | ALUGUEL | SERVICO | OUTROS
+  vencimento      DateTime
+  valor           Float
+  paga            Boolean           @default(false)
+  pagaEm          DateTime?
+  formaPagamento  String?
+  observacao      String?
+  acertoId        String?           @unique
+  acerto          AcertoEntregador? @relation(fields: [acertoId], references: [id], onDelete: Cascade)
+  comissaoManualId String?          @unique
+  comissaoManual  ComissaoManual?   @relation(fields: [comissaoManualId], references: [id], onDelete: Cascade)
+  createdAt       DateTime          @default(now())
+}
+
+// Comissões do Financeiro › Comissão. As de entregador aparecem no app dele (lista + pop-up).
+//   MANUAL: lançada por um operador, para entregador ou funcionário do ADM; gera uma conta a pagar.
+//   AUTOMATICA: gerada quando o entregador (com comissão automática no cadastro) finaliza uma entrega;
+//               é paga no Acerto de Entregadores. Não mexe no valor do pedido nem no repasse.
+model ComissaoManual {
+  id                 String          @id @default(cuid())
+  numero             Int             @unique @default(autoincrement())
+  origem             String          @default("MANUAL") // MANUAL | AUTOMATICA
+  pedidoId           String?         @unique
+  pedido             Pedido?         @relation(fields: [pedidoId], references: [id], onDelete: SetNull)
+  acertoId           String?
+  acerto             AcertoEntregador? @relation(fields: [acertoId], references: [id], onDelete: SetNull)
+  beneficiarioTipo   String          // ENTREGADOR | FUNCIONARIO
+  entregadorId       String?
+  entregador         Entregador?     @relation(fields: [entregadorId], references: [id], onDelete: SetNull)
+  contaGerencialId   String?
+  contaGerencial     ContaGerencial? @relation(fields: [contaGerencialId], references: [id], onDelete: SetNull)
+  beneficiarioNome   String          // guardado para o histórico, mesmo se o cadastro for excluído
+  comercioId         String?
+  comercio           Comercio?       @relation(fields: [comercioId], references: [id], onDelete: SetNull)
+  comercioNome       String
+  quantidadeEntregas Int
+  valorPorEntrega    Float?
+  valor              Float
+  referencia         DateTime        // dia a que a comissão se refere
+  descricao          String?
+  autorNome          String?
+  vistoEm            DateTime?       // quando o entregador viu o pop-up no app
+  contaPagar         ContaPagar?
+  createdAt          DateTime        @default(now())
+
+  @@index([entregadorId, referencia])
+  @@index([referencia])
+}
+
+// Crédito pré-pago de cada comércio: saldo = soma dos créditos - soma dos débitos.
+model CreditoMovimento {
+  id          String   @id @default(cuid())
+  comercioId  String
+  comercio    Comercio @relation(fields: [comercioId], references: [id], onDelete: Cascade)
+  tipo        String   // CREDITO | DEBITO
+  valor       Float    // sempre positivo; o tipo define o sinal
+  descricao   String
+  autorNome   String?
+  createdAt   DateTime @default(now())
+
+  @@index([comercioId, createdAt])
+}
+
+model Recibo {
+  id          String   @id @default(cuid())
+  numero      Int      @unique @default(autoincrement())
+  tipo        String   // PAGAMENTO (a empresa pagou) | RECEBIMENTO (a empresa recebeu)
+  pessoaNome  String
+  pessoaDocumento String?
+  valor       Float
+  referente   String
+  data        DateTime
+  formaPagamento String?
+  origemTipo  String?  // ACERTO | FATURA | CONTA_PAGAR | AVULSO
+  origemId    String?
+  autorNome   String?
+  createdAt   DateTime @default(now())
+}
+
+// ---------- Mensagens ----------
+
+model Conversa {
+  id       String       @id @default(cuid())
+  nome     String
+  tipo     TipoConversa
+  naoLida  Boolean      @default(false)
+
+  mensagens Mensagem[]
+}
+
+model Mensagem {
+  id         String            @id @default(cuid())
+  conversaId String
+  conversa   Conversa          @relation(fields: [conversaId], references: [id], onDelete: Cascade)
+  de         RemetenteMensagem
+  texto      String
+  createdAt  DateTime          @default(now())
+}
+
+// ---------- Notificações e configurações ----------
+
+model Notificacao {
+  id        String   @id @default(cuid())
+  tipo      String
+  texto     String
+  lida      Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+// ---------- Regras de saque do entregador ----------
+
+enum TipoSaque {
+  NORMAL
+  RAPIDO
+}
+
+// Uma linha por tipo de saque.
+model RegraSaque {
+  id                    String    @id @default(cuid())
+  tipo                  TipoSaque @unique
+  limitePorSolicitacao  Float?    // null = sem limite
+  maxSolicitacoesDia    Int       @default(1)
+  diasPermitidos        Int[]     // 0 = domingo ... 6 = sábado; vazio = todos os dias
+  datasEspecificas      String[]  // "YYYY-MM-DD"; se houver, têm prioridade sobre diasPermitidos
+  atualizadoEm          DateTime  @updatedAt
+}
+
+model Configuracao {
+  id                       String  @id @default(cuid())
+  notificacoesPush         Boolean @default(true)
+  notificacoesEmail        Boolean @default(true)
+  notificacoesSms          Boolean @default(false)
+  atribuicaoAutomatica     Boolean @default(true)
+  raioMaximoKm             Float   @default(8)
+  // Dados da empresa que aparecem nas notas e recibos.
+  empresaNome              String?
+  empresaDocumento         String?
+  empresaEndereco          String?
+  empresaTelefone          String?
+  empresaEmail             String?
+}

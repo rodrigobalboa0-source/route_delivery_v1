@@ -1,0 +1,9 @@
+# Nunca enviar para o GitHub: senhas e chaves ficam só no .env (e nas variáveis do Render).
+.env
+.env.local
+.env.production
+node_modules/
+dist/
+*.log
+.DS_Store
+Thumbs.db
