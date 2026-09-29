@@ -9,6 +9,7 @@
 
 const prisma = require("../lib/prisma");
 const { decifrar } = require("../integracoes/cripto");
+const { normalizarFaixas, valorPorFaixas } = require("./faixas");
 
 const NOMINATIM_URL = "https://nominatim.openstreetmap.org/search";
 const OSRM_URL = "https://router.project-osrm.org/route/v1/driving";
@@ -124,15 +125,6 @@ async function calcularDistanciaRotaKm(origem, destino) {
   return osmDistanciaKm(origem, destino);
 }
 
-// Faixas da tabela de preço por KM, válidas e em ordem crescente de km.
-function normalizarFaixas(faixas) {
-  if (!Array.isArray(faixas)) return [];
-  return faixas
-    .map(f => ({ ateKm: Number(f?.ateKm), valor: Number(f?.valor) }))
-    .filter(f => Number.isFinite(f.ateKm) && f.ateKm > 0 && Number.isFinite(f.valor) && f.valor >= 0)
-    .sort((a, b) => a.ateKm - b.ateKm);
-}
-
 /**
  * Calcula o valor da entrega a partir da distância de PERCURSO (não em linha reta).
  * Usa a tabela de precificação padrão como base; se uma tabela de preço por KM
@@ -148,14 +140,8 @@ function calcularValorEntrega({ distanciaKm, precificacaoPadrao, tabelaPrecoKm }
       return tabelaPrecoKm.valorMinimo ?? 0;
     }
     if (tabelaPrecoKm.tipoCalculo === "FAIXAS") {
-      const faixas = normalizarFaixas(tabelaPrecoKm.faixas);
-      if (faixas.length) {
-        const km = Math.round(distanciaKm * 100) / 100;
-        const faixa = faixas.find(f => km <= f.ateKm);
-        const ultima = faixas[faixas.length - 1];
-        const valor = faixa ? faixa.valor : ultima.valor + (km - ultima.ateKm) * (tabelaPrecoKm.kmAdicional || 0);
-        return Math.max(valor, tabelaPrecoKm.valorMinimo || 0);
-      }
+      const r = valorPorFaixas(distanciaKm, tabelaPrecoKm.faixas, tabelaPrecoKm.kmAdicional, tabelaPrecoKm.valorMinimo);
+      if (r) return r.valor;
     }
     const valor = (tabelaPrecoKm.valorMinimo || 0) + (tabelaPrecoKm.kmAdicional || 0) * distanciaKm;
     return Math.max(valor, tabelaPrecoKm.valorMinimo || 0);

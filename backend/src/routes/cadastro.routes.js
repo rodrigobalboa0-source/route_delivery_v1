@@ -1,6 +1,7 @@
 const express = require("express");
 const prisma = require("../lib/prisma");
 const { Prisma } = require("@prisma/client");
+const { validarFaixas } = require("../utils/faixas");
 const { asyncHandler } = require("../middleware/errorHandler");
 const { createCrudRouter } = require("../utils/crudRouterFactory");
 const { omitir } = require("../utils/sanitizar");
@@ -21,27 +22,34 @@ const validarTabelaKm = body => {
   if (!String(d.nome || "").trim()) erro("Informe o nome da tabela.");
   d.nome = String(d.nome).trim();
   if (d.tipoCalculo && !["DESLOCAMENTO", "FIXO", "FAIXAS"].includes(d.tipoCalculo)) erro("Tipo de cálculo inválido.");
-  if (d.faixas !== undefined) {
-    if (d.faixas === null) d.faixas = Prisma.DbNull;
-    else {
-      if (!Array.isArray(d.faixas)) erro("Faixas inválidas.");
-      if (d.faixas.length > 50) erro("Máximo de 50 faixas.");
-      const faixas = d.faixas.map((f, i) => {
-        const ateKm = Number(String(f?.ateKm ?? "").replace(",", "."));
-        const valor = Number(String(f?.valor ?? "").replace(",", "."));
-        if (!Number.isFinite(ateKm) || ateKm <= 0 || ateKm > 1000) erro(`Faixa ${i + 1}: informe até quantos km (maior que zero).`);
-        if (!Number.isFinite(valor) || valor < 0 || valor > 100000) erro(`Faixa ${i + 1}: informe o valor (R$).`);
-        return { ateKm: Math.round(ateKm * 100) / 100, valor: Math.round(valor * 100) / 100 };
-      }).sort((a, b) => a.ateKm - b.ateKm);
-      faixas.forEach((f, i) => { if (i && f.ateKm === faixas[i - 1].ateKm) erro(`Duas faixas com o mesmo limite (${f.ateKm} km).`); });
-      d.faixas = faixas;
+  if (d.faixas !== undefined) d.faixas = d.faixas === null ? Prisma.DbNull : validarFaixas(d.faixas);
+  if (d.tipoCalculo === "FAIXAS" && !(Array.isArray(d.faixas) && d.faixas.length)) erro("Cadastre pelo menos uma faixa de km.");
+  return d;
+};
+
+// Tabela de comissões (ganho do entregador por entrega): percentual do valor OU faixas de km.
+const VEICULOS = ["MOTO", "BIKE", "CARRO"]; // enum Veiculo do schema
+const validarTabelaComissao = body => {
+  const erro = msg => { const e = new Error(msg); e.status = 400; throw e; };
+  const d = { ...body };
+  const n = v => (v === undefined || v === null || v === "" ? null : Number(String(v).replace(",", ".")));
+  d.nome = String(d.nome || "").trim() || null;
+  d.tipoCalculo = d.tipoCalculo || "PERCENTUAL";
+  if (!["PERCENTUAL", "FAIXAS"].includes(d.tipoCalculo)) erro("Tipo de cálculo inválido.");
+  if (d.categoria !== undefined && !VEICULOS.includes(d.categoria)) erro("Categoria de veículo inválida.");
+  for (const k of ["percentual", "valorMinimo", "kmAdicional"]) {
+    if (d[k] !== undefined) {
+      d[k] = n(d[k]);
+      if (d[k] !== null && (!Number.isFinite(d[k]) || d[k] < 0)) erro("Valores não podem ser negativos.");
     }
   }
+  if (d.tipoCalculo === "PERCENTUAL" && !(d.percentual > 0 && d.percentual <= 100)) erro("Informe o percentual (entre 0 e 100).");
+  if (d.faixas !== undefined) d.faixas = d.faixas === null ? Prisma.DbNull : validarFaixas(d.faixas);
   if (d.tipoCalculo === "FAIXAS" && !(Array.isArray(d.faixas) && d.faixas.length)) erro("Cadastre pelo menos uma faixa de km.");
   return d;
 };
 router.use("/tabela-preco-km", createCrudRouter("tabelaPrecoKm", { orderBy: { createdAt: "desc" }, beforeCreate: validarTabelaKm, beforeUpdate: validarTabelaKm }));
-router.use("/tabela-comissoes", createCrudRouter("tabelaComissao"));
+router.use("/tabela-comissoes", createCrudRouter("tabelaComissao", { beforeCreate: validarTabelaComissao, beforeUpdate: validarTabelaComissao }));
 // Regras de preço dinâmico: nome, tipo de aplicação (multiplicador ou valor fixo), valor e ativa.
 // Padrão do tipo: demanda multiplica o valor; entregador recebe valor fixo.
 const validarRegraPreco = tipoPadrao => body => {

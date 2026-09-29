@@ -40,6 +40,7 @@ function regraPrecoDinamico(tipoPadrao) {
 // ---------- Tabela de preço por KM: faixas ("até 3 km = R$ 7,00") ----------
 
 const TIPO_CALCULO_KM = { FAIXAS: "Por faixas de km", DESLOCAMENTO: "Por deslocamento (valor por km)", FIXO: "Valor fixo" };
+const TIPO_CALCULO_COMISSAO = { FAIXAS: "Por faixas de km", PERCENTUAL: "Percentual do valor da entrega" };
 const num = v => Number(String(v ?? "").replace(",", "."));
 const km = v => `${String(v).replace(".", ",")} km`;
 
@@ -61,7 +62,7 @@ function valorPorFaixas(distancia, faixas, kmAdicional, minimo) {
   return Math.max(valor, num(minimo) || 0);
 }
 
-function EditorFaixas({ valores, onChange, desabilitado }) {
+function EditorFaixas({ valores, onChange, desabilitado, rotuloSimular = "Simular entrega de", rotuloValor = "Valor (R$)" }) {
   const [simular, setSimular] = useState("");
   const faixas = valores.faixas || [];
   const set = lista => onChange({ ...valores, faixas: lista });
@@ -78,7 +79,7 @@ function EditorFaixas({ valores, onChange, desabilitado }) {
         <span className="apagado">Cada faixa vale da faixa anterior até o km informado.</span>
       </div>
       <table className="tabela tabela-compacta">
-        <thead><tr><th>De</th><th>Até (km)</th><th>Valor (R$)</th><th /></tr></thead>
+        <thead><tr><th>De</th><th>Até (km)</th><th>{rotuloValor}</th><th /></tr></thead>
         <tbody>
           {faixas.map((f, i) => (
             <tr key={i}>
@@ -101,7 +102,7 @@ function EditorFaixas({ valores, onChange, desabilitado }) {
         </p>
       )}
       <div className="faixas-simular">
-        <label>Simular entrega de <input type="number" min="0" step="0.1" value={simular} onChange={e => setSimular(e.target.value)} placeholder="km" aria-label="Distância para simular" /> km</label>
+        <label>{rotuloSimular} <input type="number" min="0" step="0.1" value={simular} onChange={e => setSimular(e.target.value)} placeholder="km" aria-label="Distância para simular" /> km</label>
         {resultado != null && <strong>= {moeda(resultado)}</strong>}
       </div>
     </div>
@@ -155,15 +156,27 @@ const CADASTROS = [
   },
   {
     chave: "tabela-comissoes", titulo: "Tabela de comissões", area: "precificacao",
-    descricao: "Percentual de comissão por categoria de veículo, vinculado ao comércio no cadastro dele.",
+    descricao: "Quanto o entregador ganha por entrega: cadastre vários km e valores (faixas) ou um percentual do valor da entrega. Vincule a tabela ao comércio no cadastro dele. O km é o da rota da entrega.",
+    rotuloItem: "tabela de comissão",
+    modalLargo: true,
+    padrao: { tipoCalculo: "FAIXAS", categoria: "MOTO" },
     campos: [
-      { nome: "categoria", rotulo: "Categoria", tipo: "select", obrigatorio: true, opcoes: opcoes(VEICULOS) },
-      { nome: "percentual", rotulo: "Percentual (%)", tipo: "number", obrigatorio: true },
-      { nome: "valorMinimo", rotulo: "Valor mínimo (R$)", tipo: "number" },
+      { nome: "nome", rotulo: "Nome", largo: true, placeholder: "Ex.: Comissão Moto Centro" },
+      { nome: "categoria", rotulo: "Categoria (veículo)", tipo: "select", obrigatorio: true, opcoes: opcoes(VEICULOS) },
+      { nome: "tipoCalculo", rotulo: "Cálculo", tipo: "select", obrigatorio: true, opcoes: opcoes(TIPO_CALCULO_COMISSAO) },
+      { nome: "percentual", rotulo: "Percentual do valor da entrega (%)", tipo: "number", obrigatorio: true, mostrar: v => v.tipoCalculo === "PERCENTUAL" },
+      { nome: "valorMinimo", rotulo: "Comissão mínima (R$)", tipo: "number" },
+      { nome: "kmAdicional", rotulo: "Valor por km acima da última faixa (R$)", tipo: "number", mostrar: v => v.tipoCalculo === "FAIXAS" },
     ],
+    Extra: ({ valores, onChange }) => (valores.tipoCalculo === "FAIXAS"
+      ? <EditorFaixas valores={valores} onChange={onChange} rotuloValor="Comissão (R$)" rotuloSimular="Simular comissão numa entrega de" />
+      : null),
+    valoresExtras: r => ({ faixas: r.faixas?.length ? r.faixas.map(f => ({ ateKm: f.ateKm, valor: f.valor })) : [{ ateKm: "", valor: "" }] }),
+    corpoExtra: v => (v.tipoCalculo === "FAIXAS" ? { faixas: (v.faixas || []).filter(f => f.ateKm !== "" || f.valor !== "") } : {}),
     colunas: [
-      { rotulo: "Categoria", valor: r => VEICULOS[r.categoria] },
-      { rotulo: "Percentual", valor: r => `${r.percentual}%`, num: true },
+      { rotulo: "Tabela", valor: r => <><strong>{r.nome || VEICULOS[r.categoria]}</strong>{r.nome && <div className="celula-sub">{VEICULOS[r.categoria]}</div>}</> },
+      { rotulo: "Cálculo", valor: r => (r.tipoCalculo === "FAIXAS" ? `Faixas (${(r.faixas || []).length})` : "Percentual") },
+      { rotulo: "Comissão", valor: r => (r.tipoCalculo === "FAIXAS" ? resumoTabelaKm(r) : `${String(r.percentual ?? 0).replace(".", ",")}% do valor`) },
       { rotulo: "Mínimo", valor: r => moeda(r.valorMinimo), num: true },
     ],
   },

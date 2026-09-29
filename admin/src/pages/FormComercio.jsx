@@ -279,7 +279,11 @@ export default function FormComercio() {
             <p className="apagado">Define qual tabela de comissão o entregador recebe ao entregar para este comércio.</p>
             <select value={v.tabelaComissaoId} onChange={set("tabelaComissaoId")} aria-label="Tabela de comissão do entregador" className="campo-cheio">
               <option value="">Sem tabela de comissão</option>
-              {(comissoes || []).map(c => <option key={c.id} value={c.id}>{VEICULOS[c.categoria]} · {c.percentual}%{c.valorMinimo ? ` (mín. R$ ${c.valorMinimo})` : ""}</option>)}
+              {(comissoes || []).map(c => (
+                <option key={c.id} value={c.id}>
+                  {c.nome ? `${c.nome} · ` : ""}{VEICULOS[c.categoria]} · {c.tipoCalculo === "FAIXAS" ? `faixas de km (${(c.faixas || []).length})` : `${c.percentual}% do valor`}{c.valorMinimo ? ` (mín. R$ ${c.valorMinimo})` : ""}
+                </option>
+              ))}
             </select>
           </section>
 

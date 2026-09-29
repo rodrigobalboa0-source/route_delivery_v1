@@ -367,11 +367,18 @@ model TabelaPrecoKm {
   precificacoesModal PrecificacaoModal[]
 }
 
+// Comissão do entregador por entrega, vinculada ao comércio.
+//   PERCENTUAL: % do valor da entrega (respeitando o mínimo).
+//   FAIXAS: pelo km da entrega — [{ "ateKm": 3, "valor": 5 }, ...]; acima da última: + kmAdicional por km.
 model TabelaComissao {
   id          String  @id @default(cuid())
+  nome        String?
   categoria   Veiculo
-  percentual  Float
+  tipoCalculo String  @default("PERCENTUAL") // PERCENTUAL | FAIXAS
+  percentual  Float?
   valorMinimo Float?
+  kmAdicional Float?
+  faixas      Json?
 
   comercios   Comercio[]
 }

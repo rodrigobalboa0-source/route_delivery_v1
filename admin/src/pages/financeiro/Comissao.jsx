@@ -224,7 +224,8 @@ function ComissaoPorEntregas() {
 
       <div className="aviso-caixa">
         <strong>Como a comissão é calculada, por entrega:</strong> se o comércio tem uma <Link to="/cadastros/tabela-comissoes" className="link">tabela de comissão</Link> vinculada
-        (Cadastros › Comércio), o entregador recebe o percentual do valor da entrega, respeitando o mínimo da tabela; senão, recebe o
+        (Cadastros › Comércio), o entregador recebe o valor da <strong>faixa de km</strong> da entrega (ou o percentual do valor, conforme a tabela),
+        respeitando o mínimo da tabela; senão, recebe o
         <strong> repasse fixo por entrega</strong> do cadastro dele. Entregas já acertadas mantêm o valor do acerto.
       </div>
 

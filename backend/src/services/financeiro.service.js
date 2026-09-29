@@ -1,18 +1,34 @@
 // Regras financeiras compartilhadas: comissão do entregador por entrega.
 const prisma = require("../lib/prisma");
+const { valorPorFaixas } = require("../utils/faixas");
 
 const r2 = v => Math.round((v + Number.EPSILON) * 100) / 100;
 const moeda = v => `R$ ${Number(v || 0).toFixed(2).replace(".", ",")}`;
 
+const km = v => `${String(v).replace(".", ",")} km`;
+
 // Ganho do entregador numa entrega:
 //   1. já acertada           -> o valor gravado no acerto (não muda depois)
-//   2. comércio com tabela   -> % do valor da entrega, respeitando o mínimo da tabela
+//   2. comércio com tabela   -> FAIXAS: valor da faixa do km da entrega (acima da última, + valor por km);
+//                               PERCENTUAL: % do valor da entrega. Os dois respeitam o mínimo da tabela.
 //   3. entregador com repasse fixo (taxaEntrega) -> esse valor
 //   4. nenhuma regra         -> 0 (aparece como "sem regra" para corrigir o cadastro)
 function comissaoDoPedido(p) {
   if (p.acertoId && p.comissaoEntregador != null) return { valor: p.comissaoEntregador, regra: "Valor do acerto", tipo: "ACERTADO" };
   const t = p.comercio?.tabelaComissao;
-  if (t) {
+  if (t?.tipoCalculo === "FAIXAS") {
+    const r = p.distanciaKm != null ? valorPorFaixas(p.distanciaKm, t.faixas, t.kmAdicional, t.valorMinimo) : null;
+    if (r) {
+      const regra = r.faixa
+        ? `Faixa até ${km(r.faixa.ateKm)} (${km(p.distanciaKm)})`
+        : `Acima de ${km(r.ultima.ateKm)}: ${moeda(r.ultima.valor)} + ${km(r.excedenteKm)} × ${moeda(t.kmAdicional || 0)}`;
+      return { valor: r2(r.valor), regra, tipo: "TABELA" };
+    }
+    // Entrega sem km calculado: cai no repasse fixo do entregador, se houver.
+    if (p.entregador?.taxaEntrega != null) return { valor: r2(p.entregador.taxaEntrega), regra: "Entrega sem km — repasse fixo por entrega", tipo: "FIXO" };
+    return { valor: 0, regra: "Entrega sem km calculado para a tabela por faixas", tipo: "SEM_REGRA" };
+  }
+  if (t && t.percentual != null) {
     const pct = r2(((p.valor || 0) * t.percentual) / 100);
     const minimo = t.valorMinimo || 0;
     return {
