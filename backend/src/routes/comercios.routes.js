@@ -68,7 +68,8 @@ async function completarCoordenadas(endereco) {
   if (!texto) return endereco;
   try {
     const coords = await geocodificarEndereco(texto);
-    return coords ? { ...endereco, ...coords } : endereco;
+    // Só a posição (o geocodificador também informa a fonte: Google ou OpenStreetMap).
+    return coords ? { ...endereco, lat: coords.lat, lng: coords.lng } : endereco;
   } catch {
     return endereco;
   }
