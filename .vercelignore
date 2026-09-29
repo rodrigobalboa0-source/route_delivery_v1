@@ -1,0 +1,13 @@
+# Não enviar para o Vercel (senhas e arquivos gerados; o Vercel instala e monta tudo sozinho).
+.env
+**/.env
+.env.local
+**/.env.local
+.vercel
+VARIAVEIS-VERCEL.txt
+node_modules
+**/node_modules
+**/dist
+route
+.git
+*.log
