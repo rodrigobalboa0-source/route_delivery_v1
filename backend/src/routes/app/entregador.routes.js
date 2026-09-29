@@ -9,6 +9,7 @@ const { distanciaLinhaRetaKm } = require("../../utils/geo");
 const { COM_ENTREGADOR, ETAPAS_ENTREGADOR, ROTULOS } = require("../../utils/statusPedido");
 const { INCLUDE_PADRAO, erroHttp, registrarLog, aceitarPedido } = require("../../services/pedidos.service");
 const { obterRegras } = require("../../services/saque.service");
+const { comissaoDoPedido, entregasDoPeriodo } = require("../../services/financeiro.service");
 const { vigentesPara, avisosPara, marcarVisto, publico: publicoPromocao } = require("../../services/promocoes.service");
 const { carimbos, registrarStatusPedido, registrarStatusEntregador, registrarLocalizacao } = require("../../services/historico.service");
 
@@ -385,7 +386,9 @@ router.get(
   })
 );
 
-// GET /api/app/entregador/ganhos — entregas concluídas hoje / 7 dias / mês
+// GET /api/app/entregador/ganhos — entregas concluídas hoje / 7 dias / mês.
+// `ganho` = comissão de cada entrega (mesma regra do Financeiro: tabela por faixas/percentual ou repasse fixo)
+//         + comissões lançadas/automáticas. É o valor do cartão "GANHOS" do app.
 router.get(
   "/ganhos",
   asyncHandler(async (req, res) => {
@@ -393,27 +396,64 @@ router.get(
     const hoje = new Date(agora); hoje.setHours(0, 0, 0, 0);
     const semana = new Date(hoje); semana.setDate(semana.getDate() - 6);
     const mes = new Date(hoje); mes.setDate(1);
+    const inicio = semana < mes ? semana : mes;
 
-    const somar = async desde => {
-      const [r, com] = await Promise.all([
-        prisma.pedido.aggregate({
-          where: { entregadorId: req.entregador.id, status: "ENTREGUE", updatedAt: { gte: desde } },
-          _count: { _all: true }, _sum: { valor: true, distanciaKm: true },
-        }),
-        prisma.comissaoManual.aggregate({ where: { entregadorId: req.entregador.id, referencia: { gte: desde } }, _sum: { valor: true } }),
-      ]);
-      const entregas = r._count._all;
+    const [entregas, comissoes] = await Promise.all([
+      entregasDoPeriodo({ desde: inicio, ate: agora, entregadorId: req.entregador.id }),
+      prisma.comissaoManual.findMany({ where: { entregadorId: req.entregador.id, referencia: { gte: inicio } }, select: { valor: true, referencia: true } }),
+    ]);
+    const comComissao = entregas.map(p => ({ p, valor: comissaoDoPedido(p).valor }));
+    const r2 = v => Number((v || 0).toFixed(2));
+
+    const somar = desde => {
+      const minhas = comComissao.filter(x => x.p.entregueEm >= desde);
+      const com = comissoes.filter(c => c.referencia >= desde).reduce((s, c) => s + c.valor, 0);
+      const porEntrega = minhas.reduce((s, x) => s + x.valor, 0);
       return {
-        entregas,
-        valorEntregas: Number((r._sum.valor || 0).toFixed(2)),
-        distanciaKm: Number((r._sum.distanciaKm || 0).toFixed(1)),
-        repasseEstimado: req.entregador.taxaEntrega != null ? Number((req.entregador.taxaEntrega * entregas).toFixed(2)) : null,
-        comissoes: Number((com._sum.valor || 0).toFixed(2)), // lançadas pelo ADM em Financeiro › Comissão
+        entregas: minhas.length,
+        valorEntregas: r2(minhas.reduce((s, x) => s + (x.p.valor || 0), 0)),
+        distanciaKm: Number(minhas.reduce((s, x) => s + (x.p.distanciaKm || 0), 0).toFixed(1)),
+        porEntregas: r2(porEntrega),
+        comissoes: r2(com),
+        ganho: r2(porEntrega + com),
+        repasseEstimado: req.entregador.taxaEntrega != null ? r2(req.entregador.taxaEntrega * minhas.length) : null,
       };
     };
 
-    const [dia, sete, doMes] = await Promise.all([somar(hoje), somar(semana), somar(mes)]);
-    res.json({ hoje: dia, ultimos7Dias: sete, mes: doMes });
+    res.json({ hoje: somar(hoje), ultimos7Dias: somar(semana), mes: somar(mes) });
+  })
+);
+
+// ---------- Mensagens com a equipe (aparecem no painel em Mensagens) ----------
+
+async function conversaDo(entregador) {
+  const existente = await prisma.conversa.findUnique({ where: { entregadorId: entregador.id } });
+  if (existente) return existente;
+  return prisma.conversa.create({ data: { nome: entregador.nomeCompleto, tipo: "ENTREGADOR", entregadorId: entregador.id } });
+}
+
+// GET /api/app/entregador/mensagens — histórico (de: ELES = entregador, NOS = equipe)
+router.get(
+  "/mensagens",
+  asyncHandler(async (req, res) => {
+    const c = await conversaDo(req.entregador);
+    const mensagens = await prisma.mensagem.findMany({ where: { conversaId: c.id }, orderBy: { createdAt: "asc" }, take: 200 });
+    res.json(mensagens.map(m => ({ id: m.id, texto: m.texto, minha: m.de === "ELES", createdAt: m.createdAt })));
+  })
+);
+
+// POST /api/app/entregador/mensagens { texto }
+router.post(
+  "/mensagens",
+  asyncHandler(async (req, res) => {
+    const texto = String(req.body?.texto || "").trim();
+    if (!texto) throw erroHttp(400, "Escreva a mensagem.");
+    if (texto.length > 2000) throw erroHttp(400, "Mensagem muito longa.");
+    const c = await conversaDo(req.entregador);
+    const m = await prisma.mensagem.create({ data: { conversaId: c.id, de: "ELES", texto } });
+    await prisma.conversa.update({ where: { id: c.id }, data: { naoLida: true, nome: req.entregador.nomeCompleto } });
+    await prisma.notificacao.create({ data: { tipo: "mensagem", texto: `Nova mensagem de ${req.entregador.nomeCompleto}: “${texto.slice(0, 80)}”` } });
+    res.status(201).json({ id: m.id, texto: m.texto, minha: true, createdAt: m.createdAt });
   })
 );
 

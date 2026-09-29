@@ -1,6 +1,6 @@
-// Corridas: ficar online (envia a localização), entregas em andamento com as etapas e corridas disponíveis.
+// Corridas: o "motor" da operação (online/offline, GPS, listas) e as telas Disponíveis e Em andamento.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Linking, Platform, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Linking, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import * as Location from "expo-location";
 import { api } from "../api";
 import { Botao, Campo, Cartao, Confirmar, Erro, Selo, Vazio } from "../componentes";
@@ -14,6 +14,121 @@ function abrirRota(lat, lng, endereco) {
   Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${destino}&travelmode=driving`);
 }
 const ligar = tel => Linking.openURL(`tel:${String(tel).replace(/[^\d+]/g, "")}`);
+
+// ---------- Motor da operação (usado pelo mapa, pelos atalhos e pelas listas) ----------
+
+export function useOperacao(entregador, setEntregador) {
+  const [ativos, setAtivos] = useState([]);
+  const [disponiveis, setDisponiveis] = useState([]);
+  const [posicao, setPosicao] = useState(null);
+  const [ganhoHoje, setGanhoHoje] = useState(0);
+  const [erro, setErro] = useState(null);
+  const [aviso, setAviso] = useState(null);
+  const [mudandoStatus, setMudandoStatus] = useState(false);
+  const [aceitando, setAceitando] = useState(null);
+  const online = !!entregador?.online;
+  const ultimoEnvio = useRef(0);
+
+  const carregar = useCallback(async () => {
+    try {
+      const [meus, lista] = await Promise.all([
+        api.get("/pedidos?status=ATIVOS"),
+        online ? api.get("/pedidos/disponiveis") : Promise.resolve([]),
+      ]);
+      setAtivos(meus);
+      setDisponiveis(lista);
+      setErro(null);
+    } catch (e) {
+      setErro(e.message);
+    }
+  }, [online]);
+
+  const carregarGanho = useCallback(() => api.get("/ganhos").then(g => setGanhoHoje(g?.hoje?.ganho || 0)).catch(() => {}), []);
+
+  useEffect(() => {
+    carregar();
+    const t = setInterval(carregar, INTERVALO_LISTAS_MS);
+    return () => clearInterval(t);
+  }, [carregar]);
+
+  useEffect(() => {
+    carregarGanho();
+    const t = setInterval(carregarGanho, 60000);
+    return () => clearInterval(t);
+  }, [carregarGanho]);
+
+  // Posição no mapa: se a permissão já existe, mostra mesmo offline. Online, envia ao sistema (a cada 15 s).
+  useEffect(() => {
+    let vigia = null;
+    let cancelado = false;
+    (async () => {
+      const { status } = await Location.getForegroundPermissionsAsync().catch(() => ({ status: "undetermined" }));
+      if (status !== "granted" || cancelado) return;
+      vigia = await Location.watchPositionAsync(
+        { accuracy: Location.Accuracy.Balanced, timeInterval: INTERVALO_POSICAO_MS, distanceInterval: 20 },
+        pos => {
+          const p = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          setPosicao(p);
+          if (!online || Date.now() - ultimoEnvio.current < INTERVALO_POSICAO_MS) return;
+          ultimoEnvio.current = Date.now();
+          api.post("/localizacao", p).catch(() => {});
+        }
+      ).catch(() => null);
+      if (cancelado) vigia?.remove();
+    })();
+    return () => { cancelado = true; vigia?.remove(); };
+  }, [online]);
+
+  async function alternarOnline() {
+    setErro(null);
+    setAviso(null);
+    setMudandoStatus(true);
+    try {
+      let corpo = { online: !online };
+      if (!online) {
+        const perm = await Location.requestForegroundPermissionsAsync();
+        if (perm.status === "granted") {
+          const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }).catch(() => null);
+          if (pos) {
+            const p = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+            setPosicao(p);
+            corpo = { ...corpo, ...p };
+          }
+        } else {
+          setAviso("Sem permissão de localização: você fica online, mas sem posição no mapa.");
+        }
+      }
+      setEntregador(await api.patch("/status", corpo));
+    } catch (e) {
+      setErro(e.message);
+    } finally {
+      setMudandoStatus(false);
+    }
+  }
+
+  async function aceitar(p) {
+    setAceitando(p.id);
+    try {
+      await api.patch(`/pedidos/${p.id}/aceitar`);
+      await carregar();
+      return true;
+    } catch (e) {
+      setErro(e.message);
+      await carregar();
+      return false;
+    } finally {
+      setAceitando(null);
+    }
+  }
+
+  async function atualizarTudo() {
+    await Promise.all([carregar(), carregarGanho()]);
+  }
+
+  return { ativos, disponiveis, posicao, ganhoHoje, erro, setErro, aviso, online, mudandoStatus, aceitando, alternarOnline, aceitar, atualizarTudo };
+}
+
+// ---------- Cartões ----------
 
 function InfoLinha({ rotulo, valor, destaque }) {
   if (!valor) return null;
@@ -106,149 +221,49 @@ function Disponivel({ p, onAceitar, ocupado }) {
   );
 }
 
-export default function Corridas({ entregador, setEntregador }) {
-  const [ativos, setAtivos] = useState([]);
-  const [disponiveis, setDisponiveis] = useState([]);
-  const [erro, setErro] = useState(null);
-  const [aviso, setAviso] = useState(null);
+// ---------- Telas ----------
+
+function useRecarregar(fn) {
   const [atualizando, setAtualizando] = useState(false);
-  const [mudandoStatus, setMudandoStatus] = useState(false);
-  const [aceitando, setAceitando] = useState(null);
-  const online = !!entregador?.online;
+  return <RefreshControl refreshing={atualizando} onRefresh={async () => { setAtualizando(true); await fn(); setAtualizando(false); }} tintColor={cor.texto2} />;
+}
+
+export function ListaDisponiveis({ op, entregador, onAceitou }) {
+  const refresh = useRecarregar(op.atualizarTudo);
   const emAnalise = entregador?.status === "EM_ANALISE";
-  const vigia = useRef(null);
-  const ultimoEnvio = useRef(0);
-
-  const carregar = useCallback(async () => {
-    try {
-      const [meus, lista] = await Promise.all([
-        api.get("/pedidos?status=ATIVOS"),
-        online ? api.get("/pedidos/disponiveis") : Promise.resolve([]),
-      ]);
-      setAtivos(meus);
-      setDisponiveis(lista);
-      setErro(null);
-    } catch (e) {
-      setErro(e.message);
-    }
-  }, [online]);
-
-  useEffect(() => {
-    carregar();
-    const t = setInterval(carregar, INTERVALO_LISTAS_MS);
-    return () => clearInterval(t);
-  }, [carregar]);
-
-  // Enquanto online, acompanha a posição e envia ao sistema (no máximo a cada 15 s).
-  useEffect(() => {
-    let cancelado = false;
-    async function iniciar() {
-      if (!online) return;
-      const { status } = await Location.getForegroundPermissionsAsync();
-      if (status !== "granted" || cancelado) return;
-      vigia.current = await Location.watchPositionAsync(
-        { accuracy: Location.Accuracy.Balanced, timeInterval: INTERVALO_POSICAO_MS, distanceInterval: 30 },
-        pos => {
-          if (Date.now() - ultimoEnvio.current < INTERVALO_POSICAO_MS) return;
-          ultimoEnvio.current = Date.now();
-          api.post("/localizacao", { lat: pos.coords.latitude, lng: pos.coords.longitude }).catch(() => {});
-        }
-      );
-    }
-    iniciar();
-    return () => {
-      cancelado = true;
-      vigia.current?.remove();
-      vigia.current = null;
-    };
-  }, [online]);
-
-  async function alternarOnline() {
-    setErro(null);
-    setAviso(null);
-    setMudandoStatus(true);
-    try {
-      let corpo = { online: !online };
-      if (!online) {
-        const perm = await Location.requestForegroundPermissionsAsync();
-        if (perm.status === "granted") {
-          const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }).catch(() => null);
-          if (pos) corpo = { ...corpo, lat: pos.coords.latitude, lng: pos.coords.longitude };
-        } else {
-          setAviso("Sem permissão de localização: você aparece online, mas sem posição no mapa e sem corridas próximas ordenadas.");
-        }
-      }
-      const r = await api.patch("/status", corpo);
-      setEntregador(r);
-    } catch (e) {
-      setErro(e.message);
-    } finally {
-      setMudandoStatus(false);
-    }
-  }
-
-  async function aceitar(p) {
-    setAceitando(p.id);
-    try {
-      await api.patch(`/pedidos/${p.id}/aceitar`);
-      await carregar();
-    } catch (e) {
-      setErro(e.message);
-      await carregar();
-    } finally {
-      setAceitando(null);
-    }
-  }
-
-  async function puxar() {
-    setAtualizando(true);
-    await carregar();
-    setAtualizando(false);
-  }
-
   return (
-    <ScrollView contentContainerStyle={st.tela} refreshControl={<RefreshControl refreshing={atualizando} onRefresh={puxar} tintColor={cor.texto2} />}>
-      <Cartao estilo={[st.statusCartao, online && { borderColor: cor.ok }]}>
-        <View style={st.statusLinha}>
-          <View style={[st.bolinha, { backgroundColor: online ? cor.ok : cor.texto3 }]} />
-          <Text style={st.statusTexto}>{online ? "Você está online" : "Você está offline"}</Text>
-        </View>
-        {emAnalise
-          ? <Text style={st.ajuda}>Seu cadastro está em análise. Assim que a equipe aprovar, você poderá ficar online e aceitar corridas.</Text>
-          : <Text style={st.ajuda}>{online ? "Recebendo corridas próximas. Sua posição aparece no mapa da operação." : "Fique online para ver e aceitar corridas."}</Text>}
-        {!emAnalise && (
-          <Botao titulo={online ? "Ficar offline" : "Ficar online"} variante={online ? "secundario" : "sucesso"} onPress={alternarOnline} carregando={mudandoStatus} />
-        )}
-        {aviso && <Text style={st.aviso}>{aviso}</Text>}
-      </Cartao>
-
-      <Erro texto={erro} />
-
-      {ativos.length > 0 && <Text style={st.secao}>Suas entregas ({ativos.length})</Text>}
-      {ativos.map(p => <EntregaAtiva key={p.id} p={p} onAtualizar={carregar} onErro={setErro} />)}
-
-      {online && (
-        <>
-          <Text style={st.secao}>Corridas disponíveis</Text>
-          {disponiveis.length === 0
-            ? <Vazio titulo="Nenhuma corrida no momento" texto="A lista atualiza sozinha a cada 10 segundos." />
-            : disponiveis.map(p => <Disponivel key={p.id} p={p} onAceitar={aceitar} ocupado={aceitando === p.id} />)}
-        </>
+    <ScrollView contentContainerStyle={st.tela} refreshControl={refresh}>
+      <Erro texto={op.erro} />
+      {emAnalise && <Vazio titulo="Cadastro em análise" texto="Assim que a equipe aprovar, você poderá ficar online e aceitar corridas." />}
+      {!emAnalise && !op.online && (
+        <Cartao>
+          <Text style={st.codigo}>Você está offline</Text>
+          <Text style={st.ajuda}>Fique online para ver as corridas disponíveis perto de você.</Text>
+          <Botao titulo="Ficar online" variante="sucesso" onPress={op.alternarOnline} carregando={op.mudandoStatus} />
+        </Cartao>
       )}
-      {Platform.OS === "web" && <Text style={st.rodape}>Versão de teste no navegador</Text>}
+      {op.online && op.disponiveis.length === 0 && <Vazio titulo="Nenhuma corrida no momento" texto="A lista atualiza sozinha a cada 10 segundos." />}
+      {op.online && op.disponiveis.map(p => (
+        <Disponivel key={p.id} p={p} ocupado={op.aceitando === p.id} onAceitar={async x => { if (await op.aceitar(x)) onAceitou?.(); }} />
+      ))}
+    </ScrollView>
+  );
+}
+
+export function ListaAndamento({ op }) {
+  const refresh = useRecarregar(op.atualizarTudo);
+  return (
+    <ScrollView contentContainerStyle={st.tela} refreshControl={refresh}>
+      <Erro texto={op.erro} />
+      {op.ativos.length === 0 && <Vazio titulo="Nenhuma entrega em andamento" texto="Aceite uma corrida em Disponíveis para começar." />}
+      {op.ativos.map(p => <EntregaAtiva key={p.id} p={p} onAtualizar={op.atualizarTudo} onErro={op.setErro} />)}
     </ScrollView>
   );
 }
 
 const st = StyleSheet.create({
-  tela: { padding: 16, gap: 12, paddingBottom: 32, maxWidth: 560, width: "100%", alignSelf: "center" },
-  statusCartao: { gap: 12 },
-  statusLinha: { flexDirection: "row", alignItems: "center", gap: 10 },
-  bolinha: { width: 12, height: 12, borderRadius: 6 },
-  statusTexto: { color: cor.texto, fontSize: 19, fontWeight: "800" },
+  tela: { padding: 16, gap: 12, paddingBottom: 120, maxWidth: 560, width: "100%", alignSelf: "center" },
   ajuda: { color: cor.texto2, fontSize: 14, lineHeight: 20 },
-  aviso: { color: cor.aviso, fontSize: 13, lineHeight: 18 },
-  secao: { color: cor.texto2, fontSize: 13, fontWeight: "800", letterSpacing: 1, textTransform: "uppercase", marginTop: 6 },
   topoCartao: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8 },
   codigo: { color: cor.texto, fontSize: 17, fontWeight: "800", flexShrink: 1 },
   etapaBloco: { borderLeftWidth: 3, borderLeftColor: cor.borda, paddingLeft: 10, gap: 2, opacity: 0.7 },
@@ -260,5 +275,4 @@ const st = StyleSheet.create({
   linhaValor: { color: cor.texto2, fontSize: 14, flex: 1 },
   acoes: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   acao: { flexGrow: 1 },
-  rodape: { color: cor.texto3, textAlign: "center", fontSize: 12, marginTop: 8 },
 });

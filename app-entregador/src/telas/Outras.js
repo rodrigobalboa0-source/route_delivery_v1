@@ -1,6 +1,7 @@
-// Abas Ganhos, Promoções e Perfil.
-import { useCallback, useEffect, useState } from "react";
-import { Image, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+// Telas do menu: Carteira, Mensagens, Treinamento, Promoções e Conta.
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Image, KeyboardAvoidingView, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Feather } from "@expo/vector-icons";
 import { api } from "../api";
 import { Botao, Cartao, Erro, Selo, Vazio } from "../componentes";
 import { VEICULOS, cor, dataCurta, km, moeda } from "../tema";
@@ -20,26 +21,45 @@ function useCarregar(fn) {
 // ---------- Ganhos ----------
 
 const buscarGanhos = () => Promise.all([api.get("/ganhos"), api.get("/comissoes")]);
+const buscarRegras = () => api.get("/saque/regras");
 
 function Periodo({ titulo, g }) {
   return (
     <Cartao estilo={st.periodo}>
       <Text style={st.periodoTitulo}>{titulo}</Text>
-      <Text style={st.grande}>{g?.entregas ?? 0} <Text style={st.grandeUnidade}>entrega(s)</Text></Text>
-      <Text style={st.periodoLinha}>{km(g?.distanciaKm || 0)} rodados</Text>
-      {g?.comissoes > 0 && <Text style={[st.periodoLinha, { color: cor.ok }]}>+ {moeda(g.comissoes)} em comissões</Text>}
+      <Text style={st.grande}>{moeda(g?.ganho || 0)}</Text>
+      <Text style={st.periodoLinha}>{g?.entregas ?? 0} entrega(s) · {km(g?.distanciaKm || 0)}</Text>
+      {g?.comissoes > 0 && <Text style={[st.periodoLinha, { color: cor.ok }]}>inclui {moeda(g.comissoes)} em comissões</Text>}
     </Cartao>
   );
 }
 
-export function Ganhos() {
+const DIAS = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+function textoRegra(r) {
+  if (!r) return "—";
+  const partes = [
+    r.limitePorSolicitacao ? `até ${moeda(r.limitePorSolicitacao)} por pedido` : "sem limite de valor",
+    `${r.maxSolicitacoesDia} por dia`,
+    r.datasEspecificas?.length ? `nas datas: ${r.datasEspecificas.join(", ")}` : r.diasPermitidos?.length ? `dias: ${r.diasPermitidos.map(d => DIAS[d]).join(", ")}` : "todos os dias",
+  ];
+  return partes.join(" · ");
+}
+
+export function Carteira() {
   const { dados, erro, refresh } = useCarregar(buscarGanhos);
+  const { dados: regras } = useCarregar(buscarRegras);
   const [g, c] = dados || [];
   return (
     <ScrollView contentContainerStyle={st.tela} refreshControl={refresh}>
       <Erro texto={erro} />
+      {g && (
+        <Cartao estilo={{ borderColor: cor.primaria }}>
+          <Text style={st.periodoTitulo}>Ganhos de hoje</Text>
+          <Text style={[st.grande, { fontSize: 30 }]}>{moeda(g.hoje.ganho)}</Text>
+          <Text style={st.periodoLinha}>{moeda(g.hoje.porEntregas)} pelas entregas · {moeda(g.hoje.comissoes)} em comissões</Text>
+        </Cartao>
+      )}
       <View style={st.grade}>
-        <Periodo titulo="Hoje" g={g?.hoje} />
         <Periodo titulo="7 dias" g={g?.ultimos7Dias} />
         <Periodo titulo="Este mês" g={g?.mes} />
       </View>
@@ -61,6 +81,99 @@ export function Ganhos() {
             {x.origem === "AUTOMATICA" ? `Entrega ${x.pedidoCodigo || ""} · ${x.comercio}` : `${x.quantidadeEntregas} entrega(s) · ${x.comercio}`}
           </Text>
           <Text style={st.textoPequeno}>{dataCurta(x.referencia)}{x.descricao ? ` · ${x.descricao}` : ""}</Text>
+        </Cartao>
+      ))}
+      {regras && (
+        <>
+          <Text style={st.secao}>Regras de saque</Text>
+          <Cartao>
+            <Text style={st.valor}>Saque normal</Text>
+            <Text style={st.texto}>{textoRegra(regras.normal)}</Text>
+            <Text style={[st.valor, { marginTop: 6 }]}>Saque rápido</Text>
+            <Text style={st.texto}>{textoRegra(regras.rapido)}</Text>
+            <Text style={st.textoPequeno}>Os pagamentos são feitos pela equipe no acerto. Dúvidas? Fale em Mensagens.</Text>
+          </Cartao>
+        </>
+      )}
+    </ScrollView>
+  );
+}
+
+// ---------- Mensagens (conversa com a equipe; ela responde pelo painel em Mensagens) ----------
+
+export function Mensagens() {
+  const [lista, setLista] = useState(null);
+  const [texto, setTexto] = useState("");
+  const [erro, setErro] = useState(null);
+  const [enviando, setEnviando] = useState(false);
+  const rolar = useRef(null);
+
+  const carregar = useCallback(() => api.get("/mensagens").then(l => { setLista(l); setErro(null); }).catch(e => setErro(e.message)), []);
+  useEffect(() => {
+    carregar();
+    const t = setInterval(carregar, 5000);
+    return () => clearInterval(t);
+  }, [carregar]);
+
+  async function enviar() {
+    const t = texto.trim();
+    if (!t) return;
+    setEnviando(true);
+    try {
+      const m = await api.post("/mensagens", { texto: t });
+      setLista(l => [...(l || []), m]);
+      setTexto("");
+    } catch (e) {
+      setErro(e.message);
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  return (
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+      <ScrollView ref={rolar} contentContainerStyle={[st.tela, { paddingBottom: 16 }]} onContentSizeChange={() => rolar.current?.scrollToEnd({ animated: false })}>
+        <Erro texto={erro} />
+        {lista && lista.length === 0 && <Vazio titulo="Fale com a equipe" texto="Mande sua dúvida ou avise algum problema. A equipe responde por aqui." />}
+        {(lista || []).map(m => (
+          <View key={m.id} style={[st.balao, m.minha ? st.balaoMeu : st.balaoEquipe]}>
+            {!m.minha && <Text style={st.balaoAutor}>Equipe Route</Text>}
+            <Text style={st.balaoTexto}>{m.texto}</Text>
+            <Text style={st.balaoHora}>{dataCurta(m.createdAt)} {new Date(m.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</Text>
+          </View>
+        ))}
+      </ScrollView>
+      <View style={st.escrever}>
+        <TextInput value={texto} onChangeText={setTexto} placeholder="Escreva uma mensagem" placeholderTextColor={cor.texto3} style={st.escreverInput} multiline />
+        <Pressable onPress={enviar} disabled={enviando || !texto.trim()} style={[st.enviar, (!texto.trim() || enviando) && { opacity: 0.5 }]} accessibilityLabel="Enviar">
+          <Feather name="send" size={20} color="#fff" />
+        </Pressable>
+      </View>
+    </KeyboardAvoidingView>
+  );
+}
+
+// ---------- Treinamento ----------
+
+const DICAS = [
+  ["power", "Fique online", "Toque no botão Offline no mapa. O app pede sua localização para mostrar corridas perto de você."],
+  ["map-pin", "Aceite uma corrida", "Em Disponíveis aparecem os pedidos prontos. Veja a loja, o destino e a distância e toque em Aceitar."],
+  ["truck", "Siga as etapas", "Em Andamento: Cheguei na loja → Saí para entrega → Cheguei no cliente → Finalizar entrega. A equipe acompanha tudo no painel."],
+  ["navigation", "Use a rota", "O botão Rota abre o Google Maps já com o destino. Você também pode ligar para a loja ou o cliente."],
+  ["credit-card", "Acompanhe seus ganhos", "O cartão Ganhos mostra o valor de hoje. Na Carteira ficam os ganhos da semana, do mês e as comissões."],
+  ["message-square", "Precisa de ajuda?", "Use Suporte ou Mensagens para falar com a equipe da operação."],
+];
+
+export function Treinamento() {
+  return (
+    <ScrollView contentContainerStyle={st.tela}>
+      {DICAS.map(([icone, titulo, texto], i) => (
+        <Cartao key={titulo} estilo={{ flexDirection: "row", gap: 14, alignItems: "flex-start" }}>
+          <View style={st.dicaIcone}><Feather name={icone} size={20} color={cor.primariaClara} /></View>
+          <View style={{ flex: 1, gap: 4 }}>
+            <Text style={st.valor}>{i + 1}. {titulo}</Text>
+            <Text style={st.texto}>{texto}</Text>
+          </View>
         </Cartao>
       ))}
     </ScrollView>
@@ -135,5 +248,15 @@ const st = StyleSheet.create({
   premio: { color: cor.ok, fontSize: 15, fontWeight: "700" },
   nome: { color: cor.texto, fontSize: 22, fontWeight: "800" },
   perfilLinha: { gap: 2 },
+  balao: { maxWidth: "82%", borderRadius: 14, paddingHorizontal: 12, paddingVertical: 8, gap: 2 },
+  balaoMeu: { alignSelf: "flex-end", backgroundColor: cor.primaria, borderBottomRightRadius: 4 },
+  balaoEquipe: { alignSelf: "flex-start", backgroundColor: cor.superficie2, borderBottomLeftRadius: 4 },
+  balaoAutor: { color: cor.primariaClara, fontSize: 12, fontWeight: "700" },
+  balaoTexto: { color: "#fff", fontSize: 15, lineHeight: 20 },
+  balaoHora: { color: "rgba(255,255,255,0.6)", fontSize: 11, alignSelf: "flex-end" },
+  escrever: { flexDirection: "row", gap: 8, padding: 10, borderTopWidth: 1, borderTopColor: cor.borda, backgroundColor: cor.superficie, alignItems: "flex-end" },
+  escreverInput: { flex: 1, maxHeight: 120, backgroundColor: cor.superficie2, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, color: cor.texto, fontSize: 15, borderWidth: 1, borderColor: cor.borda },
+  enviar: { width: 46, height: 46, borderRadius: 23, backgroundColor: cor.primaria, alignItems: "center", justifyContent: "center" },
+  dicaIcone: { width: 40, height: 40, borderRadius: 20, backgroundColor: "rgba(77,163,255,0.14)", alignItems: "center", justifyContent: "center" },
   perfilRotulo: { color: cor.texto3, fontSize: 12, textTransform: "uppercase", letterSpacing: 0.5 },
 });

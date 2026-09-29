@@ -290,6 +290,7 @@ model Entregador {
   avisosVistos          PromocaoAvisoVisto[]
   acertos               AcertoEntregador[]
   comissoesManuais      ComissaoManual[]
+  conversa              Conversa?
 }
 
 // Mudanças do próprio entregador: cadastro, aprovação/inativação, bloqueio, online/offline.
@@ -735,6 +736,9 @@ model Conversa {
   nome     String
   tipo     TipoConversa
   naoLida  Boolean      @default(false)
+  // Conversa do app do entregador com a equipe (uma por entregador). NOS = equipe, ELES = entregador.
+  entregadorId String?     @unique
+  entregador   Entregador? @relation(fields: [entregadorId], references: [id], onDelete: SetNull)
 
   mensagens Mensagem[]
 }
