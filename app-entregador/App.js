@@ -7,6 +7,7 @@ import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { api, carregarToken, quandoSessaoExpirar, salvarToken } from "./src/api";
+import { assinarTempoReal, reiniciarTempoReal } from "./src/tempoReal";
 import { PopupAviso } from "./src/componentes";
 import { cor, moeda } from "./src/tema";
 import Mapa from "./src/mapa/Mapa";
@@ -36,8 +37,9 @@ function useAvisos() {
   }, []);
   useEffect(() => {
     buscar();
-    const t = setInterval(buscar, 30000);
-    return () => clearInterval(t);
+    const t = setInterval(buscar, 60000); // reserva (ex.: promoção que venceu pelo prazo)
+    const sair = assinarTempoReal(["avisos"], buscar);
+    return () => { clearInterval(t); sair(); };
   }, [buscar]);
   function fechar() {
     const a = fila[0];
@@ -140,8 +142,11 @@ function Principal({ entregador, setEntregador, onSair }) {
   const ir = t => { setTela(t); setMenu(false); };
 
   useEffect(() => {
-    const t = setInterval(() => api.get("/me").then(setEntregador).catch(() => {}), 60000);
-    return () => clearInterval(t);
+    const atualizar = () => api.get("/me").then(setEntregador).catch(() => {});
+    const t = setInterval(atualizar, 60000);
+    // Status da conta ao vivo: aprovação, bloqueio, offline automático por falta de sinal...
+    const sair = assinarTempoReal(["eu"], atualizar);
+    return () => { clearInterval(t); sair(); };
   }, [setEntregador]);
 
   // No mapa: lojas das corridas disponíveis e, nas entregas em andamento, a loja ou o cliente (conforme a etapa).
@@ -216,6 +221,7 @@ export default function App() {
   const sair = useCallback(async () => {
     await api.patch("/status", { online: false }).catch(() => {});
     await salvarToken(null);
+    reiniciarTempoReal();
     setEntregador(null);
   }, []);
 

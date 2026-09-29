@@ -75,7 +75,7 @@ function DetalheComercio({ id, onFechar, onAlterado }) {
   const pode = podeEditar("comercios");
   const { dados: c, erro, recarregar } = useApi(`/comercios/${id}`);
   const [aba, setAba] = useState("resumo");
-  const pedidos = useApi(`/pedidos?comercioId=${id}&limite=20`, { ativo: aba === "pedidos" });
+  const pedidos = useApi(`/pedidos?comercioId=${id}&limite=20`, { ativo: aba === "pedidos", aoVivo: ["pedidos"] });
   const faturas = useApi(`/financeiro/faturas?comercioId=${id}`, { ativo: aba === "faturas" });
   const { executar, ocupado } = useAcao();
 

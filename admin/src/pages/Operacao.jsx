@@ -158,13 +158,13 @@ export default function Operacao() {
     ate: ate ? `${ate}T23:59:59` : "",
   };
 
-  const lista = useApi(`/pedidos${qs({ ...filtros, status, limite: 500 })}`, { intervaloMs: 15000 });
-  const contagem = useApi(`/pedidos/contagem${qs(filtros)}`, { intervaloMs: 15000 });
-  const geral = useApi("/pedidos/contagem", { intervaloMs: 15000 }); // estado atual, sem filtros
-  const online = useApi("/entregadores/online", { intervaloMs: 20000 });
+  const lista = useApi(`/pedidos${qs({ ...filtros, status, limite: 500 })}`, { intervaloMs: 60000, aoVivo: ["pedidos"] });
+  const contagem = useApi(`/pedidos/contagem${qs(filtros)}`, { intervaloMs: 60000, aoVivo: ["pedidos"] });
+  const geral = useApi("/pedidos/contagem", { intervaloMs: 60000, aoVivo: ["pedidos"] }); // estado atual, sem filtros
+  const online = useApi("/entregadores/online", { intervaloMs: 60000, aoVivo: ["entregadores"] });
   // Pedidos em aberto no mapa (segue os filtros de loja, cidade e origem, mas não o de datas).
   const caminhoMapa = `/pedidos/mapa${qs({ comercioId, cidade, origem })}`;
-  const mapa = useApi(caminhoMapa, { intervaloMs: 10000 });
+  const mapa = useApi(caminhoMapa, { intervaloMs: 60000, aoVivo: ["pedidos", "entregadores"] });
   const avisarNovo = useToast();
   const vistosNoMapa = useRef({ caminho: null, ids: null });
   useEffect(() => {
@@ -179,7 +179,7 @@ export default function Operacao() {
     vistosNoMapa.current = { caminho: caminhoMapa, ids };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapa.dados]);
-  const contagemEntregadores = useApi("/entregadores/contagem", { intervaloMs: 20000 });
+  const contagemEntregadores = useApi("/entregadores/contagem", { intervaloMs: 60000, aoVivo: ["entregadores"] });
   const { dados: cidades } = useApi("/pedidos/cidades");
   const { dados: comercios } = useApi("/comercios");
 

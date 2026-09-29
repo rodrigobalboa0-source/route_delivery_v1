@@ -7,7 +7,7 @@ import { dataHora, tempoRelativo } from "../utils/format";
 
 function Conversa({ id, onEnviada }) {
   const { podeEditar } = useAuth();
-  const { dados, erro, recarregar } = useApi(`/mensagens/${id}`, { intervaloMs: 10000 });
+  const { dados, erro, recarregar } = useApi(`/mensagens/${id}`, { intervaloMs: 60000, aoVivo: ["mensagens"] });
   const [texto, setTexto] = useState("");
   const { executar, ocupado } = useAcao();
   const fim = useRef(null);
@@ -95,7 +95,7 @@ function NovaConversa({ onFechar, onCriada }) {
 
 export default function Mensagens() {
   const { podeEditar } = useAuth();
-  const lista = useApi("/mensagens", { intervaloMs: 15000 });
+  const lista = useApi("/mensagens", { intervaloMs: 60000, aoVivo: ["mensagens"] });
   const [filtro, setFiltro] = useState("");
   const [aberta, setAberta] = useState(null);
   const [nova, setNova] = useState(false);

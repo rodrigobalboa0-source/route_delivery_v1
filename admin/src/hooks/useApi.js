@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
+import { assinarTempoReal } from "./tempoReal";
 
-// Carrega um GET da API. `intervaloMs` ativa atualização periódica (polling),
-// usada nas telas operacionais (dashboard, pedidos, mapa).
-export function useApi(caminho, { intervaloMs, ativo = true } = {}) {
+// Carrega um GET da API. `intervaloMs` ativa atualização periódica (reserva).
+// `aoVivo`: assuntos do tempo real ("pedidos", "entregadores", "notificacoes", "mensagens") —
+// quando um deles muda no sistema, recarrega em ~2 s, sem piscar a tela.
+export function useApi(caminho, { intervaloMs, ativo = true, aoVivo } = {}) {
   const [dados, setDados] = useState(null);
   const [erro, setErro] = useState(null);
   const [carregando, setCarregando] = useState(true);
@@ -39,6 +41,12 @@ export function useApi(caminho, { intervaloMs, ativo = true } = {}) {
     }, intervaloMs);
     return () => clearInterval(id);
   }, [intervaloMs, ativo, recarregar]);
+
+  const chaveAoVivo = aoVivo ? aoVivo.join(",") : "";
+  useEffect(() => {
+    if (!ativo || !chaveAoVivo) return;
+    return assinarTempoReal(chaveAoVivo.split(","), () => recarregar({ silencioso: true }));
+  }, [chaveAoVivo, ativo, recarregar]);
 
   return { dados, setDados, erro, carregando, recarregar };
 }

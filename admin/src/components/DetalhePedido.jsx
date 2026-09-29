@@ -86,12 +86,13 @@ function EditarPedido({ pedido, onSalvo, onFechar }) {
 
 export default function DetalhePedido({ id, onFechar, onAlterado }) {
   const { podeEditar } = useAuth();
-  const { dados: pedido, setDados, erro, carregando, recarregar } = useApi(`/pedidos/${id}`);
+  const { dados: pedido, setDados, erro, carregando, recarregar } = useApi(`/pedidos/${id}`, { aoVivo: ["pedidos"] });
   const { executar, ocupado } = useAcao();
   const [modo, setModo] = useState(null); // "atribuir" | "trocar" | "editar" | "observacao"
   const [obs, setObs] = useState("");
 
-  useEffect(() => { if (pedido) setObs(pedido.observacao || ""); }, [pedido]);
+  // Só repõe a observação quando muda no servidor (o tempo real recarrega o pedido sem apagar o que se digita).
+  useEffect(() => { if (pedido) setObs(pedido.observacao || ""); }, [pedido?.id, pedido?.observacao]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function acao(fn, msg) {
     const r = await executar(fn, msg);

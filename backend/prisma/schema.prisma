@@ -280,8 +280,9 @@ model Entregador {
   online                Boolean  @default(false)
   lat                   Float?
   lng                   Float?
-  localizacaoEm         DateTime?
+  localizacaoEm         DateTime? // último sinal do app (posição ou "sinal de vida"); sem sinal por 2 min -> offline automático
   createdAt             DateTime @default(now())
+  updatedAt             DateTime @default(now()) @updatedAt
 
   pedidos               Pedido[]
   comerciosPermitidos   EntregadorComercioPermitido[]

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Image, KeyboardAvoidingView, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { api } from "../api";
+import { assinarTempoReal } from "../tempoReal";
 import { Botao, Cartao, Erro, Selo, Vazio } from "../componentes";
 import { VEICULOS, cor, dataCurta, km, moeda } from "../tema";
 
@@ -111,8 +112,9 @@ export function Mensagens() {
   const carregar = useCallback(() => api.get("/mensagens").then(l => { setLista(l); setErro(null); }).catch(e => setErro(e.message)), []);
   useEffect(() => {
     carregar();
-    const t = setInterval(carregar, 5000);
-    return () => clearInterval(t);
+    const t = setInterval(carregar, 30000); // reserva
+    const sair = assinarTempoReal(["mensagens"], carregar); // resposta da equipe em ~2 s
+    return () => { clearInterval(t); sair(); };
   }, [carregar]);
 
   async function enviar() {

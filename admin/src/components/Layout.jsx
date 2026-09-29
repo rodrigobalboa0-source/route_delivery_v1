@@ -101,7 +101,7 @@ const MENU = [
 function Notificacoes() {
   const [aberto, setAberto] = useState(false);
   const ref = useRef(null);
-  const { dados, recarregar } = useApi("/notificacoes", { intervaloMs: 30000 });
+  const { dados, recarregar } = useApi("/notificacoes", { intervaloMs: 60000, aoVivo: ["notificacoes"] });
   const naoLidas = (dados || []).filter(n => !n.lida).length;
 
   useEffect(() => {

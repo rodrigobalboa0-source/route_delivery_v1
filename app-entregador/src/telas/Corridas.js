@@ -3,11 +3,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Linking, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import * as Location from "expo-location";
 import { api } from "../api";
+import { assinarTempoReal } from "../tempoReal";
 import { Botao, Campo, Cartao, Confirmar, Erro, Selo, Vazio } from "../componentes";
 import { ETAPA, cor, enderecoLoja, hora, km } from "../tema";
 
-const INTERVALO_LISTAS_MS = 10000;
-const INTERVALO_POSICAO_MS = 15000;
+const INTERVALO_LISTAS_MS = 30000; // reserva: o tempo real (src/tempoReal.js) atualiza em ~2 s
+const INTERVALO_POSICAO_MS = 10000;
+const INTERVALO_SINAL_MS = 30000; // "sinal de vida" enquanto online (sem sinal por 2 min = offline automático)
 
 function abrirRota(lat, lng, endereco) {
   const destino = lat != null && lng != null ? `${lat},${lng}` : encodeURIComponent(endereco || "");
@@ -56,6 +58,16 @@ export function useOperacao(entregador, setEntregador) {
     const t = setInterval(carregarGanho, 60000);
     return () => clearInterval(t);
   }, [carregarGanho]);
+
+  // Tempo real: corridas novas/aceitas por outro e mudanças nas suas entregas (inclusive feitas pelo painel).
+  useEffect(() => assinarTempoReal(["disponiveis", "meus"], () => { carregar(); carregarGanho(); }), [carregar, carregarGanho]);
+
+  // Sinal de vida enquanto online: mantém o status "online" mesmo parado (o GPS só avisa quando você se move).
+  useEffect(() => {
+    if (!online) return;
+    const t = setInterval(() => { api.post("/ping").catch(() => {}); }, INTERVALO_SINAL_MS);
+    return () => clearInterval(t);
+  }, [online]);
 
   // Posição no mapa: se a permissão já existe, mostra mesmo offline. Online, envia ao sistema (a cada 15 s).
   useEffect(() => {

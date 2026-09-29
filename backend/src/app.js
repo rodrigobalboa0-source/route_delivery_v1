@@ -7,6 +7,7 @@ const path = require("path");
 const express = require("express");
 const cors = require("cors");
 const { garantirPrimeiroAdmin } = require("./services/primeiroAdmin.service");
+const { versaoPainel } = require("./services/tempoReal.service");
 
 const { errorHandler } = require("./middleware/errorHandler");
 const { requireAuth, requireTipo, requirePermissaoEscrita, TIPOS } = require("./middleware/auth");
@@ -65,6 +66,11 @@ app.use("/api/integracoes/webhook", integracoesWebhookRoutes);
 // Login é público; todo o resto exige token de conta gerencial e respeita a permissão da conta.
 app.use("/api/auth", authRoutes);
 app.use("/api", requireAuth, requireTipo(TIPOS.ADMIN), requirePermissaoEscrita);
+
+// "Algo mudou?" — o painel consulta a cada ~2 s e só recarrega o que mudou (ver services/tempoReal.service.js).
+app.get("/api/tempo-real", (req, res, next) => {
+  versaoPainel().then(v => res.set("Cache-Control", "no-store").json(v)).catch(next);
+});
 
 app.use("/api/pedidos", pedidosRoutes);
 app.use("/api/nova-entrega", novaEntregaRoutes);

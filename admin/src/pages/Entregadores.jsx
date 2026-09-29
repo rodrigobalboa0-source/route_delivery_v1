@@ -162,8 +162,8 @@ function ComerciosPermitidos({ entregador, onSalvo, desabilitado }) {
 function DetalheEntregador({ id, onFechar, onAlterado }) {
   const { podeEditar } = useAuth();
   const pode = podeEditar("entregadores");
-  const { dados: e, erro, recarregar } = useApi(`/entregadores/${id}`);
-  const pedidos = useApi(`/pedidos?entregadorId=${id}&limite=15`);
+  const { dados: e, erro, recarregar } = useApi(`/entregadores/${id}`, { aoVivo: ["entregadores"] });
+  const pedidos = useApi(`/pedidos?entregadorId=${id}&limite=15`, { aoVivo: ["pedidos"] });
   const [aba, setAba] = useState("resumo");
   const [senha, setSenha] = useState("");
   const { executar, ocupado } = useAcao();
@@ -373,8 +373,8 @@ export default function Entregadores() {
     return () => clearTimeout(t);
   }, [busca]);
 
-  const lista = useApi(`/entregadores${qs({ status, busca: buscaAplicada, online: soOnline ? "true" : "" })}`, { intervaloMs: 30000 });
-  const contagem = useApi("/entregadores/contagem", { intervaloMs: 30000 });
+  const lista = useApi(`/entregadores${qs({ status, busca: buscaAplicada, online: soOnline ? "true" : "" })}`, { intervaloMs: 60000, aoVivo: ["entregadores"] });
+  const contagem = useApi("/entregadores/contagem", { intervaloMs: 60000, aoVivo: ["entregadores"] });
   const c = contagem.dados || {};
 
   function filtrarStatus(s) {

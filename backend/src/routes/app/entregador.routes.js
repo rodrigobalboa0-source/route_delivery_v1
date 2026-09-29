@@ -10,6 +10,7 @@ const { COM_ENTREGADOR, ETAPAS_ENTREGADOR, ROTULOS } = require("../../utils/stat
 const { INCLUDE_PADRAO, erroHttp, registrarLog, aceitarPedido } = require("../../services/pedidos.service");
 const { obterRegras } = require("../../services/saque.service");
 const { comissaoDoPedido, entregasDoPeriodo } = require("../../services/financeiro.service");
+const { versaoEntregador } = require("../../services/tempoReal.service");
 const { vigentesPara, avisosPara, marcarVisto, publico: publicoPromocao } = require("../../services/promocoes.service");
 const { carimbos, registrarStatusPedido, registrarStatusEntregador, registrarLocalizacao } = require("../../services/historico.service");
 
@@ -102,6 +103,25 @@ async function pedidoDoEntregador(req) {
 
 // GET /api/app/entregador/me
 router.get("/me", (req, res) => res.json(semSenha(req.entregador)));
+
+// GET /api/app/entregador/tempo-real — "algo mudou?" (o app consulta a cada ~2 s com a tela aberta)
+router.get(
+  "/tempo-real",
+  asyncHandler(async (req, res) => {
+    res.set("Cache-Control", "no-store").json(await versaoEntregador(req.entregador.id));
+  })
+);
+
+// POST /api/app/entregador/ping — "sinal de vida" enquanto online (o app manda a cada 30 s).
+// Sem sinal por 2 min, o sistema deixa o entregador offline sozinho.
+router.post(
+  "/ping",
+  asyncHandler(async (req, res) => {
+    if (!req.entregador.online) return res.json({ online: false });
+    await prisma.entregador.update({ where: { id: req.entregador.id }, data: { localizacaoEm: new Date() } });
+    res.json({ online: true });
+  })
+);
 
 // PATCH /api/app/entregador/status  { online, lat?, lng? }
 router.patch(
