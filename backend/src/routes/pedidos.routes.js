@@ -3,6 +3,7 @@ const prisma = require("../lib/prisma");
 const { asyncHandler } = require("../middleware/errorHandler");
 const { INCLUDE_PADRAO, erroHttp, gerarCodigoPedido, registrarLog, dadosNotaFiscal, localizarDestino } = require("../services/pedidos.service");
 const { autorDe, carimbos, registrarStatusPedido } = require("../services/historico.service");
+const { emSegundoPlano } = require("../utils/segundoPlano");
 
 const router = express.Router();
 
@@ -129,15 +130,19 @@ function localizarPendentes(pedidos) {
   const fila = pedidos.filter(p => p.latDestino == null && agora - (tentativasLocalizar.get(p.id) || 0) > 10 * 60 * 1000).slice(0, 3);
   if (!fila.length) return;
   localizando = true;
-  (async () => {
-    for (const p of fila) {
-      tentativasLocalizar.set(p.id, Date.now());
-      const d = await localizarDestino(p.comercioId, p.endereco);
-      // Só grava se o endereço não mudou enquanto isso.
-      if (d) await prisma.pedido.updateMany({ where: { id: p.id, endereco: p.endereco, latDestino: null }, data: { latDestino: d.lat, lngDestino: d.lng } });
-      await new Promise(r => setTimeout(r, 1100));
+  emSegundoPlano(async () => {
+    try {
+      for (const p of fila) {
+        tentativasLocalizar.set(p.id, Date.now());
+        const d = await localizarDestino(p.comercioId, p.endereco);
+        // Só grava se o endereço não mudou enquanto isso.
+        if (d) await prisma.pedido.updateMany({ where: { id: p.id, endereco: p.endereco, latDestino: null }, data: { latDestino: d.lat, lngDestino: d.lng } });
+        await new Promise(r => setTimeout(r, 1100));
+      }
+    } finally {
+      localizando = false;
     }
-  })().catch(err => console.error("[mapa] localizar pedidos:", err.message)).finally(() => { localizando = false; });
+  }, "mapa: localizar pedidos");
 }
 
 // GET /api/pedidos/mapa?comercioId&cidade&origem — pedidos em aberto para o mapa:

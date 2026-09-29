@@ -1,0 +1,30 @@
+{
+  "name": "route-delivery",
+  "private": true,
+  "description": "Sistema ADM Route Delivery — publicação no Vercel (painel estático + API como função). Dependências espelham backend/package.json.",
+  "engines": {
+    "node": "22.x"
+  },
+  "prisma": {
+    "schema": "backend/prisma/schema.prisma"
+  },
+  "scripts": {
+    "postinstall": "prisma generate",
+    "vercel-build": "npm --prefix admin ci --include=dev && npm --prefix admin run build && node backend/scripts/migrar.js"
+  },
+  "dependencies": {
+    "@prisma/client": "5.22.0",
+    "@vercel/functions": "^1.5.0",
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2",
+    "prisma": "5.22.0"
+  },
+  "allowScripts": {
+    "prisma@5.22.0": true,
+    "@prisma/client@5.22.0": true,
+    "@prisma/engines@5.22.0": true
+  }
+}

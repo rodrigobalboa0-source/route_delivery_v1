@@ -2,6 +2,7 @@
 const prisma = require("../lib/prisma");
 const { PORSLUG, STATUS_TODOS } = require("../integracoes/catalogo");
 const { decifrar, novoToken, assinar } = require("../integracoes/cripto");
+const { emSegundoPlano } = require("../utils/segundoPlano");
 
 const TIMEOUT_SAIDA_MS = 5000;
 
@@ -187,7 +188,8 @@ async function notificarStatus(pedidoId, de, para) {
 }
 
 function agendarNotificacao(pedidoId, de, para) {
-  setImmediate(() => notificarStatus(pedidoId, de, para).catch(err => console.error("Webhook de saída:", err.message)));
+  // Depois da resposta; no Vercel, waitUntil garante que o envio termine (ver utils/segundoPlano).
+  emSegundoPlano(() => new Promise(r => setImmediate(r)).then(() => notificarStatus(pedidoId, de, para)), "Webhook de saída");
 }
 
 module.exports = { obterOuCriar, registrarEvento, receberPedido, enviarWebhook, agendarNotificacao, eventosDaIntegracao };

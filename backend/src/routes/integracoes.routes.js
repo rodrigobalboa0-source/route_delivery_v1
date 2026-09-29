@@ -15,8 +15,9 @@ function erro400(mensagem) {
 }
 
 // URL pública da API (para montar o endereço do webhook de entrada).
-// RENDER_EXTERNAL_URL é preenchida automaticamente pelo Render.
-const baseUrl = req => (process.env.API_URL_PUBLICA || process.env.RENDER_EXTERNAL_URL || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
+// RENDER_EXTERNAL_URL (Render) e VERCEL_PROJECT_PRODUCTION_URL (Vercel, sem "https://") são preenchidas pela hospedagem.
+const vercel = process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : null;
+const baseUrl = req => (process.env.API_URL_PUBLICA || process.env.RENDER_EXTERNAL_URL || vercel || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
 
 // Nunca devolve valor de campo secreto — só se está preenchido.
 function credenciaisParaPainel(cat, texto) {

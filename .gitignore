@@ -2,6 +2,9 @@
 .env
 .env.local
 .env.production
+# Senhas geradas para colar no painel do Vercel (fica só neste computador)
+VARIAVEIS-VERCEL.txt
+.vercel
 node_modules/
 dist/
 *.log
