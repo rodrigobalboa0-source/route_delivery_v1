@@ -96,6 +96,7 @@ enum OrigemPedido {
 enum TipoCalculoTabela {
   DESLOCAMENTO
   FIXO
+  FAIXAS
 }
 
 enum TipoRetornoTabela {
@@ -358,6 +359,9 @@ model TabelaPrecoKm {
   valorMinimo    Float?
   valorPorPonto  Float?
   valorMultiplo  Float?
+  // FAIXAS: [{ "ateKm": 3, "valor": 7 }, { "ateKm": 5, "valor": 9 }, ...] em ordem crescente.
+  // Acima da última faixa: valor da última + kmAdicional por km excedente.
+  faixas         Json?
   createdAt      DateTime @default(now())
 
   precificacoesModal PrecificacaoModal[]
@@ -778,4 +782,6 @@ model Configuracao {
   empresaEndereco          String?
   empresaTelefone          String?
   empresaEmail             String?
+  // Chave da API do Google Maps (criptografada) — usada só para localizar endereços e medir o km da rota.
+  googleMapsChave          String?
 }

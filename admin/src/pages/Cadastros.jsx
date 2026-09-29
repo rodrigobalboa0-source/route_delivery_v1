@@ -37,29 +37,120 @@ function regraPrecoDinamico(tipoPadrao) {
   };
 }
 
-const TIPO_PROMOCAO = { DESCONTO_PERCENTUAL: "Desconto percentual", CUPOM_FIXO: "Cupom de valor fixo", FRETE_GRATIS: "Frete grátis" };
+// ---------- Tabela de preço por KM: faixas ("até 3 km = R$ 7,00") ----------
+
+const TIPO_CALCULO_KM = { FAIXAS: "Por faixas de km", DESLOCAMENTO: "Por deslocamento (valor por km)", FIXO: "Valor fixo" };
+const num = v => Number(String(v ?? "").replace(",", "."));
+const km = v => `${String(v).replace(".", ",")} km`;
+
+function faixasValidas(faixas = []) {
+  return faixas
+    .map(f => ({ ateKm: num(f.ateKm), valor: num(f.valor) }))
+    .filter(f => f.ateKm > 0 && Number.isFinite(f.valor) && String(f.valor) !== "")
+    .sort((a, b) => a.ateKm - b.ateKm);
+}
+
+// Mesmo cálculo do servidor (backend/src/utils/geo.js › calcularValorEntrega), para simular na tela.
+function valorPorFaixas(distancia, faixas, kmAdicional, minimo) {
+  const fs = faixasValidas(faixas);
+  if (!fs.length || !(distancia >= 0)) return null;
+  const d = Math.round(distancia * 100) / 100;
+  const faixa = fs.find(f => d <= f.ateKm);
+  const ultima = fs[fs.length - 1];
+  const valor = faixa ? faixa.valor : ultima.valor + (d - ultima.ateKm) * (num(kmAdicional) || 0);
+  return Math.max(valor, num(minimo) || 0);
+}
+
+function EditorFaixas({ valores, onChange, desabilitado }) {
+  const [simular, setSimular] = useState("");
+  const faixas = valores.faixas || [];
+  const set = lista => onChange({ ...valores, faixas: lista });
+  const alterar = (i, campo) => e => set(faixas.map((f, j) => (j === i ? { ...f, [campo]: e.target.value } : f)));
+  const ordenadas = faixasValidas(faixas);
+  const foraDeOrdem = faixas.some((f, i) => i > 0 && num(f.ateKm) > 0 && num(faixas[i - 1].ateKm) >= num(f.ateKm));
+  const ultima = ordenadas[ordenadas.length - 1];
+  const resultado = simular !== "" ? valorPorFaixas(num(simular), faixas, valores.kmAdicional, valores.valorMinimo) : null;
+
+  return (
+    <div className="faixas-km">
+      <div className="faixas-topo">
+        <strong>Faixas de km</strong>
+        <span className="apagado">Cada faixa vale da faixa anterior até o km informado.</span>
+      </div>
+      <table className="tabela tabela-compacta">
+        <thead><tr><th>De</th><th>Até (km)</th><th>Valor (R$)</th><th /></tr></thead>
+        <tbody>
+          {faixas.map((f, i) => (
+            <tr key={i}>
+              <td className="apagado">{i === 0 ? "0 km" : num(faixas[i - 1].ateKm) > 0 ? `acima de ${km(num(faixas[i - 1].ateKm))}` : "—"}</td>
+              <td><input type="number" min="0.1" step="0.1" value={f.ateKm} onChange={alterar(i, "ateKm")} disabled={desabilitado} aria-label={`Faixa ${i + 1}: até quantos km`} required /></td>
+              <td><input type="number" min="0" step="0.01" value={f.valor} onChange={alterar(i, "valor")} disabled={desabilitado} aria-label={`Faixa ${i + 1}: valor`} required /></td>
+              <td>{!desabilitado && faixas.length > 1 && <Botao pequeno variante="fantasma" onClick={() => set(faixas.filter((_, j) => j !== i))} aria-label={`Remover faixa ${i + 1}`}>Remover</Botao>}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {!desabilitado && (
+        <Botao pequeno onClick={() => set([...faixas, { ateKm: ultima ? ultima.ateKm + 2 : "", valor: "" }])}>+ Adicionar faixa</Botao>
+      )}
+      {foraDeOrdem && <p className="aviso-texto">As faixas serão salvas em ordem crescente de km.</p>}
+      {ultima && (
+        <p className="apagado">
+          Acima de {km(ultima.ateKm)}: {moeda(ultima.valor)}
+          {num(valores.kmAdicional) > 0 ? ` + ${moeda(num(valores.kmAdicional))} por km excedente` : " (preencha o “valor por km acima da última faixa” para cobrar o excedente)"}.
+        </p>
+      )}
+      <div className="faixas-simular">
+        <label>Simular entrega de <input type="number" min="0" step="0.1" value={simular} onChange={e => setSimular(e.target.value)} placeholder="km" aria-label="Distância para simular" /> km</label>
+        {resultado != null && <strong>= {moeda(resultado)}</strong>}
+      </div>
+    </div>
+  );
+}
+
+function resumoTabelaKm(r) {
+  if (r.tipoCalculo === "FIXO") return `Fixo ${moeda(r.valorMinimo)}`;
+  if (r.tipoCalculo === "FAIXAS") {
+    const fs = faixasValidas(r.faixas || []);
+    const txt = fs.slice(0, 3).map(f => `até ${km(f.ateKm)} ${moeda(f.valor)}`).join(" · ");
+    return fs.length > 3 ? `${txt} · +${fs.length - 3} faixa(s)` : txt;
+  }
+  return `mín. ${moeda(r.valorMinimo)} + ${moeda(r.kmAdicional)}/km`;
+}
+
+const TIPO_PROMOCAO ={ DESCONTO_PERCENTUAL: "Desconto percentual", CUPOM_FIXO: "Cupom de valor fixo", FRETE_GRATIS: "Frete grátis" };
 
 // Cada cadastro simples é descrito aqui: rota na API, campos do formulário e colunas da tabela.
 // `area` define quem pode editar (ver ESCRITA_POR_PERMISSAO em auth.jsx).
 const CADASTROS = [
   {
     chave: "tabela-preco-km", titulo: "Tabela de preço por KM", area: "precificacao",
-    descricao: "Usada no cálculo automático quando vinculada a um comércio (Cadastros › Comércio › aba Preços); tem prioridade sobre a precificação padrão.",
+    descricao: "Cadastre vários km e valores (faixas). Usada no cálculo automático quando vinculada a um comércio (Cadastros › Comércio › aba Preços); tem prioridade sobre a precificação padrão. O km é a distância da rota (Google Maps, quando configurado).",
+    rotuloItem: "tabela de preço",
+    modalLargo: true,
+    padrao: { tipoCalculo: "FAIXAS", tipoRetorno: "PORCENTAGEM" },
     campos: [
-      { nome: "nome", rotulo: "Nome", obrigatorio: true, largo: true },
-      { nome: "tipoCalculo", rotulo: "Cálculo", tipo: "select", obrigatorio: true, opcoes: opcoes({ DESLOCAMENTO: "Por deslocamento (km)", FIXO: "Valor fixo" }) },
-      { nome: "valorMinimo", rotulo: "Valor mínimo (R$)", tipo: "number" },
-      { nome: "kmAdicional", rotulo: "Valor por km (R$)", tipo: "number" },
+      { nome: "nome", rotulo: "Nome", obrigatorio: true, largo: true, placeholder: "Ex.: Tabela Centro, Tabela Moto" },
+      { nome: "tipoCalculo", rotulo: "Cálculo", tipo: "select", obrigatorio: true, largo: true, opcoes: opcoes(TIPO_CALCULO_KM) },
+      { nome: "valorMinimo", tipo: "number", rotulo: v => (v.tipoCalculo === "FIXO" ? "Valor fixo (R$)" : "Valor mínimo (R$)") },
+      {
+        nome: "kmAdicional", tipo: "number", mostrar: v => v.tipoCalculo !== "FIXO",
+        rotulo: v => (v.tipoCalculo === "FAIXAS" ? "Valor por km acima da última faixa (R$)" : "Valor por km (R$)"),
+      },
       { nome: "valorPorPonto", rotulo: "Valor por ponto (R$)", tipo: "number" },
       { nome: "valorMultiplo", rotulo: "Valor múltiplo (R$)", tipo: "number" },
       { nome: "tipoRetorno", rotulo: "Tipo de retorno", tipo: "select", obrigatorio: true, opcoes: opcoes({ PORCENTAGEM: "Porcentagem", VALOR_FIXO: "Valor fixo" }) },
       { nome: "retorno", rotulo: "Retorno", tipo: "number" },
     ],
+    // Faixas ficam fora da grade de campos: editor próprio, visível no cálculo "Por faixas de km".
+    Extra: ({ valores, onChange }) => (valores.tipoCalculo === "FAIXAS" ? <EditorFaixas valores={valores} onChange={onChange} /> : null),
+    valoresExtras: r => ({ faixas: r.faixas?.length ? r.faixas.map(f => ({ ateKm: f.ateKm, valor: f.valor })) : [{ ateKm: "", valor: "" }] }),
+    corpoExtra: v => (v.tipoCalculo === "FAIXAS" ? { faixas: (v.faixas || []).filter(f => f.ateKm !== "" || f.valor !== "") } : {}),
     colunas: [
-      { rotulo: "Nome", valor: r => r.nome },
-      { rotulo: "Cálculo", valor: r => (r.tipoCalculo === "FIXO" ? "Fixo" : "Deslocamento") },
-      { rotulo: "Mínimo", valor: r => moeda(r.valorMinimo), num: true },
-      { rotulo: "Por km", valor: r => moeda(r.kmAdicional), num: true },
+      { rotulo: "Nome", valor: r => <strong>{r.nome}</strong> },
+      { rotulo: "Cálculo", valor: r => (r.tipoCalculo === "FAIXAS" ? `Faixas (${(r.faixas || []).length})` : TIPO_CALCULO_KM[r.tipoCalculo]) },
+      { rotulo: "Valores", valor: resumoTabelaKm },
+      { rotulo: "Acima / por km", valor: r => (r.tipoCalculo === "FIXO" ? "—" : moeda(r.kmAdicional)), num: true },
     ],
   },
   {
@@ -228,9 +319,13 @@ function ListaCadastro({ def, pode }) {
   const [editando, setEditando] = useState(null); // null | { registro?, valores }
   const { executar, ocupado } = useAcao();
 
+  // Campos extras fora da grade (ex.: faixas da tabela de km) entram por valoresExtras/corpoExtra.
+  const valoresPara = (r = {}) => ({ ...valoresDoRegistro(def.campos, r, r.id ? {} : def.padrao), ...(def.valoresExtras?.(r) || {}) });
+  const camposVisiveis = valores => def.campos.filter(c => !c.mostrar || c.mostrar(valores));
+
   async function salvar(e) {
     e.preventDefault();
-    const corpo = prepararValores(def.campos, editando.valores);
+    const corpo = { ...prepararValores(def.campos, editando.valores), ...(def.corpoExtra?.(editando.valores) || {}) };
     const id = editando.registro?.id;
     const r = await executar(
       () => (id ? api.put(`/cadastro/${def.chave}/${id}`, corpo) : api.post(`/cadastro/${def.chave}`, corpo)),
@@ -251,7 +346,7 @@ function ListaCadastro({ def, pode }) {
       <div className="cartao-topo">
         <span className="apagado">{dados ? `${dados.length} registro(s)` : ""}</span>
         {pode && (
-          <Botao pequeno variante="primario" onClick={() => setEditando({ valores: valoresDoRegistro(def.campos, {}, def.padrao) })}>
+          <Botao pequeno variante="primario" onClick={() => setEditando({ valores: valoresPara() })}>
             + Adicionar
           </Botao>
         )}
@@ -269,7 +364,7 @@ function ListaCadastro({ def, pode }) {
                   {def.colunas.map(c => <td key={c.rotulo} className={c.num ? "num" : ""}>{c.valor(r)}</td>)}
                   {pode && (
                     <td className="acoes-celula">
-                      <Botao pequeno variante="fantasma" onClick={() => setEditando({ registro: r, valores: valoresDoRegistro(def.campos, r) })}>Editar</Botao>
+                      <Botao pequeno variante="fantasma" onClick={() => setEditando({ registro: r, valores: valoresPara(r) })}>Editar</Botao>
                       {!def.excluirNoModal && (
                         <BotaoConfirmar pequeno confirmar="Excluir?" onConfirm={() => excluir(r.id)}>Excluir</BotaoConfirmar>
                       )}
@@ -287,9 +382,11 @@ function ListaCadastro({ def, pode }) {
             ? `${editando.registro ? "Editar" : "Nova"} ${def.rotuloItem}`
             : `${editando.registro ? "Editar" : "Adicionar"} · ${def.titulo}`}
           onFechar={() => setEditando(null)}
+          largo={def.modalLargo}
         >
           <form onSubmit={salvar}>
-            <GradeCampos defs={def.campos} valores={editando.valores} onChange={valores => setEditando({ ...editando, valores })} />
+            <GradeCampos defs={camposVisiveis(editando.valores)} valores={editando.valores} onChange={valores => setEditando({ ...editando, valores })} />
+            {def.Extra && <def.Extra valores={editando.valores} onChange={valores => setEditando({ ...editando, valores })} />}
             <div className="form-rodape">
               {def.excluirNoModal && editando.registro && (
                 <span className="rodape-esquerda">

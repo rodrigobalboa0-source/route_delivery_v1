@@ -78,7 +78,12 @@ export default function NovaEntrega() {
             {Object.entries(VEICULOS).map(([k, r]) => <option key={k} value={k}>{r}</option>)}
           </select>
           <Botao disabled={!v.comercioId || !v.endereco || ocupado} onClick={calcular}>Calcular distância e valor</Botao>
-          {calculo && <span className="sucesso-inline">✓ {km(calculo.distanciaKm)} de percurso · {moeda(calculo.valor)}</span>}
+          {calculo && (
+            <span className="sucesso-inline">
+              ✓ {km(calculo.distanciaKm)} de percurso · {moeda(calculo.valor)}
+              {calculo.fonte && <span className="apagado"> · rota pelo {calculo.fonte === "google" ? "Google Maps" : "OpenStreetMap"}</span>}
+            </span>
+          )}
         </div>
         <div className="grade-campos" style={{ marginTop: 12 }}>
           <Campo rotulo="Valor da entrega (R$)" dica="Em branco = cálculo automático ao criar.">

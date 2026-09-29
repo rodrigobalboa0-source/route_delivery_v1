@@ -2,7 +2,81 @@ import { useState } from "react";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { useApi } from "../hooks/useApi";
-import { Botao, Cabecalho, Carregando, ErroCaixa, GradeCampos, prepararValores, useAcao } from "../components/ui";
+import { Badge, Botao, BotaoConfirmar, Cabecalho, Campo, Carregando, ErroCaixa, GradeCampos, prepararValores, useAcao } from "../components/ui";
+
+// Google Maps: usado SÓ para localizar endereços e medir o km da rota (preço da entrega).
+// Os mapas do painel continuam no OpenStreetMap. Sem chave, o cálculo usa o OpenStreetMap (gratuito).
+function GoogleMaps({ dados, setDados, pode }) {
+  const [chave, setChave] = useState("");
+  const [teste, setTeste] = useState({ origem: "", destino: "" });
+  const [resultado, setResultado] = useState(null);
+  const { executar, ocupado } = useAcao();
+  const g = dados?.googleMaps;
+
+  async function salvar(e) {
+    e.preventDefault();
+    const r = await executar(() => api.put("/configuracoes/google-maps", { chave }), "Chave do Google Maps salva.");
+    if (r) { setDados(r); setChave(""); setResultado(null); }
+  }
+
+  async function testar(e) {
+    e.preventDefault();
+    setResultado(null);
+    const r = await executar(() => api.post("/configuracoes/google-maps/testar", teste));
+    if (r) setResultado(r);
+  }
+
+  return (
+    <section className="cartao">
+      <div className="cartao-topo"><h2>Google Maps (cálculo do km)</h2></div>
+      {!dados ? <Carregando /> : (
+        <>
+          <div className="google-status">
+            {g?.configurada
+              ? <Badge tom="ok">● Ativo — chave terminada em …{g.final}</Badge>
+              : g?.viaVariavel
+                ? <Badge tom="ok">● Ativo (chave na variável do servidor)</Badge>
+                : <Badge tom="apagado">Não configurado — usando OpenStreetMap (gratuito)</Badge>}
+            <span className="apagado">Usado só para localizar endereços e medir o km da rota. O mapa do painel não muda.</span>
+          </div>
+
+          {pode && (
+            <form onSubmit={salvar} className="linha-acao">
+              <input type="password" autoComplete="off" value={chave} onChange={e => setChave(e.target.value)}
+                placeholder={g?.configurada ? "Colar uma nova chave para trocar" : "Cole aqui a chave da API (começa com AIza…)"} aria-label="Chave da API do Google Maps" style={{ flex: 1, minWidth: 0 }} />
+              <button type="submit" className="btn btn-primario" disabled={ocupado || chave.trim().length < 30}>Salvar chave</button>
+              {g?.configurada && (
+                <BotaoConfirmar confirmar="Remover a chave?" onConfirm={async () => { const r = await executar(() => api.del("/configuracoes/google-maps"), "Chave removida — voltando ao OpenStreetMap."); if (r) { setDados(r); setResultado(null); } }}>Remover</BotaoConfirmar>
+              )}
+            </form>
+          )}
+
+          {(g?.configurada || g?.viaVariavel) && pode && (
+            <form onSubmit={testar} className="google-teste">
+              <Campo rotulo="Testar: endereço de origem"><input value={teste.origem} onChange={e => setTeste({ ...teste, origem: e.target.value })} placeholder="Ex.: Av. Paulista, 1000, São Paulo" required /></Campo>
+              <Campo rotulo="Endereço de destino"><input value={teste.destino} onChange={e => setTeste({ ...teste, destino: e.target.value })} placeholder="Ex.: Rua Augusta, 500, São Paulo" required /></Campo>
+              <button type="submit" className="btn" disabled={ocupado}>Calcular rota</button>
+            </form>
+          )}
+          {resultado && <div className="sucesso-caixa" style={{ marginTop: 10 }}>✓ O Google calculou a rota: <strong>{String(resultado.distanciaKm).replace(".", ",")} km</strong>. Está funcionando.</div>}
+
+          {!g?.configurada && (
+            <details style={{ marginTop: 12 }}>
+              <summary className="link">Como conseguir a chave do Google Maps</summary>
+              <ol className="google-passos">
+                <li>Acesse <strong>console.cloud.google.com/google/maps-apis</strong> e entre com uma conta Google.</li>
+                <li>Crie um projeto e ative o <strong>faturamento</strong> (o Google exige cartão; há uma cota mensal gratuita).</li>
+                <li>Em <strong>APIs e serviços</strong>, ative a <strong>Geocoding API</strong> e a <strong>Routes API</strong>.</li>
+                <li>Em <strong>Credenciais</strong>, crie uma <strong>chave de API</strong> e restrinja-a a essas duas APIs.</li>
+                <li>Cole a chave acima e clique em <strong>Salvar chave</strong>; depois use o teste para conferir.</li>
+              </ol>
+            </details>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
 
 // Os canais de notificação ficam salvos como preferência; o envio real depende de
 // integrar um provedor (push/e-mail/SMS) no backend.
@@ -185,6 +259,7 @@ export default function Configuracoes() {
         )}
       </section>
       <RegrasSaque pode={pode} />
+      <GoogleMaps dados={dados} setDados={setDados} pode={pode} />
       <DadosEmpresa dados={dados} setDados={setDados} pode={pode} />
     </>
   );

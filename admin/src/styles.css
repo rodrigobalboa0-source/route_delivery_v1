@@ -1013,3 +1013,19 @@ code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-siz
 .seletor-status option { background: var(--superficie); color: var(--texto); font-weight: 400; }
 .pronto-ok { color: var(--ok); font-size: 12.5px; font-weight: 600; white-space: nowrap; }
 .linha-status { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-size: 13px; color: var(--texto-2); }
+/* Tabela de preço por KM — editor de faixas */
+.faixas-km { margin-top: 14px; padding: 12px; border: 1px solid var(--borda); border-radius: var(--raio-sm); background: var(--superficie-2); display: grid; gap: 9px; }
+.faixas-topo { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
+.faixas-km table { background: var(--superficie); }
+.faixas-km td input { width: 100%; min-width: 0; max-width: 150px; }
+.faixas-km td:first-child { white-space: nowrap; font-size: 12px; }
+.faixas-simular { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding-top: 6px; border-top: 1px dashed var(--borda); font-size: 13px; }
+.faixas-simular input { width: 90px; margin: 0 4px; }
+.faixas-simular strong { font-size: 15px; color: var(--primaria); font-variant-numeric: tabular-nums; }
+.aviso-texto { color: var(--aviso); font-size: 12.5px; margin: 0; }
+
+/* Configurações › Google Maps */
+.google-status { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 12px; }
+.google-passos { margin: 6px 0 0; padding-left: 18px; font-size: 12.5px; color: var(--texto-2); display: grid; gap: 3px; }
+.google-teste { display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; align-items: end; margin-top: 10px; }
+@media (max-width: 700px) { .google-teste { grid-template-columns: 1fr; } }

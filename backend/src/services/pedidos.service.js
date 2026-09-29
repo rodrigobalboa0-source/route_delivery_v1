@@ -94,6 +94,7 @@ async function calcularEntrega({ comercioId, endereco, veiculo = "MOTO" }) {
     valor: Number(valor.toFixed(2)),
     destino,
     calculadoPorPercurso: true,
+    fonte: destino.fonte || null, // "google" (Google Maps) ou "openstreetmap"
   };
 }
 
