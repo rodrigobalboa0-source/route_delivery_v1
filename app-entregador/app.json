@@ -16,7 +16,11 @@
       "adaptiveIcon": {
         "backgroundColor": "#0b1628",
         "foregroundImage": "./assets/android-icon-foreground.png"
-      }
+      },
+      "permissions": [
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -27,7 +31,14 @@
         {
           "locationWhenInUsePermission": "O Route Entregador usa sua localização para mostrar corridas perto de você e acompanhar as entregas enquanto você está online."
         }
-      ]
-    ]
+      ],
+      "expo-font"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "d1c0f24d-df94-46d7-9e37-f790a2bd753e"
+      }
+    },
+    "owner": "routedelivery"
   }
 }
