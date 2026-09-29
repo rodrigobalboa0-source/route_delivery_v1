@@ -30,7 +30,8 @@ router.post(
     const { email, senha } = req.body;
     if (!email || !senha) return res.status(400).json({ erro: 'Informe "email" e "senha".' });
 
-    const entregador = await prisma.entregador.findUnique({ where: { email } });
+    // E-mail sem diferenciar maiúsculas/minúsculas (o celular costuma colocar a 1ª letra maiúscula).
+    const entregador = await prisma.entregador.findFirst({ where: { email: { equals: String(email).trim(), mode: "insensitive" } } });
     if (!entregador?.senhaHash || !(await bcrypt.compare(senha, entregador.senhaHash))) {
       return res.status(401).json({ erro: "Credenciais inválidas." });
     }

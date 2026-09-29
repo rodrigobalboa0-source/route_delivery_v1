@@ -1,0 +1,33 @@
+{
+  "expo": {
+    "name": "Route Entregador",
+    "slug": "route-entregador",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0b1628",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.routedelivery.entregador"
+    },
+    "android": {
+      "package": "com.routedelivery.entregador",
+      "adaptiveIcon": {
+        "backgroundColor": "#0b1628",
+        "foregroundImage": "./assets/android-icon-foreground.png"
+      }
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "O Route Entregador usa sua localização para mostrar corridas perto de você e acompanhar as entregas enquanto você está online."
+        }
+      ]
+    ]
+  }
+}
