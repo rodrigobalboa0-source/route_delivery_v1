@@ -11,3 +11,6 @@ node_modules
 route
 .git
 *.log
+skills-lock.json
+.agents
+.claude
