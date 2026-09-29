@@ -14,11 +14,11 @@ const router = express.Router();
 router.post(
   "/calcular",
   asyncHandler(async (req, res) => {
-    const { comercioId, endereco, veiculo, destino, retorno } = req.body;
+    const { comercioId, endereco, veiculo, destino, destinoAprox, retorno } = req.body;
     if (!comercioId || !endereco) {
       return res.status(400).json({ erro: 'Informe "comercioId" e "endereco".' });
     }
-    res.json(await calcularEntrega({ comercioId, endereco, veiculo, destino, retorno: !!retorno }));
+    res.json(await calcularEntrega({ comercioId, endereco, veiculo, destino, destinoAprox, retorno: !!retorno }));
   })
 );
 

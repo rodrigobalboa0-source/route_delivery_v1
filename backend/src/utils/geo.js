@@ -207,29 +207,60 @@ function formatarPhoton(f, numero) {
   };
 }
 
-// Devolve até 6 sugestões { titulo, subtitulo, endereco, rua, numero, bairro, cidade, uf, cep, lat, lng, exato }.
-async function buscarEnderecos(q, perto) {
-  const texto = String(q || "").trim().slice(0, 150);
-  if (texto.length < 3) return [];
-  const chave = `${texto.toLowerCase()}|${perto ? `${perto.lat.toFixed(1)},${perto.lng.toFixed(1)}` : ""}`;
-  const guardado = cacheBusca.get(chave);
-  if (guardado && Date.now() - guardado.em < CACHE_BUSCA_MS) return guardado.itens;
+const semAcento = s => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+// Abreviações comuns digitadas pelas lojas.
+const ABREVIACOES = [[/^av\.?\s/i, "Avenida "], [/^r\.?\s/i, "Rua "], [/^al\.?\s/i, "Alameda "], [/^tv\.?\s/i, "Travessa "], [/^estr\.?\s/i, "Estrada "], [/^rod\.?\s/i, "Rodovia "], [/^pc\.?\s|^pca\.?\s|^pça\.?\s/i, "Praça "]];
+const PALAVRAS_TIPO = new Set(["rua", "avenida", "alameda", "travessa", "estrada", "rodovia", "praca", "largo", "via", "de", "da", "do", "das", "dos", "e"]);
 
+async function consultarPhoton(texto, perto) {
   const params = new URLSearchParams({ q: texto, limit: "10", bbox: BBOX_BRASIL });
   if (perto?.lat != null && perto?.lng != null) { params.set("lat", perto.lat); params.set("lon", perto.lng); }
   const resp = await buscar(`${PHOTON_URL}?${params}`, { headers: { "User-Agent": "RouteDelivery/1.0 (sistema de entregas)" } });
   if (!resp.ok) throw new Error("Serviço de endereços indisponível no momento.");
-  const data = await resp.json();
+  return (await resp.json()).features || [];
+}
+
+// Devolve até 6 sugestões { titulo, subtitulo, endereco, rua, numero, bairro, cidade, uf, cep, lat, lng, exato }.
+// Com número digitado, busca também só a rua (o Photon se perde com o número) e completa com o número;
+// as sugestões cujo nome bate com as palavras digitadas vêm primeiro.
+async function buscarEnderecos(q, perto) {
+  let texto = String(q || "").trim().slice(0, 150);
+  if (texto.length < 3) return [];
+  for (const [re, por] of ABREVIACOES) texto = texto.replace(re, por);
+  const chave = `${texto.toLowerCase()}|${perto ? `${perto.lat.toFixed(1)},${perto.lng.toFixed(1)}` : ""}`;
+  const guardado = cacheBusca.get(chave);
+  if (guardado && Date.now() - guardado.em < CACHE_BUSCA_MS) return guardado.itens;
+
   const numero = numeroDigitado(texto);
+  const semNumero = numero ? texto.replace(new RegExp(`(^|[\\s,])${numero}(?=[\\s,-]|$)`), " ").replace(/\s+/g, " ").replace(/[\s,]+$/, "").trim() : null;
+  const [comNum, soRua] = await Promise.all([
+    consultarPhoton(texto, perto),
+    semNumero && semNumero.length >= 3 ? consultarPhoton(semNumero, perto).catch(() => []) : Promise.resolve([]),
+  ]);
+
+  // Palavras que identificam a rua (sem número, sem "rua/avenida/de/da"...).
+  const palavras = semAcento(semNumero || texto).split(/[\s,.-]+/).filter(p => p.length > 1 && !PALAVRAS_TIPO.has(p) && !/^\d+$/.test(p));
+  const nota = e => {
+    if (!palavras.length) return 0;
+    const alvo = semAcento(`${e.rua || ""} ${e.titulo || ""}`);
+    const achou = palavras.filter(p => alvo.includes(p)).length / palavras.length;
+    return achou + (e.exato ? 0.2 : 0) + (numero && e.numero === numero ? 0.3 : 0);
+  };
+
   const vistos = new Set();
-  const itens = [];
-  for (const f of data.features || []) {
+  const todos = [];
+  [...comNum, ...soRua].forEach((f, ordem) => {
     const e = formatarPhoton(f, numero);
-    if (!e || vistos.has(e.endereco.toLowerCase())) continue;
+    if (!e || vistos.has(e.endereco.toLowerCase())) return;
     vistos.add(e.endereco.toLowerCase());
-    itens.push(e);
-    if (itens.length === 6) break;
-  }
+    todos.push({ e, ordem, nota: nota(e) });
+  });
+  const temBom = todos.some(x => x.nota >= 0.99);
+  const itens = todos
+    .filter(x => !temBom || x.nota >= 0.5) // se há sugestões com a rua certa, esconde as que não têm nada a ver
+    .sort((a, b) => b.nota - a.nota || a.ordem - b.ordem)
+    .slice(0, 6)
+    .map(x => x.e);
   if (cacheBusca.size > 1000) cacheBusca.clear();
   cacheBusca.set(chave, { em: Date.now(), itens });
   return itens;

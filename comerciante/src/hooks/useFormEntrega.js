@@ -11,6 +11,7 @@ import { moeda } from "../utils/format";
 export function useFormEntrega({ vazio, onPrevia = () => {} }) {
   const [v, setV] = useState(vazio);
   const [destino, setDestino] = useState(null);       // { lat, lng } escolhido na busca / do cliente salvo
+  const [aprox, setAprox] = useState(null);           // posição só da rua (número não achado no mapa)
   const [retorno, setRetornoEstado] = useState(false);
   const [veiculo, setVeiculoEstado] = useState("MOTO");
   const [calculo, setCalculo] = useState(null);
@@ -18,7 +19,7 @@ export function useFormEntrega({ vazio, onPrevia = () => {} }) {
   const { executar, ocupado } = useAcao();
   const foneBuscado = useRef("");
   const atual = useRef({});
-  atual.current = { v, destino, retorno, veiculo };
+  atual.current = { v, destino, aprox, retorno, veiculo };
 
   async function calcular(opc = {}) {
     const a = atual.current;
@@ -27,6 +28,7 @@ export function useFormEntrega({ vazio, onPrevia = () => {} }) {
     const r = await executar(() => api.post("/pedidos/calcular", {
       endereco,
       destino: opc.destino !== undefined ? opc.destino : a.destino,
+      destinoAprox: opc.aprox !== undefined ? opc.aprox : a.aprox,
       retorno: opc.retorno ?? a.retorno,
       veiculo: opc.veiculo ?? a.veiculo,
     }));
@@ -42,8 +44,9 @@ export function useFormEntrega({ vazio, onPrevia = () => {} }) {
     foneBuscado.current = soDigitos(c.telefone);
     setV(a => ({ ...a, clienteNome: c.nome, clienteTelefone: mascaraTelefone(c.telefone), endereco: c.endereco, complemento: c.complemento || "" }));
     setDestino(pos);
+    setAprox(null);
     setCliente({ salvo: true, c });
-    calcular({ endereco: c.endereco, destino: pos, nome: c.nome });
+    calcular({ endereco: c.endereco, destino: pos, aprox: null, nome: c.nome });
   }
 
   async function mudarTelefone(texto) {
@@ -62,15 +65,17 @@ export function useFormEntrega({ vazio, onPrevia = () => {} }) {
   function mudar(campo, valor) {
     if (campo === "clienteTelefone") return mudarTelefone(valor);
     setV(a => ({ ...a, [campo]: valor }));
-    if (campo === "endereco") { setDestino(null); setCalculo(null); onPrevia(null); }
+    if (campo === "endereco") { setDestino(null); setAprox(null); setCalculo(null); onPrevia(null); }
   }
 
   function escolherEndereco(e) {
     const pos = e.exato ? { lat: e.lat, lng: e.lng } : null; // só a rua: o cálculo localiza o número
+    const ap = e.exato ? null : { lat: e.lat, lng: e.lng };  // …e usa a posição da rua se não achar
     setV(a => ({ ...a, endereco: e.endereco }));
     setDestino(pos);
+    setAprox(ap);
     if (pos) onPrevia({ lat: pos.lat, lng: pos.lng, rotulo: atual.current.v.clienteNome || "Destino" });
-    calcular({ endereco: e.endereco, destino: pos });
+    calcular({ endereco: e.endereco, destino: pos, aprox: ap });
   }
 
   function setRetorno(x) {
@@ -83,13 +88,13 @@ export function useFormEntrega({ vazio, onPrevia = () => {} }) {
   }
 
   function limpar(novoVazio = vazio) {
-    setV(novoVazio); setDestino(null); setRetornoEstado(false); setCalculo(null); setCliente(null);
+    setV(novoVazio); setDestino(null); setAprox(null); setRetornoEstado(false); setCalculo(null); setCliente(null);
     foneBuscado.current = "";
     onPrevia(null);
   }
 
   // Corpo para POST /pedidos
-  const corpo = extra => ({ ...v, destino, retorno, veiculo, ...extra });
+  const corpo = extra => ({ ...v, destino, destinoAprox: aprox, retorno, veiculo, ...extra });
 
   return { v, setV, mudar, escolherEndereco, aplicarCliente, calcular, calculo, cliente, retorno, setRetorno, veiculo, setVeiculo, destino, limpar, corpo, executar, ocupado };
 }

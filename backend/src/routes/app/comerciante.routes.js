@@ -261,8 +261,8 @@ router.post(
   "/pedidos/calcular",
   asyncHandler(async (req, res) => {
     if (!req.body.endereco) return res.status(400).json({ erro: 'Informe o "endereco".' });
-    const { endereco, veiculo, destino, retorno } = req.body;
-    res.json(await calcularEntrega({ comercioId: req.comercio.id, endereco, veiculo, destino, retorno: !!retorno }));
+    const { endereco, veiculo, destino, destinoAprox, retorno } = req.body;
+    res.json(await calcularEntrega({ comercioId: req.comercio.id, endereco, veiculo, destino, destinoAprox, retorno: !!retorno }));
   })
 );
 
@@ -271,11 +271,11 @@ router.post(
   "/pedidos",
   asyncHandler(async (req, res) => {
     const { clienteNome, clienteTelefone, endereco, complemento, retorno, agendadoPara, prazoDesejado, formaPagamento, observacao,
-      notaFiscalNumero, notaFiscalChave, notaFiscalValor, destino, veiculo } = req.body;
+      notaFiscalNumero, notaFiscalChave, notaFiscalValor, destino, destinoAprox, veiculo } = req.body;
     // (o valor é sempre calculado pelo sistema — a loja não define o preço)
     const pedido = await criarPedido(
       { comercioId: req.comercio.id, clienteNome, clienteTelefone, endereco, complemento, retorno, agendadoPara, prazoDesejado, formaPagamento, observacao,
-        notaFiscalNumero, notaFiscalChave, notaFiscalValor, destino, veiculo },
+        notaFiscalNumero, notaFiscalChave, notaFiscalValor, destino, destinoAprox, veiculo },
       "SISTEMA_COMERCIANTE",
       autorComerciante(req)
     );

@@ -106,13 +106,16 @@ async function localizarDestino(comercioId, endereco) {
 // preço por KM vinculada ao modal escolhido, ela tem prioridade sobre a padrão.
 // `destino` ({ lat, lng }) = posição escolhida na busca de endereços (dispensa localizar de novo).
 // `retorno` = entrega com retorno à loja: acréscimo de Configurações › % do retorno (padrão 20%).
-async function calcularEntrega({ comercioId, endereco, veiculo = "MOTO", destino: informado, retorno = false }) {
+// `destinoAprox` = posição da rua (a busca achou a rua, não o número): usada se o número não for localizado.
+async function calcularEntrega({ comercioId, endereco, veiculo = "MOTO", destino: informado, destinoAprox, retorno = false }) {
   const { comercio, origem } = await carregarComercioComOrigem(comercioId);
   if (!origem || origem.lat == null || origem.lng == null) {
     throw erroHttp(422, "Este comércio ainda não tem um endereço com coordenadas cadastradas.");
   }
 
-  const destino = posicaoInformada(informado) || await geocodificarEndereco(enderecoComCidade(endereco, origem));
+  const destino = posicaoInformada(informado)
+    || await geocodificarEndereco(enderecoComCidade(endereco, origem)).catch(() => null)
+    || posicaoInformada(destinoAprox);
   if (!destino) throw erroHttp(422, "Endereço de destino não encontrado.");
 
   const distanciaKm = await calcularDistanciaRotaKm({ lat: origem.lat, lng: origem.lng }, destino);
@@ -161,13 +164,13 @@ async function criarPedido(dados, origem, autor = { autorTipo: "SISTEMA", autorN
   let calculo = null;
   let enderecoNaoEncontrado = false;
   try {
-    calculo = await calcularEntrega({ comercioId, endereco, veiculo: dados.veiculo || "MOTO", destino: posicao, retorno });
+    calculo = await calcularEntrega({ comercioId, endereco, veiculo: dados.veiculo || "MOTO", destino: posicao, destinoAprox: dados.destinoAprox, retorno });
   } catch (err) {
     calculo = null;
     enderecoNaoEncontrado = err.message === "Endereço de destino não encontrado.";
   }
   // Sem rota (serviço de rotas fora do ar), ainda tenta guardar a posição do destino para o mapa.
-  const destino = calculo?.destino || posicao || (enderecoNaoEncontrado ? null : await localizarDestino(comercioId, endereco));
+  const destino = calculo?.destino || posicao || posicaoInformada(dados.destinoAprox) || (enderecoNaoEncontrado ? null : await localizarDestino(comercioId, endereco));
   // Valor digitado (painel ADM) vale como está; calculado já inclui o acréscimo do retorno.
   const valorManual = dados.valor != null && dados.valor !== "";
 

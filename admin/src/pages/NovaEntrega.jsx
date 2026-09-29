@@ -22,6 +22,7 @@ export default function NovaEntrega() {
   const [veiculo, setVeiculo] = useState("MOTO");
   const [retorno, setRetorno] = useState(false);
   const [destino, setDestino] = useState(null); // posição escolhida na busca
+  const [aprox, setAprox] = useState(null);     // posição só da rua (se o número não for localizado)
   const [calculo, setCalculo] = useState(null);
   const [cliente, setCliente] = useState(null); // { salvo, c } | { novo }
   const { executar, ocupado } = useAcao();
@@ -36,7 +37,8 @@ export default function NovaEntrega() {
   async function calcular(opc = {}) {
     const corpo = {
       comercioId: opc.comercioId ?? v.comercioId, endereco: opc.endereco ?? v.endereco, veiculo: opc.veiculo ?? veiculo,
-      destino: opc.destino !== undefined ? opc.destino : destino, retorno: opc.retorno ?? retorno,
+      destino: opc.destino !== undefined ? opc.destino : destino, destinoAprox: opc.aprox !== undefined ? opc.aprox : aprox,
+      retorno: opc.retorno ?? retorno,
     };
     if (!corpo.comercioId || !corpo.endereco) return;
     const r = await executar(() => api.post("/nova-entrega/calcular", corpo));
@@ -60,20 +62,23 @@ export default function NovaEntrega() {
     const pos = c.lat != null ? { lat: c.lat, lng: c.lng } : null;
     setV(a => ({ ...a, clienteNome: c.nome, endereco: c.endereco, complemento: c.complemento || "" }));
     setDestino(pos);
+    setAprox(null);
     setCliente({ salvo: true, c });
-    calcular({ endereco: c.endereco, destino: pos });
+    calcular({ endereco: c.endereco, destino: pos, aprox: null });
   }
 
   function escolherEndereco(e) {
     const pos = e.exato ? { lat: e.lat, lng: e.lng } : null;
+    const ap = e.exato ? null : { lat: e.lat, lng: e.lng };
     setV(a => ({ ...a, endereco: e.endereco }));
     setDestino(pos);
-    calcular({ endereco: e.endereco, destino: pos });
+    setAprox(ap);
+    calcular({ endereco: e.endereco, destino: pos, aprox: ap });
   }
 
   async function criar(e) {
     e.preventDefault();
-    const r = await executar(() => api.post("/nova-entrega", { ...v, destino, retorno, veiculo }), `Pedido criado.`);
+    const r = await executar(() => api.post("/nova-entrega", { ...v, destino, destinoAprox: aprox, retorno, veiculo }), `Pedido criado.`);
     if (r) navegar(`/operacao?abrir=${r.id}`);
   }
 
@@ -119,7 +124,7 @@ export default function NovaEntrega() {
               comercioId={v.comercioId}
               rotulo="Endereço de entrega"
               obrigatorio
-              onChange={t => { setV(a => ({ ...a, endereco: t })); setDestino(null); setCalculo(null); }}
+              onChange={t => { setV(a => ({ ...a, endereco: t })); setDestino(null); setAprox(null); setCalculo(null); }}
               onEscolher={escolherEndereco}
             />
           </Campo>
