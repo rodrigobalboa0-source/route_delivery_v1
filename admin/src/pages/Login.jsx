@@ -61,7 +61,7 @@ function CapaAcesso() {
         </g>
       </svg>
       <div className="capa-texto">
-        <span className="capa-selo">Route Delivery</span>
+        <img src="/logo-route-delivery.png" alt="Route Delivery" className="capa-logo" />
         <h2>Do pedido à porta do cliente, tudo sob controle.</h2>
         <ul>
           <li>Pedidos e entregadores em tempo real no mapa</li>
@@ -79,7 +79,7 @@ export function TelaAcesso({ titulo, subtitulo, children }) {
       <CapaAcesso />
       <div className="acesso-cartao">
         <div className="marca marca-acesso">
-          <span className="marca-logo" aria-hidden="true">R</span>
+          <span className="marca-selo" aria-hidden="true"><img src="/logo-leao.png" alt="" /></span>
           <div>
             <strong>Route Delivery</strong>
             <small>Painel administrativo</small>

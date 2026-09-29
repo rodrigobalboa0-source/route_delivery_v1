@@ -112,6 +112,16 @@ img { max-width: 100%; }
   overflow-y: auto;
 }
 .marca { display: flex; align-items: center; gap: 9px; padding: 3.5px 7px 16px; }
+/* Logo Route Delivery (imagem com fundo transparente) no topo do menu */
+.marca-imagem { flex-direction: column; align-items: flex-start; gap: 2px; padding: 0 4px 14px; }
+.marca-img { display: block; width: 100%; max-width: 190px; height: auto; }
+.marca-imagem small { color: var(--menu-texto); padding-left: 3px; }
+/* Selo escuro com o leão (usado sobre fundo claro, onde a juba escura sumiria) */
+.marca-selo {
+  width: 44px; height: 44px; flex: 0 0 44px; border-radius: 11px; background: #0b1628;
+  display: grid; place-items: center; box-shadow: 0 2px 6px rgba(11, 22, 40, 0.35);
+}
+.marca-selo img { width: 38px; height: 38px; object-fit: contain; }
 .marca strong { display: block; color: #fff; font-size: 13px; }
 .marca small { display: block; font-size: 11px; opacity: 0.75; }
 .marca-logo {
@@ -877,11 +887,7 @@ code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-siz
   position: absolute; left: clamp(16px, 6vw, 96px); top: clamp(24px, 11vh, 110px);
   max-width: min(440px, 38vw); color: #fff;
 }
-.capa-selo {
-  display: inline-block; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
-  color: #9fcbff; background: rgba(77, 163, 255, 0.14); border: 1px solid rgba(77, 163, 255, 0.35);
-  border-radius: 999px; padding: 4px 12px;
-}
+.capa-logo { display: block; width: min(320px, 100%); height: auto; margin-left: -6px; filter: drop-shadow(0 6px 18px rgba(0, 0, 0, 0.35)); }
 .capa-texto h2 { font-size: clamp(24px, 2.6vw, 34px); line-height: 1.2; font-weight: 750; margin: 14px 0 16px; color: #fff; }
 .capa-texto ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 9px; }
 .capa-texto li { position: relative; padding-left: 24px; font-size: 14px; color: #c9d7ea; }

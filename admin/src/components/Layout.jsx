@@ -168,12 +168,9 @@ export default function Layout() {
   return (
     <div className="app">
       <aside className={`menu ${menuAberto ? "aberto" : ""}`}>
-        <div className="marca">
-          <span className="marca-logo" aria-hidden="true">R</span>
-          <div>
-            <strong>Route Delivery</strong>
-            <small>Painel administrativo</small>
-          </div>
+        <div className="marca marca-imagem">
+          <img src="/logo-route-delivery.png" alt="Route Delivery" className="marca-img" />
+          <small>Painel administrativo</small>
         </div>
         <nav className="menu-lista">
           {MENU.map(i =>
