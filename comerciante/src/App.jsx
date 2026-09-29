@@ -3,9 +3,12 @@ import { useAuth } from "./auth";
 import Layout from "./components/Layout";
 import { Carregando } from "./components/ui";
 import Login from "./pages/Login";
-import Inicio from "./pages/Inicio";
+import Painel from "./pages/Painel";
 import NovaEntrega from "./pages/NovaEntrega";
 import Pedidos from "./pages/Pedidos";
+import Fila from "./pages/Fila";
+import Agendamentos from "./pages/Agendamentos";
+import Devolucoes from "./pages/Devolucoes";
 import Financeiro from "./pages/Financeiro";
 import Mensagens from "./pages/Mensagens";
 import Conta from "./pages/Conta";
@@ -19,14 +22,27 @@ export default function App() {
   return (
     <Routes>
       <Route element={<Layout />}>
-        <Route index element={<Navigate to="/inicio" replace />} />
-        <Route path="inicio" element={<Inicio />} />
-        <Route path="nova-entrega" element={<NovaEntrega />} />
-        <Route path="pedidos" element={<Pedidos />} />
-        <Route path="financeiro" element={<Financeiro />} />
+        <Route index element={<Navigate to="/painel" replace />} />
+        <Route path="painel" element={<Painel />} />
+        <Route path="solicitar" element={<NovaEntrega key="solicitar" />} />
+        <Route path="relatorios">
+          <Route index element={<Navigate to="entregas" replace />} />
+          <Route path="entregas" element={<Pedidos />} />
+          <Route path="financeiro" element={<Financeiro />} />
+        </Route>
+        <Route path="fila" element={<Fila />} />
+        <Route path="agendamentos" element={<Agendamentos />} />
+        <Route path="agendamentos/novo" element={<NovaEntrega key="agendar" agendar />} />
+        <Route path="devolucoes" element={<Devolucoes />} />
         <Route path="mensagens" element={<Mensagens />} />
         <Route path="conta" element={<Conta />} />
-        <Route path="*" element={<Navigate to="/inicio" replace />} />
+
+        {/* Endereços da primeira versão */}
+        <Route path="inicio" element={<Navigate to="/painel" replace />} />
+        <Route path="nova-entrega" element={<Navigate to="/solicitar" replace />} />
+        <Route path="pedidos" element={<Navigate to="/relatorios/entregas" replace />} />
+        <Route path="financeiro" element={<Navigate to="/relatorios/financeiro" replace />} />
+        <Route path="*" element={<Navigate to="/painel" replace />} />
       </Route>
     </Routes>
   );

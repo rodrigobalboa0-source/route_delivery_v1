@@ -197,6 +197,8 @@ function EntregaAtiva({ p, onAtualizar, onErro }) {
       <View style={[st.etapaBloco, !indoParaLoja && st.etapaAtual]}>
         <Text style={st.etapaTitulo}>📍 Entrega · {p.clienteNome}</Text>
         <Text style={st.etapaTexto}>{p.endereco}</Text>
+        {p.complemento ? <Text style={st.etapaTexto}>{p.complemento}</Text> : null}
+        {p.retorno ? <Text style={[st.etapaTexto, { color: cor.aviso, fontWeight: "700" }]}>↩ Com retorno: volte à loja depois de entregar</Text> : null}
       </View>
       <InfoLinha rotulo="Distância" valor={p.distanciaKm != null ? km(p.distanciaKm) : null} />
       <InfoLinha rotulo="Pagamento" valor={p.formaPagamento} />
@@ -225,7 +227,8 @@ function Disponivel({ p, onAceitar, ocupado }) {
         {p.distanciaAteColetaKm != null && <Selo texto={`${km(p.distanciaAteColetaKm)} de você`} />}
       </View>
       <InfoLinha rotulo="Coleta" valor={enderecoLoja(p.comercio)} />
-      <InfoLinha rotulo="Entrega" valor={p.endereco} />
+      <InfoLinha rotulo="Entrega" valor={p.complemento ? `${p.endereco} · ${p.complemento}` : p.endereco} />
+      {p.retorno ? <InfoLinha rotulo="Retorno" valor="Sim — volta à loja depois de entregar" /> : null}
       <InfoLinha rotulo="Percurso" valor={p.distanciaKm != null ? km(p.distanciaKm) : null} />
       <InfoLinha rotulo="Pronto desde" valor={hora(p.prontoEm || p.updatedAt)} />
       <Botao titulo="Aceitar corrida" variante="sucesso" onPress={() => onAceitar(p)} carregando={ocupado} />

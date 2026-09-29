@@ -90,10 +90,16 @@ router.get(
     const mes = new Date(hoje); mes.setDate(1);
     const comercioId = req.comercio.id;
 
-    const [porStatus, entreguesMes, faturasAbertas] = await Promise.all([
+    const [porStatus, entreguesMes, faturasAbertas, agendados, entregadoresOnline] = await Promise.all([
       prisma.pedido.groupBy({ by: ["status"], where: { comercioId, createdAt: { gte: hoje } }, _count: { _all: true } }),
       prisma.pedido.aggregate({ where: { comercioId, status: "ENTREGUE", createdAt: { gte: mes } }, _count: { _all: true }, _sum: { valor: true } }),
       prisma.fatura.aggregate({ where: { comercioId, paga: false }, _sum: { valor: true }, _count: { _all: true } }),
+      prisma.pedido.count({ where: { comercioId, status: "PREPARANDO", agendadoPara: { not: null } } }),
+      // Entregadores online que podem pegar corridas desta loja (só a quantidade).
+      prisma.entregador.count({ where: { online: true, status: "ATIVO", bloqueado: false, OR: [
+        { permissaoColeta: "TODOS_CLIENTES" },
+        { comerciosPermitidos: { some: { comercioId } } },
+      ] } }),
     ]);
 
     const hojePorStatus = {};
@@ -104,6 +110,8 @@ router.get(
       valorNoMes: Number((entreguesMes._sum.valor || 0).toFixed(2)),
       faturasAbertas: faturasAbertas._count._all,
       valorFaturasAbertas: Number((faturasAbertas._sum.valor || 0).toFixed(2)),
+      agendados,
+      entregadoresOnline,
     });
   })
 );
@@ -134,6 +142,8 @@ router.get(
       if (ate) periodo.lte = new Date(`${ate}T23:59:59.999-03:00`);
       e.push(req.query.abertos === "1" ? { OR: [{ createdAt: periodo }, { status: { in: ABERTOS } }] } : { createdAt: periodo });
     }
+    if (req.query.agendados === "1") e.push({ status: "PREPARANDO", agendadoPara: { not: null } });
+    if (req.query.retorno === "1") e.push({ retorno: true });
     if (busca) {
       const q = String(busca).trim();
       e.push({ OR: [
@@ -148,6 +158,25 @@ router.get(
   })
 );
 
+// GET /api/app/comerciante/clientes?busca=.. — clientes que já receberam entregas da loja
+// (para preencher nome, telefone, endereço e complemento de uma vez). Um por cliente+endereço, o mais recente.
+router.get(
+  "/clientes",
+  asyncHandler(async (req, res) => {
+    const q = `%${String(req.query.busca || "").trim().replace(/[%_\\]/g, "\\$&")}%`;
+    const linhas = await prisma.$queryRaw`
+      SELECT * FROM (
+        SELECT DISTINCT ON (lower("clienteNome"), lower("endereco"))
+          "clienteNome" AS nome, "clienteTelefone" AS telefone, "endereco", "complemento", "createdAt"
+        FROM "Pedido"
+        WHERE "comercioId" = ${req.comercio.id}
+          AND ("clienteNome" ILIKE ${q} OR "clienteTelefone" ILIKE ${q} OR "endereco" ILIKE ${q})
+        ORDER BY lower("clienteNome"), lower("endereco"), "createdAt" DESC
+      ) c ORDER BY "createdAt" DESC LIMIT 8`;
+    res.json(linhas.map(({ createdAt, ...c }) => c));
+  })
+);
+
 // GET /api/app/comerciante/mapa — entregas em aberto da loja: destino (cliente) e o entregador com a posição dele
 router.get(
   "/mapa",
@@ -155,8 +184,9 @@ router.get(
     const pedidos = await prisma.pedido.findMany({
       where: { comercioId: req.comercio.id, status: { in: ABERTOS } }, orderBy: { createdAt: "desc" }, take: 100,
       select: {
-        id: true, codigo: true, status: true, clienteNome: true, endereco: true, comercioId: true, latDestino: true, lngDestino: true, createdAt: true,
-        entregador: { select: { id: true, nomeCompleto: true, veiculoTipo: true, telefone: true, lat: true, lng: true, localizacaoEm: true } },
+        id: true, codigo: true, status: true, clienteNome: true, clienteTelefone: true, endereco: true, complemento: true, retorno: true,
+        agendadoPara: true, valor: true, prontoEm: true, comercioId: true, latDestino: true, lngDestino: true, createdAt: true,
+        entregador: { select: { id: true, nomeCompleto: true, fotoUrl: true, veiculoTipo: true, telefone: true, lat: true, lng: true, localizacaoEm: true } },
       },
     });
     localizarPendentes(pedidos);
@@ -164,7 +194,9 @@ router.get(
     res.json({
       loja: { nome: req.comercio.nomeFantasia, lat: loja?.lat ?? null, lng: loja?.lng ?? null },
       pedidos: pedidos.map(p => ({
-        id: p.id, codigo: p.codigo, status: p.status, clienteNome: p.clienteNome, endereco: p.endereco, createdAt: p.createdAt,
+        id: p.id, codigo: p.codigo, status: p.status, clienteNome: p.clienteNome, clienteTelefone: p.clienteTelefone,
+        endereco: p.endereco, complemento: p.complemento, retorno: p.retorno, agendadoPara: p.agendadoPara, valor: p.valor,
+        prontoEm: p.prontoEm, createdAt: p.createdAt,
         destino: p.latDestino != null ? { lat: p.latDestino, lng: p.lngDestino } : null,
         entregador: p.entregador,
       })),
@@ -201,16 +233,16 @@ router.post(
 router.post(
   "/pedidos",
   asyncHandler(async (req, res) => {
-    const { clienteNome, clienteTelefone, endereco, prazoDesejado, formaPagamento, observacao,
+    const { clienteNome, clienteTelefone, endereco, complemento, retorno, agendadoPara, prazoDesejado, formaPagamento, observacao,
       notaFiscalNumero, notaFiscalChave, notaFiscalValor } = req.body;
     const pedido = await criarPedido(
-      { comercioId: req.comercio.id, clienteNome, clienteTelefone, endereco, prazoDesejado, formaPagamento, observacao,
+      { comercioId: req.comercio.id, clienteNome, clienteTelefone, endereco, complemento, retorno, agendadoPara, prazoDesejado, formaPagamento, observacao,
         notaFiscalNumero, notaFiscalChave, notaFiscalValor },
       "SISTEMA_COMERCIANTE",
       autorComerciante(req)
     );
-    // "Já está pronto": libera na hora para os entregadores.
-    res.status(201).json(req.body.pronto ? await marcarPronto(req, pedido) : pedido);
+    // "Já está pronto": libera na hora para os entregadores (agendado espera o horário).
+    res.status(201).json(req.body.pronto && !pedido.agendadoPara ? await marcarPronto(req, pedido) : pedido);
   })
 );
 

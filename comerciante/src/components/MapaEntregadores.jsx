@@ -64,9 +64,15 @@ function enquadrarTudo(map, pontos) {
 // Enquadra todos os pontos quando os dados terminam de carregar (uma vez; depois não briga
 // com o zoom do usuário). Pedido novo fora da área visível: afasta o mapa só o necessário.
 // Botão "Ver todos" reenquadra quando o usuário quiser.
-function Enquadrar({ pontos, carregado, novos }) {
+function Enquadrar({ pontos, carregado, novos, controle, previa }) {
   const map = useMap();
   const feito = useRef(false);
+  // Botões fora do mapa (barra do Painel de Controle): aproximar, afastar, ver todos.
+  if (controle) controle.current = { mais: () => map.zoomIn(), menos: () => map.zoomOut(), verTodos: () => enquadrarTudo(map, pontos), mapa: map };
+  // Prévia do endereço digitado: leva o mapa até lá.
+  useEffect(() => {
+    if (previa) map.setView([previa.lat, previa.lng], Math.max(map.getZoom(), 14));
+  }, [previa?.lat, previa?.lng, map]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (feito.current || !carregado) return;
     feito.current = true;
@@ -85,6 +91,7 @@ function Enquadrar({ pontos, carregado, novos }) {
     map.on("zoomend", aplicar);
     return () => map.off("zoomend", aplicar);
   }, [map]);
+  if (controle) return null;
   return (
     <div className="leaflet-top leaflet-right">
       <div className="leaflet-control">
@@ -94,9 +101,18 @@ function Enquadrar({ pontos, carregado, novos }) {
   );
 }
 
+// Pino da prévia (endereço ainda não lançado).
+const ICONE_PREVIA = L.divIcon({
+  className: "marcador-pedido",
+  html: `<div class="pino-pedido pino-previa"><span></span></div>`,
+  iconSize: [26, 34],
+  iconAnchor: [13, 32],
+  tooltipAnchor: [12, -20],
+});
+
 const temPos = o => o && o.lat != null && o.lng != null;
 
-export default function MapaEntregadores({ entregadores = [], pedidos = [], altura = 280, onPedido, carregado = true }) {
+export default function MapaEntregadores({ entregadores = [], pedidos = [], altura = 280, onPedido, carregado = true, controle, previa, loja, semLegenda }) {
   const agora = Date.now();
 
   // Pedido sem posição do endereço (ainda não localizado): fica ao redor da loja, sem empilhar.
@@ -113,9 +129,10 @@ export default function MapaEntregadores({ entregadores = [], pedidos = [], altu
       .filter(Boolean);
   }, [pedidos]);
 
-  // Lojas com pedido em aberto.
+  // Lojas com pedido em aberto (e a própria loja, quando informada, mesmo sem pedidos).
   const lojas = useMemo(() => {
     const m = new Map();
+    if (temPos(loja)) m.set(loja.id, { ...loja, qtd: 0 });
     pedidos.forEach(p => {
       if (!temPos(p.loja)) return;
       const l = m.get(p.loja.id) || { ...p.loja, qtd: 0 };
@@ -123,7 +140,7 @@ export default function MapaEntregadores({ entregadores = [], pedidos = [], altu
       m.set(p.loja.id, l);
     });
     return [...m.values()];
-  }, [pedidos]);
+  }, [pedidos, loja?.id, loja?.lat, loja?.lng]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Entregadores: os online + quem aceitou algum pedido aberto (mesmo que não esteja na lista de online).
   const motoboys = useMemo(() => {
@@ -164,7 +181,17 @@ export default function MapaEntregadores({ entregadores = [], pedidos = [], altu
           pontos={pontos}
           carregado={carregado}
           novos={pedidosNoMapa.filter(p => agora - new Date(p.createdAt).getTime() < NOVO_MS).map(p => p.pos)}
+          controle={controle}
+          previa={previa}
         />
+
+        {previa && (
+          <Marker position={[previa.lat, previa.lng]} icon={ICONE_PREVIA} zIndexOffset={2000}>
+            <Tooltip permanent direction="right" className="rotulo-pedido rotulo-previa" interactive={false}>
+              <strong>{previa.rotulo}</strong>
+            </Tooltip>
+          </Marker>
+        )}
 
         {linhas.map(({ p, de }) => (
           <Polyline key={`l-${p.id}`} positions={[[de.lat, de.lng], p.pos]} pathOptions={{ color: p.status === "ATRASADO" ? "#d03b3b" : "#2a78d6", weight: 2, dashArray: "6 6", opacity: 0.8 }} />
@@ -172,7 +199,7 @@ export default function MapaEntregadores({ entregadores = [], pedidos = [], altu
 
         {lojas.map(l => (
           <Marker key={`loja-${l.id}`} position={[l.lat, l.lng]} icon={ICONE_LOJA}>
-            <Tooltip direction="top"><strong>{l.nome}</strong><br />{l.qtd} pedido(s) em aberto</Tooltip>
+            <Tooltip direction="top"><strong>{l.nome}</strong>{l.qtd > 0 && <><br />{l.qtd} pedido(s) em aberto</>}</Tooltip>
           </Marker>
         ))}
 
@@ -206,7 +233,7 @@ export default function MapaEntregadores({ entregadores = [], pedidos = [], altu
           </Marker>
         ))}
       </MapContainer>
-      <div className="mapa-legenda">
+      {!semLegenda && <div className="mapa-legenda">
         <span><i className="ponto" style={{ background: "#8a93a1" }} /> Criado</span>
         <span><i className="ponto" style={{ background: "#d98a00" }} /> Pronto (sem motoboy)</span>
         <span><i className="ponto" style={{ background: "#7c5cc4" }} /> Atribuída / na loja</span>
@@ -214,7 +241,7 @@ export default function MapaEntregadores({ entregadores = [], pedidos = [], altu
         <span><i className="ponto" style={{ background: "#d03b3b" }} /> Atrasado</span>
         <span><i className="ponto" style={{ background: "#22c55e" }} /> Motoboy livre</span>
         <span>▣ Loja</span>
-      </div>
+      </div>}
     </div>
   );
 }

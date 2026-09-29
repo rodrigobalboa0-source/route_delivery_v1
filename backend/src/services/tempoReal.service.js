@@ -2,7 +2,7 @@
 // Devolve uma "versão" por assunto; a tela só busca os dados de novo quando a versão daquele assunto muda.
 // Também desliga automaticamente o entregador que ficou sem sinal do app (fechou o app, sem internet...).
 const prisma = require("../lib/prisma");
-const { registrarStatusEntregador } = require("./historico.service");
+const { registrarStatusEntregador, registrarStatusPedido, carimbos } = require("./historico.service");
 
 const SEM_SINAL_MS = 2 * 60 * 1000; // sem posição nem "sinal de vida" por 2 min -> offline
 let ultimaLimpeza = 0;
@@ -27,9 +27,35 @@ async function desligarSemSinal() {
   }
 }
 
+// Pedidos agendados cuja hora chegou: passam para "Pedido pronto" e os entregadores são chamados.
+// Roda junto das consultas de tempo real (painel, app e loja consultam a cada ~2 s), no máximo a cada 15 s.
+let ultimaLiberacao = 0;
+async function liberarAgendados() {
+  if (Date.now() - ultimaLiberacao < 15000) return;
+  ultimaLiberacao = Date.now();
+  const vencidos = await prisma.pedido.findMany({
+    where: { status: "PREPARANDO", agendadoPara: { lte: new Date() } }, select: { id: true, status: true, prontoEm: true }, take: 50,
+  });
+  for (const p of vencidos) {
+    const { count } = await prisma.pedido.updateMany({
+      where: { id: p.id, status: "PREPARANDO" }, data: { status: "PENDENTE", ...carimbos(p, "PENDENTE") },
+    });
+    if (!count) continue; // alguém mexeu no pedido enquanto isso
+    await registrarStatusPedido({ pedidoId: p.id, de: "PREPARANDO", para: "PENDENTE", autor: { autorTipo: "SISTEMA", autorNome: "Agendamento" } }).catch(() => {});
+    await prisma.pedidoLog.create({ data: { pedidoId: p.id, texto: "Horário agendado chegou — pedido liberado para os entregadores." } }).catch(() => {});
+  }
+}
+
+async function rotinas() {
+  await Promise.all([
+    desligarSemSinal().catch(err => console.error("[tempo-real] limpeza:", err.message)),
+    liberarAgendados().catch(err => console.error("[tempo-real] agendados:", err.message)),
+  ]);
+}
+
 // Painel ADM: pedidos, entregadores (status/posição), notificações e mensagens.
 async function versaoPainel() {
-  await desligarSemSinal().catch(err => console.error("[tempo-real] limpeza:", err.message));
+  await rotinas();
   const [r] = await prisma.$queryRaw`SELECT
     (SELECT max("updatedAt") FROM "Pedido") AS "pedidoMax", (SELECT count(*)::int FROM "Pedido") AS "pedidoQtd",
     (SELECT max("updatedAt") FROM "Entregador") AS "entregadorMax", (SELECT count(*)::int FROM "Entregador") AS "entregadorQtd",
@@ -46,7 +72,7 @@ async function versaoPainel() {
 
 // App do entregador: corridas disponíveis, suas entregas, a própria conta, pop-ups e mensagens.
 async function versaoEntregador(entregadorId) {
-  await desligarSemSinal().catch(() => {});
+  await rotinas();
   const [r] = await prisma.$queryRaw`SELECT
     (SELECT max("updatedAt") FROM "Pedido" WHERE status = 'PENDENTE' AND "entregadorId" IS NULL) AS "dispMax",
     (SELECT count(*)::int FROM "Pedido" WHERE status = 'PENDENTE' AND "entregadorId" IS NULL) AS "dispQtd",
@@ -66,7 +92,7 @@ async function versaoEntregador(entregadorId) {
 
 // Sistema do comerciante: os pedidos da loja, a posição dos entregadores com pedidos dela e as mensagens.
 async function versaoComercio(comercioId) {
-  await desligarSemSinal().catch(() => {});
+  await rotinas();
   const [r] = await prisma.$queryRaw`SELECT
     (SELECT max("updatedAt") FROM "Pedido" WHERE "comercioId" = ${comercioId}) AS "pedidoMax",
     (SELECT count(*)::int FROM "Pedido" WHERE "comercioId" = ${comercioId}) AS "pedidoQtd",
@@ -82,4 +108,4 @@ async function versaoComercio(comercioId) {
   };
 }
 
-module.exports = { versaoPainel, versaoEntregador, versaoComercio, desligarSemSinal, SEM_SINAL_MS };
+module.exports = { versaoPainel, versaoEntregador, versaoComercio, desligarSemSinal, liberarAgendados, SEM_SINAL_MS };

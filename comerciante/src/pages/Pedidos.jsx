@@ -14,11 +14,17 @@ const VISOES = {
   todos: { rotulo: "Todos", status: "" },
 };
 
-export default function Pedidos() {
+// Lista de entregas com filtros. "fixo" = filtro sempre aplicado (ex.: Devoluções = só com retorno).
+export default function Pedidos({
+  titulo = "Entregas",
+  subtitulo = "Todas as entregas da sua loja. A lista se atualiza sozinha.",
+  fixo = {},
+  diasPadrao = 0, // período inicial: hoje (0) ou os últimos N dias
+}) {
   const [params, setParams] = useSearchParams();
   const hoje = paraInputData(new Date());
   const [ver, setVer] = useState(VISOES[params.get("ver")] ? params.get("ver") : "todos");
-  const [desde, setDesde] = useState(hoje);
+  const [desde, setDesde] = useState(() => paraInputData(new Date(Date.now() - diasPadrao * 864e5)));
   const [ate, setAte] = useState(hoje);
   const [busca, setBusca] = useState("");
   const [buscaAplicada, setBuscaAplicada] = useState("");
@@ -32,7 +38,7 @@ export default function Pedidos() {
   }, [busca]);
 
   // Em aberto aparece sempre, mesmo que tenha sido criado antes do período.
-  const caminho = `/pedidos${qs({ status: VISOES[ver].status, desde, ate, busca: buscaAplicada, abertos: ver === "todos" ? "1" : "" })}`;
+  const caminho = `/pedidos${qs({ status: VISOES[ver].status, desde, ate, busca: buscaAplicada, abertos: ver === "todos" ? "1" : "", ...fixo })}`;
   const { dados, erro, carregando, recarregar } = useApi(caminho, { aoVivo: ["pedidos"] });
   const lista = dados || [];
   const total = lista.filter(p => p.status === "ENTREGUE").reduce((t, p) => t + (p.valor || 0), 0);
@@ -50,7 +56,7 @@ export default function Pedidos() {
 
   return (
     <>
-      <Cabecalho titulo="Pedidos" subtitulo="Todas as entregas da sua loja. A lista se atualiza sozinha." />
+      <Cabecalho titulo={titulo} subtitulo={subtitulo} />
 
       <div className="filtros">
         <label className="filtro-data">De <input type="date" value={desde} max={ate || undefined} onChange={e => setDesde(e.target.value)} /></label>
@@ -82,8 +88,14 @@ export default function Pedidos() {
                 {lista.map(p => (
                   <tr key={p.id} className="linha-clicavel" onClick={() => setAberto(p.id)}>
                     <td><strong>{p.codigo}</strong><div className="celula-sub">{dataHora(p.createdAt)}</div></td>
-                    <td>{p.clienteNome}<div className="celula-sub">{p.endereco}</div></td>
-                    <td><BadgeMapa mapa={STATUS_PEDIDO} valor={p.status} /></td>
+                    <td>
+                      {p.clienteNome}{p.retorno && <span className="selo-retorno">↩ retorno</span>}
+                      <div className="celula-sub">{p.endereco}{p.complemento ? ` · ${p.complemento}` : ""}</div>
+                    </td>
+                    <td>
+                      <BadgeMapa mapa={STATUS_PEDIDO} valor={p.status} />
+                      {p.agendadoPara && p.status === "PREPARANDO" && <div className="celula-sub">⏰ {dataHora(p.agendadoPara)}</div>}
+                    </td>
                     <td onClick={e => e.stopPropagation()}>
                       {p.status === "PREPARANDO" ? (
                         <Botao pequeno variante="primario" disabled={ocupado} onClick={() => pronto(p)}>Pedido pronto</Botao>

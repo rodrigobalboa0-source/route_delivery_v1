@@ -31,6 +31,9 @@ function etapaAtual(p) {
 
 export function Etapas({ pedido }) {
   if (pedido.status === "CANCELADO") return <div className="aviso-caixa erro-leve">Pedido cancelado.</div>;
+  if (pedido.status === "PREPARANDO" && pedido.agendadoPara) {
+    return <div className="aviso-caixa agendado-caixa">⏰ Agendado — o entregador será chamado em {dataHora(pedido.agendadoPara)}.</div>;
+  }
   const atual = etapaAtual(pedido);
   return (
     <ol className="etapas" aria-label="Andamento da entrega">
@@ -77,7 +80,7 @@ export default function DetalhePedido({ id, onFechar }) {
             <div className="botoes" style={{ marginBottom: 14 }}>
               {pedido.status === "PREPARANDO" && (
                 <Botao variante="primario" disabled={ocupado} onClick={() => acao(() => api.patch(`/pedidos/${id}/pronto`), "Pedido pronto! Chamando entregador.")}>
-                  Pedido pronto — chamar entregador
+                  {pedido.agendadoPara ? "Chamar entregador agora" : "Pedido pronto — chamar entregador"}
                 </Botao>
               )}
               <BotaoConfirmar confirmar="Cancelar este pedido?" disabled={ocupado} onConfirm={() => acao(() => api.patch(`/pedidos/${id}/cancelar`), "Pedido cancelado.")}>
@@ -103,13 +106,19 @@ export default function DetalhePedido({ id, onFechar }) {
                   {acompanhando && <div className="celula-sub">Posição atualizada {tempoRelativo(pedido.entregador.localizacaoEm)}</div>}
                 </div>
               </div>
-              {acompanhando && <MapaEntregadores pedidos={[noMapa]} altura={240} />}
+              {acompanhando && <MapaEntregadores pedidos={[noMapa]} altura={240} semLegenda />}
             </section>
           )}
 
           <dl className="detalhes">
             <dt>Cliente</dt><dd>{pedido.clienteNome}{pedido.clienteTelefone && <span className="apagado"> · {pedido.clienteTelefone}</span>}</dd>
-            <dt>Entrega em</dt><dd>{pedido.endereco}</dd>
+            <dt>Entrega em</dt>
+            <dd>
+              {pedido.endereco}
+              {pedido.complemento && <div className="celula-sub">{pedido.complemento}</div>}
+              {pedido.retorno && <div><span className="selo-retorno" style={{ marginLeft: 0 }}>↩ Com retorno à loja</span></div>}
+            </dd>
+            {pedido.agendadoPara && <><dt>Agendado</dt><dd>Entregador chamado em {dataHora(pedido.agendadoPara)}</dd></>}
             <dt>Valor</dt><dd>{moeda(pedido.valor)}</dd>
             <dt>Distância</dt><dd>{km(pedido.distanciaKm)}</dd>
             <dt>Pagamento</dt><dd>{pedido.formaPagamento || "—"}</dd>

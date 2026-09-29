@@ -8,7 +8,7 @@ const { emSegundoPlano } = require("../utils/segundoPlano");
 const router = express.Router();
 
 const { TODOS: STATUS, ABERTOS, COM_ENTREGADOR, ROTULOS } = require("../utils/statusPedido");
-const CAMPOS_EDITAVEIS = ["clienteNome", "clienteTelefone", "endereco", "valor", "distanciaKm", "formaPagamento", "prazoDesejado", "observacao"];
+const CAMPOS_EDITAVEIS = ["clienteNome", "clienteTelefone", "endereco", "complemento", "retorno", "valor", "distanciaKm", "formaPagamento", "prazoDesejado", "observacao"];
 
 function autor(req) {
   return req.conta?.nome ? ` (por ${req.conta.nome})` : "";
@@ -206,6 +206,8 @@ router.put(
     CAMPOS_EDITAVEIS.forEach(c => { if (req.body[c] !== undefined) data[c] = req.body[c]; });
     if (data.valor !== undefined) data.valor = data.valor === "" || data.valor === null ? null : Number(data.valor);
     if (data.distanciaKm !== undefined) data.distanciaKm = data.distanciaKm === "" || data.distanciaKm === null ? null : Number(data.distanciaKm);
+    if (data.retorno !== undefined) data.retorno = !!data.retorno;
+    if (data.complemento !== undefined) data.complemento = String(data.complemento || "").trim() || null;
     Object.assign(data, dadosNotaFiscal(req.body));
     // Endereço mudou: a posição antiga no mapa não vale mais (o mapa localiza de novo).
     if (data.endereco !== undefined) {

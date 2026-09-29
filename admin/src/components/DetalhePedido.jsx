@@ -45,6 +45,8 @@ function EditarPedido({ pedido, onSalvo, onFechar }) {
     clienteNome: pedido.clienteNome || "",
     clienteTelefone: pedido.clienteTelefone || "",
     endereco: pedido.endereco || "",
+    complemento: pedido.complemento || "",
+    retorno: !!pedido.retorno,
     valor: pedido.valor ?? "",
     formaPagamento: pedido.formaPagamento || "",
     prazoDesejado: pedido.prazoDesejado || "",
@@ -67,6 +69,11 @@ function EditarPedido({ pedido, onSalvo, onFechar }) {
         <Campo rotulo="Cliente *"><input value={v.clienteNome} onChange={set("clienteNome")} required /></Campo>
         <Campo rotulo="Telefone"><input value={v.clienteTelefone} onChange={set("clienteTelefone")} /></Campo>
         <Campo rotulo="Endereço de entrega *" largo><input value={v.endereco} onChange={set("endereco")} required /></Campo>
+        <Campo rotulo="Complemento"><input value={v.complemento} onChange={set("complemento")} placeholder="Apto, bloco, referência" /></Campo>
+        <label className="campo campo-check">
+          <input type="checkbox" checked={v.retorno} onChange={e => setV({ ...v, retorno: e.target.checked })} />
+          <span>Com retorno à loja</span>
+        </label>
         <Campo rotulo="Valor da entrega (R$)"><input type="number" step="0.01" value={v.valor} onChange={set("valor")} /></Campo>
         <Campo rotulo="Forma de pagamento"><input value={v.formaPagamento} onChange={set("formaPagamento")} /></Campo>
         <Campo rotulo="Prazo desejado"><input value={v.prazoDesejado} onChange={set("prazoDesejado")} /></Campo>
@@ -120,7 +127,13 @@ export default function DetalhePedido({ id, onFechar, onAlterado }) {
           <dl className="detalhes">
             <dt>Comércio</dt><dd>{pedido.comercio?.nomeFantasia}</dd>
             <dt>Cliente</dt><dd>{pedido.clienteNome}{pedido.clienteTelefone && <span className="apagado"> · {pedido.clienteTelefone}</span>}</dd>
-            <dt>Entrega em</dt><dd>{pedido.endereco}</dd>
+            <dt>Entrega em</dt>
+            <dd>
+              {pedido.endereco}
+              {pedido.complemento && <div className="celula-sub">{pedido.complemento}</div>}
+              {pedido.retorno && <div><span className="badge badge-aviso">↩ Com retorno à loja</span></div>}
+            </dd>
+            {pedido.agendadoPara && <><dt>Agendado</dt><dd>Chamar entregador em {dataHora(pedido.agendadoPara)}</dd></>}
             <dt>Entregador</dt>
             <dd>{pedido.entregador ? `${pedido.entregador.nomeCompleto} · ${VEICULOS[pedido.entregador.veiculoTipo] || ""}` : <span className="apagado">Nenhum</span>}</dd>
             <dt>Valor</dt><dd>{moeda(pedido.valor)}</dd>

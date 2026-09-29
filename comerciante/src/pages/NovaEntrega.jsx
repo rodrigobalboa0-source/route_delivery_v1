@@ -3,19 +3,30 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { Botao, Cabecalho, Campo, useAcao } from "../components/ui";
-import { VEICULOS, km, moeda } from "../utils/format";
+import CampoCliente from "../components/CampoCliente";
+import { VEICULOS, dataHora, km, moeda } from "../utils/format";
 
 const VAZIO = {
-  clienteNome: "", clienteTelefone: "", endereco: "", formaPagamento: "", prazoDesejado: "", observacao: "",
-  notaFiscalNumero: "", notaFiscalChave: "", notaFiscalValor: "",
+  clienteNome: "", clienteTelefone: "", endereco: "", complemento: "", formaPagamento: "", prazoDesejado: "", observacao: "",
+  notaFiscalNumero: "", notaFiscalChave: "", notaFiscalValor: "", agendadoPara: "",
 };
 const PAGAMENTOS = ["Pago (online)", "Pix", "Cartão na entrega", "Dinheiro"];
 
-export default function NovaEntrega() {
+// Valor para <input type="datetime-local"> daqui a N minutos (hora local).
+function daquiA(min) {
+  const d = new Date(Date.now() + min * 60000);
+  const p = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+// Solicitar Entrega (formulário completo). Com `agendar`, abre já com o horário para agendamento.
+export default function NovaEntrega({ agendar = false }) {
   const navegar = useNavigate();
   const { loja } = useAuth();
-  const [v, setV] = useState(VAZIO);
+  const [v, setV] = useState(() => ({ ...VAZIO, agendadoPara: agendar ? daquiA(60) : "" }));
   const [pronto, setPronto] = useState(true);
+  const [retorno, setRetorno] = useState(false);
+  const [agendado, setAgendado] = useState(agendar);
   const [veiculo, setVeiculo] = useState("MOTO");
   const [calculo, setCalculo] = useState(null);
   const [maisOpcoes, setMaisOpcoes] = useState(false);
@@ -28,6 +39,14 @@ export default function NovaEntrega() {
     setV({ ...v, [k]: e.target.value });
     if (k === "endereco") setCalculo(null);
   };
+  const setTexto = k => valor => {
+    setV(atual => ({ ...atual, [k]: valor }));
+    if (k === "endereco") setCalculo(null);
+  };
+  const escolherCliente = c => {
+    setV(atual => ({ ...atual, clienteNome: c.nome, clienteTelefone: c.telefone || "", endereco: c.endereco, complemento: c.complemento || "" }));
+    setCalculo(null);
+  };
 
   async function calcular() {
     const r = await executar(() => api.post("/pedidos/calcular", { endereco: v.endereco, veiculo }));
@@ -36,25 +55,33 @@ export default function NovaEntrega() {
 
   async function criar(e) {
     e.preventDefault();
+    const agendadoPara = agendado && v.agendadoPara ? new Date(v.agendadoPara).toISOString() : null;
     const r = await executar(
-      () => api.post("/pedidos", { ...v, pronto }),
-      pronto ? "Entrega lançada! Já estamos chamando um entregador." : "Entrega lançada. Marque como pronto quando o pedido estiver pronto."
+      () => api.post("/pedidos", { ...v, agendadoPara, retorno, pronto: !agendadoPara && pronto }),
+      agendadoPara ? "Entrega agendada." : pronto ? "Entrega lançada! Já estamos chamando um entregador." : "Entrega lançada. Marque como pronto quando o pedido estiver pronto."
     );
-    if (r) navegar(`/pedidos?abrir=${r.id}`);
+    if (r) navegar(agendadoPara ? "/agendamentos" : `/relatorios/entregas?abrir=${r.id}`);
   }
+
+  const textoBotao = agendado ? "Agendar entrega" : pronto ? "Lançar e chamar entregador" : "Lançar entrega";
 
   return (
     <>
-      <Cabecalho titulo="Nova entrega" subtitulo="Informe o cliente e o endereço. O valor é calculado pelo percurso real." />
+      <Cabecalho titulo={agendar ? "Novo agendamento" : "Solicitar Entrega"} subtitulo="Informe o cliente e o endereço. O valor é calculado pelo percurso real." />
 
-      <form onSubmit={criar} className="cartao form-pagina">
+      <form onSubmit={criar} className="painel-bloco form-pagina">
         <h3 className="secao-titulo">Cliente e destino</h3>
         <div className="grade-campos">
-          <Campo rotulo="Nome do cliente *"><input value={v.clienteNome} onChange={set("clienteNome")} required autoFocus /></Campo>
-          <Campo rotulo="Telefone do cliente"><input type="tel" value={v.clienteTelefone} onChange={set("clienteTelefone")} placeholder="(11) 90000-0000" /></Campo>
-          <Campo rotulo="Endereço de entrega *" largo dica="Rua, número, bairro e cidade.">
-            <input value={v.endereco} onChange={set("endereco")} required placeholder="Ex.: Rua Augusta, 1500 - Consolação, São Paulo" />
+          <Campo rotulo="Nome do cliente *">
+            <CampoCliente rotulo="Nome do cliente" valor={v.clienteNome} onChange={setTexto("clienteNome")} onEscolher={escolherCliente} obrigatorio autoFocus />
           </Campo>
+          <Campo rotulo="Telefone do cliente">
+            <CampoCliente rotulo="Telefone do cliente" tipo="tel" placeholder="(11) 90000-0000" valor={v.clienteTelefone} onChange={setTexto("clienteTelefone")} onEscolher={escolherCliente} />
+          </Campo>
+          <Campo rotulo="Endereço de entrega *" dica="Rua, número, bairro e cidade.">
+            <CampoCliente rotulo="Endereço de entrega" placeholder="Ex.: Rua Augusta, 1500 - Consolação, São Paulo" valor={v.endereco} onChange={setTexto("endereco")} onEscolher={escolherCliente} obrigatorio />
+          </Campo>
+          <Campo rotulo="Complemento"><input value={v.complemento} onChange={set("complemento")} placeholder="Apto, bloco, ponto de referência" /></Campo>
         </div>
 
         <h3 className="secao-titulo">Valor da entrega</h3>
@@ -80,7 +107,7 @@ export default function NovaEntrega() {
           </Campo>
           <Campo rotulo="Prazo desejado"><input value={v.prazoDesejado} onChange={set("prazoDesejado")} placeholder="Ex.: até 40 min" /></Campo>
           <Campo rotulo="Observação para o entregador" largo>
-            <textarea rows={2} value={v.observacao} onChange={set("observacao")} placeholder="Ex.: troco para R$ 50, apto 12, interfone quebrado…" />
+            <textarea rows={2} value={v.observacao} onChange={set("observacao")} placeholder="Ex.: troco para R$ 50, interfone quebrado…" />
           </Campo>
         </div>
 
@@ -97,20 +124,38 @@ export default function NovaEntrega() {
           </div>
         )}
 
-        <label className="campo campo-switch campo-largo pronto-agora">
-          <input type="checkbox" role="switch" checked={pronto} onChange={e => setPronto(e.target.checked)} />
-          <span className="interruptor" aria-hidden="true" />
-          <span>
-            <strong>O pedido já está pronto</strong>
-            <small className="campo-dica" style={{ display: "block" }}>
-              {pronto ? "Os entregadores são chamados assim que você lançar." : "A entrega fica “Criada”; clique em “Pedido pronto” quando for a hora de chamar o entregador."}
-            </small>
-          </span>
-        </label>
+        <div className="opcoes-entrega">
+          <label className="campo campo-switch opcao-entrega">
+            <input type="checkbox" role="switch" checked={retorno} onChange={e => setRetorno(e.target.checked)} />
+            <span className="interruptor" aria-hidden="true" />
+            <span><strong>Retorno à loja</strong><small className="campo-dica">O entregador volta à loja depois (maquininha, troco, devolução).</small></span>
+          </label>
+          <label className="campo campo-switch opcao-entrega">
+            <input type="checkbox" role="switch" checked={agendado} onChange={e => { setAgendado(e.target.checked); if (e.target.checked && !v.agendadoPara) setV(a => ({ ...a, agendadoPara: daquiA(60) })); }} />
+            <span className="interruptor" aria-hidden="true" />
+            <span><strong>Agendar</strong><small className="campo-dica">Chamar o entregador num horário marcado.</small></span>
+          </label>
+          {agendado ? (
+            <label className="campo opcao-entrega">
+              <span className="campo-rotulo">Chamar o entregador em *</span>
+              <input type="datetime-local" value={v.agendadoPara} min={daquiA(2)} onChange={set("agendadoPara")} required />
+              {v.agendadoPara && <small className="campo-dica">{dataHora(new Date(v.agendadoPara))}</small>}
+            </label>
+          ) : (
+            <label className="campo campo-switch opcao-entrega">
+              <input type="checkbox" role="switch" checked={pronto} onChange={e => setPronto(e.target.checked)} />
+              <span className="interruptor" aria-hidden="true" />
+              <span>
+                <strong>O pedido já está pronto</strong>
+                <small className="campo-dica">{pronto ? "Os entregadores são chamados assim que você lançar." : "Fica “Criado”; clique em “Pedido pronto” na hora certa."}</small>
+              </span>
+            </label>
+          )}
+        </div>
 
         <div className="form-rodape">
-          <Botao variante="fantasma" onClick={() => { setV(VAZIO); setCalculo(null); }}>Limpar</Botao>
-          <button type="submit" className="btn btn-primario" disabled={ocupado}>{pronto ? "Lançar e chamar entregador" : "Lançar entrega"}</button>
+          <Botao variante="fantasma" onClick={() => { setV({ ...VAZIO, agendadoPara: agendado ? daquiA(60) : "" }); setCalculo(null); }}>Limpar</Botao>
+          <button type="submit" className="btn btn-laranja" disabled={ocupado}>{textoBotao}</button>
         </div>
       </form>
     </>

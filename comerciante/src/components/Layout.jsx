@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
-import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../auth";
 import { useApi } from "../hooks/useApi";
 
-// Quando a loja abriu as mensagens pela última vez (para o aviso de "mensagem nova" no menu).
+// Quando a loja abriu as mensagens pela última vez (para o aviso de "mensagem nova").
 export const CHAVE_MSG_VISTAS = "rd_loja_msg_vistas";
 export function marcarMensagensVistas() {
   try { localStorage.setItem(CHAVE_MSG_VISTAS, new Date().toISOString()); } catch { /* sem armazenamento */ }
@@ -13,15 +13,67 @@ function mensagensVistasEm() {
   try { return localStorage.getItem(CHAVE_MSG_VISTAS) || ""; } catch { return ""; }
 }
 
+// Ícones em traço (herdam a cor do texto).
+const ICONES = {
+  painel: <><rect x="3" y="3" width="7" height="9" rx="1.5" /><rect x="14" y="3" width="7" height="5" rx="1.5" /><rect x="14" y="12" width="7" height="9" rx="1.5" /><rect x="3" y="16" width="7" height="5" rx="1.5" /></>,
+  solicitar: <><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><path d="M14 3v6h6M12 12v6M9 15h6" /></>,
+  relatorios: <><path d="M3 3v18h18" /><path d="M8 17v-5M13 17V8M18 17v-9" /></>,
+  fila: <><path d="M4 6h16M4 12h16M4 18h10" /></>,
+  agenda: <><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M3 9h18M8 2v4M16 2v4" /></>,
+  devolucao: <><path d="M9 14 4 9l5-5" /><path d="M4 9h11a5 5 0 0 1 0 10h-3" /></>,
+  mensagens: <><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></>,
+  conta: <><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></>,
+  sair: <><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" /></>,
+  seta: <path d="m6 9 6 6 6-6" />,
+};
+export function Icone({ nome, className = "" }) {
+  return <svg className={`icone ${className}`} viewBox="0 0 24 24" aria-hidden="true">{ICONES[nome]}</svg>;
+}
+
+// Menu do topo (ordem igual à referência enviada pelo cliente).
 const MENU = [
-  { para: "/inicio", rotulo: "Início", icone: "◧" },
-  { para: "/nova-entrega", rotulo: "Nova entrega", icone: "+" },
-  { para: "/pedidos", rotulo: "Pedidos", icone: "☰" },
-  { para: "/financeiro", rotulo: "Financeiro", icone: "$" },
-  { para: "/mensagens", rotulo: "Mensagens", icone: "✉", chave: "mensagens" },
-  { para: "/conta", rotulo: "Minha conta", icone: "⚙" },
-  { acao: "sair", rotulo: "Sair", icone: "⏻" },
+  { para: "/painel", rotulo: "Painel de Controle", icone: "painel" },
+  { para: "/solicitar", rotulo: "Solicitar Entrega", icone: "solicitar" },
+  { rotulo: "Relatórios", icone: "relatorios", base: "/relatorios", filhos: [
+    { para: "/relatorios/entregas", rotulo: "Entregas" },
+    { para: "/relatorios/financeiro", rotulo: "Financeiro e faturas" },
+  ] },
+  { para: "/fila", rotulo: "Fila", icone: "fila" },
+  { rotulo: "Agendamentos", icone: "agenda", base: "/agendamentos", filhos: [
+    { para: "/agendamentos", rotulo: "Entregas agendadas" },
+    { para: "/agendamentos/novo", rotulo: "Novo agendamento" },
+  ] },
+  { para: "/devolucoes", rotulo: "Devoluções", icone: "devolucao" },
 ];
+
+function useFora(ref, aberto, fechar) {
+  useEffect(() => {
+    if (!aberto) return;
+    const h = e => { if (ref.current && !ref.current.contains(e.target)) fechar(); };
+    const esc = e => { if (e.key === "Escape") fechar(); };
+    document.addEventListener("mousedown", h);
+    document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("mousedown", h); document.removeEventListener("keydown", esc); };
+  }, [aberto, fechar, ref]);
+}
+
+function Suspenso({ item, ativo }) {
+  const [aberto, setAberto] = useState(false);
+  const ref = useRef(null);
+  useFora(ref, aberto, () => setAberto(false));
+  return (
+    <div className="topo-grupo" ref={ref}>
+      <button type="button" className={`topo-link ${ativo ? "ativo" : ""}`} aria-expanded={aberto} onClick={() => setAberto(a => !a)}>
+        <Icone nome={item.icone} /> {item.rotulo} <Icone nome="seta" className="icone-seta" />
+      </button>
+      {aberto && (
+        <div className="topo-suspenso" onClick={() => setAberto(false)}>
+          {item.filhos.map(f => <NavLink key={f.para} to={f.para} end className="topo-suspenso-item">{f.rotulo}</NavLink>)}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // Há resposta da equipe que a loja ainda não viu?
 function useMensagemNova() {
@@ -36,62 +88,69 @@ function useMensagemNova() {
   return !!ultimaDaEquipe && ultimaDaEquipe.createdAt > vistas;
 }
 
-export default function Layout() {
+function iniciais(nome = "") {
+  const p = nome.trim().split(/\s+/);
+  return ((p[0]?.[0] || "") + (p.length > 1 ? p[p.length - 1][0] : p[0]?.[1] || "")).toUpperCase();
+}
+
+function MenuConta({ msgNova }) {
   const { loja, email, sair } = useAuth();
+  const [aberto, setAberto] = useState(false);
+  const ref = useRef(null);
+  useFora(ref, aberto, () => setAberto(false));
+  return (
+    <div className="topo-grupo topo-conta" ref={ref}>
+      <button type="button" className="topo-avatar" aria-label={`Conta de ${loja?.nomeFantasia}`} aria-expanded={aberto} onClick={() => setAberto(a => !a)}>
+        {loja?.fotoUrl ? <img src={loja.fotoUrl} alt="" /> : iniciais(loja?.nomeFantasia)}
+        {msgNova && <span className="menu-bolinha" aria-label="mensagem nova" />}
+      </button>
+      {aberto && (
+        <div className="topo-suspenso topo-suspenso-direita" onClick={() => setAberto(false)}>
+          <div className="topo-suspenso-cabeca">
+            <strong>{loja?.nomeFantasia}</strong>
+            <small>{email}</small>
+          </div>
+          <NavLink to="/mensagens" className="topo-suspenso-item">
+            <Icone nome="mensagens" /> Mensagens {msgNova && <span className="badge badge-critico">nova</span>}
+          </NavLink>
+          <NavLink to="/conta" className="topo-suspenso-item"><Icone nome="conta" /> Minha conta</NavLink>
+          <button type="button" className="topo-suspenso-item" onClick={() => sair()}><Icone nome="sair" /> Sair</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function Layout() {
   const [menuAberto, setMenuAberto] = useState(false);
   const local = useLocation();
-  const navegar = useNavigate();
   const msgNova = useMensagemNova();
 
   useEffect(() => { setMenuAberto(false); }, [local.pathname]);
 
   return (
-    <div className="app">
-      <aside className={`menu ${menuAberto ? "aberto" : ""}`}>
-        <div className="marca marca-imagem">
-          <img src="/logo-route-delivery.png" alt="Route Delivery" className="marca-img" />
-          <small>Sistema do comerciante</small>
+    <div className="loja-app">
+      <header className="loja-topo">
+        <div className="loja-marca">
+          <img src="/logo-route-delivery.png" alt="Route Delivery" />
         </div>
-        <nav className="menu-lista">
+        <button type="button" className="icone-btn loja-hamburguer" onClick={() => setMenuAberto(a => !a)} aria-label="Abrir menu" aria-expanded={menuAberto}>☰</button>
+        <nav className={`loja-nav ${menuAberto ? "aberto" : ""}`}>
           {MENU.map(i =>
-            i.acao === "sair" ? (
-              <button key="sair" type="button" className="menu-item menu-botao" onClick={() => sair()}>
-                <span className="menu-icone" aria-hidden="true">{i.icone}</span>
-                <span>{i.rotulo}</span>
-              </button>
+            i.filhos ? (
+              <Suspenso key={i.rotulo} item={i} ativo={local.pathname.startsWith(i.base)} />
             ) : (
-              <NavLink key={i.para} to={i.para} className={({ isActive }) => (isActive ? "menu-item ativo" : "menu-item")}>
-                <span className="menu-icone" aria-hidden="true">{i.icone}</span>
-                <span className="menu-rotulo">{i.rotulo}</span>
-                {i.chave === "mensagens" && msgNova && <span className="menu-bolinha" aria-label="mensagem nova" />}
+              <NavLink key={i.para} to={i.para} className={({ isActive }) => `topo-link ${isActive ? "ativo" : ""}`}>
+                <Icone nome={i.icone} /> {i.rotulo}
               </NavLink>
             )
           )}
         </nav>
-      </aside>
-      {menuAberto && <div className="menu-fundo" onClick={() => setMenuAberto(false)} />}
-
-      <div className="principal">
-        <header className="topo">
-          <button type="button" className="icone-btn so-mobile" onClick={() => setMenuAberto(true)} aria-label="Abrir menu">☰</button>
-          <div className="topo-espaco" />
-          {local.pathname !== "/nova-entrega" && (
-            <button type="button" className="btn btn-primario" onClick={() => navegar("/nova-entrega")}>+ Nova entrega</button>
-          )}
-          <div className="usuario">
-            <span className="avatar" aria-hidden="true">
-              {loja?.fotoUrl ? <img src={loja.fotoUrl} alt="" /> : loja?.nomeFantasia?.[0] || "?"}
-            </span>
-            <div className="usuario-info">
-              <strong>{loja?.nomeFantasia}</strong>
-              <small>{email}</small>
-            </div>
-          </div>
-        </header>
-        <main className="conteudo">
-          <Outlet />
-        </main>
-      </div>
+        <MenuConta msgNova={msgNova} />
+      </header>
+      <main className="loja-conteudo">
+        <Outlet />
+      </main>
     </div>
   );
 }

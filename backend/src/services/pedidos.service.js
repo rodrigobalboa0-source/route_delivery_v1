@@ -109,6 +109,7 @@ async function criarPedido(dados, origem, autor = { autorTipo: "SISTEMA", autorN
   if (!comercioId || !clienteNome || !endereco) {
     throw erroHttp(400, 'Informe "comercioId", "clienteNome" e "endereco".');
   }
+  const agendadoPara = validarAgendamento(dados.agendadoPara);
 
   const { comercio } = await carregarComercioComOrigem(comercioId);
   if (comercio.bloqueado) throw erroHttp(403, "Este comércio está bloqueado e não pode criar pedidos.");
@@ -132,6 +133,9 @@ async function criarPedido(dados, origem, autor = { autorTipo: "SISTEMA", autorN
       clienteNome,
       clienteTelefone,
       endereco,
+      complemento: dados.complemento ? String(dados.complemento).trim() || null : null,
+      retorno: !!dados.retorno,
+      agendadoPara,
       prazoDesejado,
       formaPagamento,
       observacao,
@@ -145,13 +149,27 @@ async function criarPedido(dados, origem, autor = { autorTipo: "SISTEMA", autorN
       ...nf,
       integracaoSlug: dados.integracaoSlug || null,
       idExterno: dados.idExterno || null,
-      logs: { create: [{ texto: `Pedido ${codigo} criado (${origem === "INTEGRACAO" ? autor.autorNome : ORIGENS[origem]}) e enviado para preparo.` }] },
+      logs: { create: [
+        { texto: `Pedido ${codigo} criado (${origem === "INTEGRACAO" ? autor.autorNome : ORIGENS[origem]}) e enviado para preparo.` },
+        ...(agendadoPara ? [{ texto: `Agendado: o entregador será chamado em ${agendadoPara.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" })}.` }] : []),
+        ...(dados.retorno ? [{ texto: "Entrega com retorno à loja." }] : []),
+      ] },
       historicoStatus: { create: [{ de: null, para: "PREPARANDO", autorTipo: autor.autorTipo, autorNome: autor.autorNome }] },
     },
     include: INCLUDE_PADRAO,
   });
   require("./integracoes.service").agendarNotificacao(pedido.id, null, "PREPARANDO");
   return pedido;
+}
+
+// Horário para chamar o entregador: vazio = agora; precisa ser futuro e em até 30 dias.
+function validarAgendamento(valor) {
+  if (!valor) return null;
+  const d = new Date(valor);
+  if (Number.isNaN(d.getTime())) throw erroHttp(400, "Data do agendamento inválida.");
+  if (d.getTime() < Date.now() + 60 * 1000) throw erroHttp(400, "O agendamento precisa ser para daqui a pelo menos 1 minuto.");
+  if (d.getTime() > Date.now() + 30 * 864e5) throw erroHttp(400, "Agende para no máximo 30 dias à frente.");
+  return d;
 }
 
 // Campos de nota fiscal vindos de formulário (vazios viram null; chave só com dígitos).
