@@ -4,7 +4,8 @@ const bcrypt = require("bcryptjs");
 const prisma = require("../../lib/prisma");
 const { asyncHandler } = require("../../middleware/errorHandler");
 const { requireAuth, requireTipo, assinarToken, TIPOS } = require("../../middleware/auth");
-const { INCLUDE_PADRAO, erroHttp, registrarLog, calcularEntrega, criarPedido } = require("../../services/pedidos.service");
+const { INCLUDE_PADRAO, erroHttp, registrarLog, calcularEntrega, criarPedido, soDigitosTelefone, percentualRetorno } = require("../../services/pedidos.service");
+const { buscarEnderecos } = require("../../utils/geo");
 const { carimbos, registrarStatusPedido } = require("../../services/historico.service");
 const { versaoComercio } = require("../../services/tempoReal.service");
 const { TODOS, ABERTOS } = require("../../utils/statusPedido");
@@ -70,15 +71,19 @@ router.get(
   "/me",
   asyncHandler(async (req, res) => {
     // Só o que a loja precisa ver (observações internas e dados de comissão ficam no ADM).
-    res.json(await prisma.comercio.findUnique({
-      where: { id: req.comercio.id },
-      select: {
-        id: true, fotoUrl: true, segmento: true, razaoSocial: true, nomeFantasia: true, tipoDocumento: true, documento: true,
-        nomeCompleto: true, telefone: true, email: true, metodoPagamento: true, createdAt: true,
-        enderecos: { orderBy: { principal: "desc" } },
-        precificacoesModal: { select: { veiculo: true } },
-      },
-    }));
+    const [loja, retornoPercentual] = await Promise.all([
+      prisma.comercio.findUnique({
+        where: { id: req.comercio.id },
+        select: {
+          id: true, fotoUrl: true, segmento: true, razaoSocial: true, nomeFantasia: true, tipoDocumento: true, documento: true,
+          nomeCompleto: true, telefone: true, email: true, metodoPagamento: true, createdAt: true,
+          enderecos: { orderBy: { principal: "desc" } },
+          precificacoesModal: { select: { veiculo: true } },
+        },
+      }),
+      percentualRetorno(),
+    ]);
+    res.json({ ...loja, retornoPercentual });
   })
 );
 
@@ -158,22 +163,53 @@ router.get(
   })
 );
 
-// GET /api/app/comerciante/clientes?busca=.. — clientes que já receberam entregas da loja
-// (para preencher nome, telefone, endereço e complemento de uma vez). Um por cliente+endereço, o mais recente.
+const clientePublico = c => ({
+  nome: c.nome, telefone: c.telefone, endereco: c.endereco, complemento: c.complemento,
+  lat: c.lat, lng: c.lng, totalPedidos: c.totalPedidos, ultimoPedidoEm: c.ultimoPedidoEm,
+});
+
+// GET /api/app/comerciante/clientes?busca=.. — clientes salvos da loja (pelo telefone), mais recentes primeiro.
 router.get(
   "/clientes",
   asyncHandler(async (req, res) => {
-    const q = `%${String(req.query.busca || "").trim().replace(/[%_\\]/g, "\\$&")}%`;
-    const linhas = await prisma.$queryRaw`
-      SELECT * FROM (
-        SELECT DISTINCT ON (lower("clienteNome"), lower("endereco"))
-          "clienteNome" AS nome, "clienteTelefone" AS telefone, "endereco", "complemento", "createdAt"
-        FROM "Pedido"
-        WHERE "comercioId" = ${req.comercio.id}
-          AND ("clienteNome" ILIKE ${q} OR "clienteTelefone" ILIKE ${q} OR "endereco" ILIKE ${q})
-        ORDER BY lower("clienteNome"), lower("endereco"), "createdAt" DESC
-      ) c ORDER BY "createdAt" DESC LIMIT 8`;
-    res.json(linhas.map(({ createdAt, ...c }) => c));
+    const q = String(req.query.busca || "").trim();
+    const digitos = soDigitosTelefone(q);
+    const where = { comercioId: req.comercio.id };
+    if (q) {
+      where.OR = [
+        { nome: { contains: q, mode: "insensitive" } },
+        { endereco: { contains: q, mode: "insensitive" } },
+        ...(digitos.length >= 2 ? [{ telefone: { contains: digitos } }] : []),
+      ];
+    }
+    const lista = await prisma.clienteComercio.findMany({ where, orderBy: { ultimoPedidoEm: "desc" }, take: 8 });
+    res.json(lista.map(clientePublico));
+  })
+);
+
+// GET /api/app/comerciante/clientes/telefone/:telefone — cliente salvo com esse telefone (404 se novo)
+router.get(
+  "/clientes/telefone/:telefone",
+  asyncHandler(async (req, res) => {
+    const telefone = soDigitosTelefone(req.params.telefone);
+    const c = telefone.length >= 8
+      ? await prisma.clienteComercio.findUnique({ where: { comercioId_telefone: { comercioId: req.comercio.id, telefone } } })
+      : null;
+    if (!c) return res.status(404).json({ erro: "Cliente novo." });
+    res.json(clientePublico(c));
+  })
+);
+
+// GET /api/app/comerciante/enderecos?q=.. — busca de endereços no OpenStreetMap, perto da loja
+router.get(
+  "/enderecos",
+  asyncHandler(async (req, res) => {
+    const loja = await prisma.comercioEndereco.findFirst({ where: { comercioId: req.comercio.id, principal: true }, select: { lat: true, lng: true } });
+    try {
+      res.json(await buscarEnderecos(req.query.q, loja?.lat != null ? loja : null));
+    } catch (err) {
+      throw erroHttp(503, err.message);
+    }
   })
 );
 
@@ -225,7 +261,8 @@ router.post(
   "/pedidos/calcular",
   asyncHandler(async (req, res) => {
     if (!req.body.endereco) return res.status(400).json({ erro: 'Informe o "endereco".' });
-    res.json(await calcularEntrega({ comercioId: req.comercio.id, endereco: req.body.endereco, veiculo: req.body.veiculo }));
+    const { endereco, veiculo, destino, retorno } = req.body;
+    res.json(await calcularEntrega({ comercioId: req.comercio.id, endereco, veiculo, destino, retorno: !!retorno }));
   })
 );
 
@@ -234,10 +271,11 @@ router.post(
   "/pedidos",
   asyncHandler(async (req, res) => {
     const { clienteNome, clienteTelefone, endereco, complemento, retorno, agendadoPara, prazoDesejado, formaPagamento, observacao,
-      notaFiscalNumero, notaFiscalChave, notaFiscalValor } = req.body;
+      notaFiscalNumero, notaFiscalChave, notaFiscalValor, destino, veiculo } = req.body;
+    // (o valor é sempre calculado pelo sistema — a loja não define o preço)
     const pedido = await criarPedido(
       { comercioId: req.comercio.id, clienteNome, clienteTelefone, endereco, complemento, retorno, agendadoPara, prazoDesejado, formaPagamento, observacao,
-        notaFiscalNumero, notaFiscalChave, notaFiscalValor },
+        notaFiscalNumero, notaFiscalChave, notaFiscalValor, destino, veiculo },
       "SISTEMA_COMERCIANTE",
       autorComerciante(req)
     );

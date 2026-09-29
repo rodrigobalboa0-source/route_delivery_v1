@@ -13,12 +13,14 @@ export default function CampoCliente({ valor, onChange, onEscolher, placeholder,
   const id = useId();
 
   // Busca as sugestões (com uma pausa curta enquanto digita); só a resposta mais recente vale.
-  function carregar(busca, espera = 250) {
+  // Digitando: só abre se houver cliente parecido. Pela setinha: abre sempre (com aviso se vazio).
+  function carregar(busca, espera = 250, sempre = false) {
     clearTimeout(timer.current);
     timer.current = setTimeout(() => {
       const n = ++ultima.current;
       api.get(`/clientes${qs({ busca })}`).then(r => {
-        if (n === ultima.current) { setLista(r); setAtivo(-1); setAberto(true); }
+        if (n !== ultima.current) return;
+        setLista(r); setAtivo(-1); setAberto(sempre || r.length > 0);
       }).catch(() => {});
     }, espera);
   }
@@ -66,9 +68,10 @@ export default function CampoCliente({ valor, onChange, onEscolher, placeholder,
           else { clearTimeout(timer.current); ultima.current++; setAberto(false); }
         }}
         onKeyDown={teclas}
+        onBlur={() => { clearTimeout(timer.current); ultima.current++; setAberto(false); }}
       />
       <button type="button" className="campo-cliente-seta" tabIndex={-1} aria-label={`Clientes recentes (${rotulo})`}
-        onClick={() => (aberto ? setAberto(false) : carregar("", 0))}>
+        onClick={() => (aberto ? setAberto(false) : carregar("", 0, true))}>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
       </button>
       {aberto && (

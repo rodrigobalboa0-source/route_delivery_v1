@@ -6,6 +6,7 @@ import { api } from "../api";
 import { assinarTempoReal } from "../tempoReal";
 import { Botao, Cartao, Erro, Selo, Vazio } from "../componentes";
 import { VEICULOS, cor, dataCurta, km, moeda } from "../tema";
+import { CamposEndereco } from "./Entrada";
 
 function useCarregar(fn) {
   const [dados, setDados] = useState(null);
@@ -211,14 +212,66 @@ export function Promocoes() {
 
 const STATUS = { ATIVO: ["Ativo", cor.ok], EM_ANALISE: ["Em análise", cor.aviso], INATIVO: ["Inativo", cor.critico] };
 
-export function Perfil({ entregador, onSair }) {
+function textoEndereco(e) {
+  return [e?.rua && `${e.rua}${e.numero ? `, ${e.numero}` : ""}`, e?.complemento, e?.bairro, e?.cidade, e?.cep].filter(Boolean).join(" - ");
+}
+
+function MeuEndereco({ entregador, setEntregador }) {
+  const [editando, setEditando] = useState(false);
+  const [e, setE] = useState(null);
+  const [erro, setErro] = useState(null);
+  const [salvando, setSalvando] = useState(false);
+
+  function abrir() {
+    const x = entregador || {};
+    setE({ busca: [x.rua, x.numero].filter(Boolean).join(", "), rua: x.rua || "", numero: x.numero || "", complemento: x.complemento || "", bairro: x.bairro || "", cidade: x.cidade || "", cep: x.cep || "" });
+    setErro(null);
+    setEditando(true);
+  }
+
+  async function salvar() {
+    setSalvando(true);
+    setErro(null);
+    try {
+      const { busca, ...dados } = e;
+      setEntregador(await api.patch("/endereco", dados));
+      setEditando(false);
+    } catch (err) {
+      setErro(err.message);
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <Cartao>
+      <Text style={st.secao}>Meu endereço</Text>
+      {editando ? (
+        <>
+          <CamposEndereco e={e} setE={setE} />
+          <Erro texto={erro} />
+          <View style={{ flexDirection: "row", gap: 10 }}>
+            <Botao titulo="Cancelar" variante="secundario" onPress={() => setEditando(false)} estilo={{ flex: 1 }} />
+            <Botao titulo="Salvar" onPress={salvar} carregando={salvando} desabilitado={!e.rua?.trim()} estilo={{ flex: 1 }} />
+          </View>
+        </>
+      ) : (
+        <>
+          <Text style={st.texto}>{textoEndereco(entregador) || "Nenhum endereço cadastrado."}</Text>
+          <Botao pequeno variante="secundario" titulo={entregador?.rua ? "Alterar endereço" : "Cadastrar endereço"} onPress={abrir} />
+        </>
+      )}
+    </Cartao>
+  );
+}
+
+export function Perfil({ entregador, setEntregador, onSair }) {
   const [rotulo, c] = STATUS[entregador?.status] || [entregador?.status, cor.texto2];
   const linhas = [
     ["E-mail", entregador?.email], ["Telefone", entregador?.telefone], ["Veículo", [VEICULOS[entregador?.veiculoTipo], entregador?.veiculoModelo, entregador?.veiculoPlaca].filter(Boolean).join(" · ")],
-    ["Cidade", entregador?.cidade],
   ];
   return (
-    <ScrollView contentContainerStyle={st.tela}>
+    <ScrollView contentContainerStyle={st.tela} keyboardShouldPersistTaps="handled">
       <Cartao>
         <Text style={st.nome}>{entregador?.nomeCompleto}</Text>
         <Selo texto={rotulo} corFundo="rgba(255,255,255,0.06)" corTexto={c} />
@@ -226,6 +279,7 @@ export function Perfil({ entregador, onSair }) {
           <View key={r} style={st.perfilLinha}><Text style={st.perfilRotulo}>{r}</Text><Text style={st.texto}>{v}</Text></View>
         ))}
       </Cartao>
+      <MeuEndereco entregador={entregador} setEntregador={setEntregador} />
       <Text style={st.textoPequeno}>Para alterar seus dados, fale com a equipe da operação.</Text>
       <Botao titulo="Sair da conta" variante="perigo" onPress={onSair} />
     </ScrollView>

@@ -119,7 +119,11 @@ export default function DetalhePedido({ id, onFechar }) {
               {pedido.retorno && <div><span className="selo-retorno" style={{ marginLeft: 0 }}>↩ Com retorno à loja</span></div>}
             </dd>
             {pedido.agendadoPara && <><dt>Agendado</dt><dd>Entregador chamado em {dataHora(pedido.agendadoPara)}</dd></>}
-            <dt>Valor</dt><dd>{moeda(pedido.valor)}</dd>
+            <dt>Valor</dt>
+            <dd>
+              {moeda(pedido.valor)}
+              {pedido.acrescimoRetorno > 0 && <span className="apagado"> (inclui retorno +{moeda(pedido.acrescimoRetorno)})</span>}
+            </dd>
             <dt>Distância</dt><dd>{km(pedido.distanciaKm)}</dd>
             <dt>Pagamento</dt><dd>{pedido.formaPagamento || "—"}</dd>
             <dt>Prazo</dt><dd>{pedido.prazoDesejado || "—"}</dd>

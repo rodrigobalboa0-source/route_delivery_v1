@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { api, salvarToken } from "../api";
 import { Botao, Campo, Cartao, Erro } from "../componentes";
+import BuscaEndereco from "../BuscaEndereco";
 import { VEICULOS, cor } from "../tema";
 
 function Login({ onEntrou, onCadastro }) {
@@ -37,8 +38,31 @@ function Login({ onEntrou, onCadastro }) {
   );
 }
 
+const ENDERECO_VAZIO = { busca: "", rua: "", numero: "", complemento: "", bairro: "", cidade: "", cep: "" };
+
+// Endereço do entregador: busca no OpenStreetMap preenche rua, bairro, cidade e CEP; número e complemento editáveis.
+export function CamposEndereco({ e, setE }) {
+  const set = k => t => setE({ ...e, [k]: t });
+  return (
+    <>
+      <BuscaEndereco
+        rotulo="Endereço (rua e número)"
+        valor={e.busca}
+        onChangeText={t => setE({ ...e, busca: t, rua: t, bairro: "", cidade: e.cidade, cep: "" })}
+        onEscolher={x => setE({ ...e, busca: x.endereco, rua: x.rua || x.titulo, numero: x.numero || e.numero, bairro: x.bairro || "", cidade: x.cidade || "", cep: x.cep || "" })}
+      />
+      <View style={st.linha2}>
+        <View style={{ flex: 1 }}><Campo rotulo="Número" value={e.numero} onChangeText={set("numero")} keyboardType="number-pad" /></View>
+        <View style={{ flex: 2 }}><Campo rotulo="Complemento" value={e.complemento} onChangeText={set("complemento")} placeholder="Apto, bloco…" /></View>
+      </View>
+      <Campo rotulo="Cidade" value={e.cidade} onChangeText={set("cidade")} />
+    </>
+  );
+}
+
 function Cadastro({ onVoltar }) {
-  const [v, setV] = useState({ nomeCompleto: "", email: "", senha: "", telefone: "", cpf: "", cidade: "", veiculoTipo: "MOTO", veiculoPlaca: "" });
+  const [v, setV] = useState({ nomeCompleto: "", email: "", senha: "", telefone: "", cpf: "", veiculoTipo: "MOTO", veiculoPlaca: "" });
+  const [end, setEnd] = useState(ENDERECO_VAZIO);
   const [erro, setErro] = useState(null);
   const [ok, setOk] = useState(null);
   const [carregando, setCarregando] = useState(false);
@@ -48,7 +72,8 @@ function Cadastro({ onVoltar }) {
     setErro(null);
     setCarregando(true);
     try {
-      const r = await api.post("/cadastro", { ...v, email: v.email.trim() });
+      const { busca, ...endereco } = end;
+      const r = await api.post("/cadastro", { ...v, ...endereco, email: v.email.trim() });
       setOk(r.mensagem);
     } catch (e) {
       setErro(/Unique|unique|email/.test(e.message) ? "Este e-mail já está cadastrado." : e.message);
@@ -75,7 +100,7 @@ function Cadastro({ onVoltar }) {
       <Campo rotulo="Senha * (mínimo 6)" value={v.senha} onChangeText={set("senha")} secureTextEntry />
       <Campo rotulo="Telefone" value={v.telefone} onChangeText={set("telefone")} keyboardType="phone-pad" />
       <Campo rotulo="CPF" value={v.cpf} onChangeText={set("cpf")} keyboardType="number-pad" />
-      <Campo rotulo="Cidade" value={v.cidade} onChangeText={set("cidade")} />
+      <CamposEndereco e={end} setE={setEnd} />
       <Text style={st.rotulo}>Veículo</Text>
       <View style={st.opcoes}>
         {Object.entries(VEICULOS).map(([k, r]) => (
@@ -115,6 +140,7 @@ const st = StyleSheet.create({
   texto: { color: cor.texto2, fontSize: 15, lineHeight: 21 },
   rotulo: { color: cor.texto2, fontSize: 13 },
   opcoes: { flexDirection: "row", gap: 8 },
+  linha2: { flexDirection: "row", gap: 10 },
   opcao: { flex: 1, paddingVertical: 11, borderRadius: 10, borderWidth: 1, borderColor: cor.borda, alignItems: "center", backgroundColor: cor.superficie2 },
   opcaoAtiva: { backgroundColor: cor.primaria, borderColor: cor.primaria },
   opcaoTexto: { color: cor.texto2, fontWeight: "700" },

@@ -141,6 +141,17 @@ input[type="datetime-local"], input[type="date"] { color-scheme: dark; }
 .campo-cliente-lista button:hover, .campo-cliente-lista button.ativo { background: var(--superficie-2); }
 .campo-cliente-lista small { display: block; color: var(--texto-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .campo-cliente-vazio { padding: 8px 10px; }
+.campo-endereco-lista { min-width: min(420px, 90vw); max-height: 360px; }
+.lista-secao { padding: 6px 9px 3px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--texto-3); }
+.lista-rodape { padding: 5px 9px 2px; font-size: 10px; color: var(--texto-3); text-align: right; border-top: 1px solid var(--borda); margin-top: 4px; }
+.campo-endereco-lista button { position: relative; }
+.campo-endereco-lista button strong { display: inline; }
+.pino-sugestao { margin-right: 4px; font-size: 12px; }
+.criar-calculo { display: flex; flex-direction: column; gap: 3px; }
+.criar-valor { color: var(--ok); }
+.aviso-cliente { font-size: 12px; }
+.aviso-cliente.salvo { color: var(--ok); }
+.aviso-cliente.novo { color: var(--info); }
 
 .botao-icone {
   position: relative; width: 36px; height: 36px; flex: 0 0 36px; border-radius: 8px; border: 1px solid var(--borda-forte);

@@ -1,13 +1,15 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api } from "../api";
+import { api, qs } from "../api";
 import { useAuth } from "../auth";
 import { useApi } from "../hooks/useApi";
 import { Botao, Cabecalho, Campo, useAcao } from "../components/ui";
+import BuscaEndereco from "../components/BuscaEndereco";
 import { VEICULOS, km, moeda } from "../utils/format";
+import { mascaraTelefone, soDigitos } from "../utils/documento";
 
 const VAZIO = {
-  comercioId: "", clienteNome: "", clienteTelefone: "", endereco: "", formaPagamento: "", prazoDesejado: "", valor: "", observacao: "",
+  comercioId: "", clienteNome: "", clienteTelefone: "", endereco: "", complemento: "", formaPagamento: "", prazoDesejado: "", valor: "", observacao: "",
   notaFiscalNumero: "", notaFiscalChave: "", notaFiscalValor: "",
 };
 
@@ -15,27 +17,63 @@ export default function NovaEntrega() {
   const navegar = useNavigate();
   const { podeEditar } = useAuth();
   const { dados: comercios } = useApi("/comercios?bloqueado=false");
+  const { dados: config } = useApi("/configuracoes");
   const [v, setV] = useState(VAZIO);
   const [veiculo, setVeiculo] = useState("MOTO");
+  const [retorno, setRetorno] = useState(false);
+  const [destino, setDestino] = useState(null); // posição escolhida na busca
   const [calculo, setCalculo] = useState(null);
+  const [cliente, setCliente] = useState(null); // { salvo, c } | { novo }
   const { executar, ocupado } = useAcao();
+  const foneBuscado = useRef("");
+  const pct = config?.retornoPercentual ?? 20;
 
   const set = k => e => {
     setV({ ...v, [k]: e.target.value });
-    if (k === "endereco" || k === "comercioId") setCalculo(null);
+    if (k === "comercioId") { setCalculo(null); setCliente(null); foneBuscado.current = ""; }
   };
 
-  async function calcular() {
-    const r = await executar(() => api.post("/nova-entrega/calcular", { comercioId: v.comercioId, endereco: v.endereco, veiculo }));
+  async function calcular(opc = {}) {
+    const corpo = {
+      comercioId: opc.comercioId ?? v.comercioId, endereco: opc.endereco ?? v.endereco, veiculo: opc.veiculo ?? veiculo,
+      destino: opc.destino !== undefined ? opc.destino : destino, retorno: opc.retorno ?? retorno,
+    };
+    if (!corpo.comercioId || !corpo.endereco) return;
+    const r = await executar(() => api.post("/nova-entrega/calcular", corpo));
     if (r) {
       setCalculo(r);
       setV(atual => ({ ...atual, valor: r.valor }));
     }
   }
 
+  // Telefone completo: se o cliente já pediu deste comércio, preenche nome, endereço e complemento.
+  async function mudarTelefone(texto) {
+    const valor = mascaraTelefone(texto);
+    setV(a => ({ ...a, clienteTelefone: valor }));
+    const d = soDigitos(valor);
+    if (![10, 11].includes(d.length) || !v.comercioId) { setCliente(null); foneBuscado.current = ""; return; }
+    if (d === foneBuscado.current) return;
+    foneBuscado.current = d;
+    const c = await api.get(`/nova-entrega/cliente${qs({ comercioId: v.comercioId, telefone: d })}`).catch(() => null);
+    if (foneBuscado.current !== d) return;
+    if (!c) { setCliente({ novo: true }); return; }
+    const pos = c.lat != null ? { lat: c.lat, lng: c.lng } : null;
+    setV(a => ({ ...a, clienteNome: c.nome, endereco: c.endereco, complemento: c.complemento || "" }));
+    setDestino(pos);
+    setCliente({ salvo: true, c });
+    calcular({ endereco: c.endereco, destino: pos });
+  }
+
+  function escolherEndereco(e) {
+    const pos = e.exato ? { lat: e.lat, lng: e.lng } : null;
+    setV(a => ({ ...a, endereco: e.endereco }));
+    setDestino(pos);
+    calcular({ endereco: e.endereco, destino: pos });
+  }
+
   async function criar(e) {
     e.preventDefault();
-    const r = await executar(() => api.post("/nova-entrega", v), `Pedido criado.`);
+    const r = await executar(() => api.post("/nova-entrega", { ...v, destino, retorno, veiculo }), `Pedido criado.`);
     if (r) navegar(`/operacao?abrir=${r.id}`);
   }
 
@@ -65,28 +103,50 @@ export default function NovaEntrega() {
 
         <h3 className="secao-titulo">Cliente e destino</h3>
         <div className="grade-campos">
-          <Campo rotulo="Nome do cliente *"><input value={v.clienteNome} onChange={set("clienteNome")} required /></Campo>
-          <Campo rotulo="Telefone do cliente"><input value={v.clienteTelefone} onChange={set("clienteTelefone")} /></Campo>
-          <Campo rotulo="Endereço de entrega *" largo dica="Rua, número e bairro. A distância é calculada pelo percurso real, não em linha reta.">
-            <input value={v.endereco} onChange={set("endereco")} required />
+          <Campo
+            rotulo="Telefone do cliente"
+            dica={cliente?.salvo
+              ? <span className="aviso-cliente-adm salvo">✓ Cliente salvo: {cliente.c.nome} · {cliente.c.totalPedidos} pedido(s) — dados preenchidos</span>
+              : cliente?.novo ? <span className="aviso-cliente-adm novo">Cliente novo — fica salvo por este telefone</span>
+                : v.comercioId ? "Se o cliente já pediu deste comércio, os dados aparecem sozinhos." : "Escolha o comerciante primeiro."}
+          >
+            <input type="tel" value={v.clienteTelefone} onChange={e => mudarTelefone(e.target.value)} placeholder="(11) 90000-0000" />
           </Campo>
+          <Campo rotulo="Nome do cliente *"><input value={v.clienteNome} onChange={set("clienteNome")} required /></Campo>
+          <Campo rotulo="Endereço de entrega *" largo dica="Digite a rua e o número e escolha na lista (OpenStreetMap). A distância é pelo percurso real.">
+            <BuscaEndereco
+              valor={v.endereco}
+              comercioId={v.comercioId}
+              rotulo="Endereço de entrega"
+              obrigatorio
+              onChange={t => { setV(a => ({ ...a, endereco: t })); setDestino(null); setCalculo(null); }}
+              onEscolher={escolherEndereco}
+            />
+          </Campo>
+          <Campo rotulo="Complemento"><input value={v.complemento} onChange={set("complemento")} placeholder="Apto, bloco, referência" /></Campo>
+          <label className="campo campo-switch">
+            <input type="checkbox" role="switch" checked={retorno} onChange={e => { setRetorno(e.target.checked); if (calculo) calcular({ retorno: e.target.checked }); }} />
+            <span className="interruptor" aria-hidden="true" />
+            <span>Com retorno à loja (+{pct}% na taxa)</span>
+          </label>
         </div>
 
         <h3 className="secao-titulo">Valor</h3>
         <div className="linha-acao">
-          <select value={veiculo} onChange={e => { setVeiculo(e.target.value); setCalculo(null); }} aria-label="Veículo para o cálculo" style={{ flex: "0 0 auto", minWidth: 105 }}>
+          <select value={veiculo} onChange={e => { setVeiculo(e.target.value); if (calculo) calcular({ veiculo: e.target.value }); }} aria-label="Veículo para o cálculo" style={{ flex: "0 0 auto", minWidth: 105 }}>
             {Object.entries(VEICULOS).map(([k, r]) => <option key={k} value={k}>{r}</option>)}
           </select>
-          <Botao disabled={!v.comercioId || !v.endereco || ocupado} onClick={calcular}>Calcular distância e valor</Botao>
+          <Botao disabled={!v.comercioId || !v.endereco || ocupado} onClick={() => calcular()}>Calcular distância e valor</Botao>
           {calculo && (
             <span className="sucesso-inline">
               ✓ {km(calculo.distanciaKm)} de percurso · {moeda(calculo.valor)}
-              {calculo.fonte && <span className="apagado"> · rota pelo {calculo.fonte === "google" ? "Google Maps" : "OpenStreetMap"}</span>}
+              {calculo.acrescimoRetorno > 0 && <span className="apagado"> (taxa {moeda(calculo.valorBase)} + retorno {calculo.retornoPercentual}% {moeda(calculo.acrescimoRetorno)})</span>}
+              {calculo.fonte && <span className="apagado"> · {calculo.fonte === "google" ? "Google Maps" : "OpenStreetMap"}</span>}
             </span>
           )}
         </div>
         <div className="grade-campos" style={{ marginTop: 12 }}>
-          <Campo rotulo="Valor da entrega (R$)" dica="Em branco = cálculo automático ao criar.">
+          <Campo rotulo="Valor da entrega (R$)" dica="Em branco = cálculo automático ao criar (com o retorno, se marcado).">
             <input type="number" step="0.01" min="0" value={v.valor} onChange={set("valor")} />
           </Campo>
           <Campo rotulo="Forma de pagamento"><input value={v.formaPagamento} onChange={set("formaPagamento")} placeholder="Pix, cartão, dinheiro…" /></Campo>
@@ -106,7 +166,7 @@ export default function NovaEntrega() {
         </div>
 
         <div className="form-rodape">
-          <Botao variante="fantasma" onClick={() => { setV(VAZIO); setCalculo(null); }}>Limpar</Botao>
+          <Botao variante="fantasma" onClick={() => { setV(VAZIO); setCalculo(null); setDestino(null); setRetorno(false); setCliente(null); foneBuscado.current = ""; }}>Limpar</Botao>
           <button type="submit" className="btn btn-primario" disabled={ocupado}>Criar entrega</button>
         </div>
       </form>

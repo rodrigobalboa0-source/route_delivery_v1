@@ -11,7 +11,9 @@ import { BadgeMapa, Botao, Carregando, ErroCaixa, useAcao } from "../components/
 import MapaEntregadores from "../components/MapaEntregadores";
 import DetalhePedido from "../components/DetalhePedido";
 import CampoCliente from "../components/CampoCliente";
-import { COM_ENTREGADOR, STATUS_PEDIDO, VEICULOS, dataHora, km, moeda, tempoRelativo } from "../utils/format";
+import CampoEndereco from "../components/CampoEndereco";
+import { textoValor, useFormEntrega } from "../hooks/useFormEntrega";
+import { COM_ENTREGADOR, STATUS_PEDIDO, VEICULOS, dataHora, moeda, tempoRelativo } from "../utils/format";
 
 const VAZIO = { clienteNome: "", clienteTelefone: "", endereco: "", complemento: "", formaPagamento: "", observacao: "", agendadoPara: "" };
 const PAGAMENTOS = ["Pago (online)", "Pix", "Cartão na entrega", "Dinheiro"];
@@ -35,41 +37,33 @@ function Chave({ rotulo, ligado, onChange, titulo }) {
   );
 }
 
-function CriarRapido({ onPrevia, onCriado }) {
-  const [v, setV] = useState(VAZIO);
-  const [retorno, setRetorno] = useState(false);
+export function AvisoCliente({ cliente }) {
+  if (!cliente) return null;
+  return cliente.salvo
+    ? <span className="aviso-cliente salvo">✓ Cliente salvo: <strong>{cliente.c.nome}</strong> · {cliente.c.totalPedidos} pedido(s) — dados preenchidos</span>
+    : <span className="aviso-cliente novo">Cliente novo — fica salvo por este telefone ao criar a entrega</span>;
+}
+
+export function ResumoValor({ calculo }) {
+  const t = textoValor(calculo);
+  if (!t) return null;
+  return <>✓ {t.base} · <strong>{t.valor}</strong>{t.extra && <span className="apagado">{t.extra}</span>}</>;
+}
+
+function CriarRapido({ onPrevia, onCriado, retornoPercentual }) {
+  const f = useFormEntrega({ vazio: VAZIO, onPrevia });
+  const { v, mudar, calculo, retorno, ocupado } = f;
   const [pronto, setPronto] = useState(true);
   const [mais, setMais] = useState(false);
-  const [calculo, setCalculo] = useState(null);
-  const { executar, ocupado } = useAcao();
-
-  const set = k => valor => {
-    setV(atual => ({ ...atual, [k]: valor }));
-    if (k === "endereco") { setCalculo(null); onPrevia(null); }
-  };
-  const escolherCliente = c => {
-    setV(atual => ({ ...atual, clienteNome: c.nome, clienteTelefone: c.telefone || "", endereco: c.endereco, complemento: c.complemento || "" }));
-    setCalculo(null);
-    onPrevia(null);
-  };
-
-  async function localizar() {
-    if (!v.endereco.trim()) return;
-    const r = await executar(() => api.post("/pedidos/calcular", { endereco: v.endereco }));
-    if (r) {
-      setCalculo(r);
-      if (r.destino) onPrevia({ lat: r.destino.lat, lng: r.destino.lng, rotulo: `${v.clienteNome || "Novo pedido"} · ${moeda(r.valor)}` });
-    }
-  }
+  const set = k => valor => mudar(k, valor);
 
   async function criar(e) {
     e.preventDefault();
-    const corpo = { ...v, retorno, pronto, agendadoPara: v.agendadoPara ? new Date(v.agendadoPara).toISOString() : null };
+    const corpo = f.corpo({ pronto, agendadoPara: v.agendadoPara ? new Date(v.agendadoPara).toISOString() : null });
     const msg = v.agendadoPara ? "Entrega agendada." : pronto ? "Entrega criada! Chamando entregador." : "Entrega criada. Clique em “Pedido pronto” quando for a hora.";
-    const r = await executar(() => api.post("/pedidos", corpo), msg);
+    const r = await f.executar(() => api.post("/pedidos", corpo), msg);
     if (r) {
-      setV(VAZIO); setRetorno(false); setCalculo(null); setMais(false);
-      onPrevia(null);
+      f.limpar(); setMais(false);
       onCriado(r);
     }
   }
@@ -77,14 +71,14 @@ function CriarRapido({ onPrevia, onCriado }) {
   return (
     <form className="criar-rapido" onSubmit={criar} aria-label="Criar entrega">
       <div className="criar-linha">
-        <CampoCliente className="cr-nome" rotulo="Nome do cliente" placeholder="Nome do cliente" valor={v.clienteNome} onChange={set("clienteNome")} onEscolher={escolherCliente} obrigatorio />
-        <CampoCliente className="cr-tel" rotulo="Telefone" tipo="tel" placeholder="Telefone" valor={v.clienteTelefone} onChange={set("clienteTelefone")} onEscolher={escolherCliente} />
-        <CampoCliente className="cr-end" rotulo="Endereço de entrega" placeholder="Rua, número, bairro" valor={v.endereco} onChange={set("endereco")} onEscolher={escolherCliente} obrigatorio />
-        <button type="button" className="botao-icone" onClick={localizar} disabled={!v.endereco.trim() || ocupado} title="Ver no mapa e calcular o valor" aria-label="Ver no mapa e calcular o valor">
+        <CampoCliente className="cr-nome" rotulo="Nome do cliente" placeholder="Nome do cliente" valor={v.clienteNome} onChange={set("clienteNome")} onEscolher={f.aplicarCliente} obrigatorio />
+        <CampoCliente className="cr-tel" rotulo="Telefone" tipo="tel" placeholder="Telefone (busca o cliente)" valor={v.clienteTelefone} onChange={set("clienteTelefone")} onEscolher={f.aplicarCliente} />
+        <CampoEndereco className="cr-end" valor={v.endereco} onChange={set("endereco")} onEscolherEndereco={f.escolherEndereco} onEscolherCliente={f.aplicarCliente} obrigatorio />
+        <button type="button" className="botao-icone" onClick={() => f.calcular()} disabled={!v.endereco.trim() || ocupado} title="Ver no mapa e calcular o valor" aria-label="Ver no mapa e calcular o valor">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2z" /><path d="M9 4v14M15 6v14" /></svg>
         </button>
         <input className="cr-comp" value={v.complemento} onChange={e => set("complemento")(e.target.value)} placeholder="Complemento" aria-label="Complemento" />
-        <Chave rotulo="Retorno?" ligado={retorno} onChange={setRetorno} titulo="O entregador volta à loja depois de entregar (maquininha, troco, devolução)" />
+        <Chave rotulo="Retorno?" ligado={retorno} onChange={f.setRetorno} titulo={`O entregador volta à loja depois de entregar (maquininha, troco, devolução). Acréscimo de ${retornoPercentual ?? 20}% na taxa.`} />
         <Chave rotulo="Pronto?" ligado={pronto} onChange={setPronto} titulo="Ligado: chama o entregador assim que criar. Desligado: fica “Criado” até você clicar em Pedido pronto." />
         <button type="button" className={`botao-redondo ${mais ? "ativo" : ""}`} onClick={() => setMais(m => !m)} aria-expanded={mais} aria-label="Mais opções" title="Mais opções (pagamento, observação, agendamento)">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d={mais ? "m6 15 6-6 6 6" : "M12 5v14M5 12h14"} /></svg>
@@ -105,8 +99,10 @@ function CriarRapido({ onPrevia, onCriado }) {
       )}
       <div className="criar-rodape">
         <span className="criar-calculo" aria-live="polite">
-          {calculo && <>✓ {km(calculo.distanciaKm)} · <strong>{moeda(calculo.valor)}</strong></>}
-          {v.agendadoPara && <span className="apagado"> · entregador será chamado em {dataHora(new Date(v.agendadoPara))}</span>}
+          <AvisoCliente cliente={f.cliente} />
+          <span className="criar-valor"><ResumoValor calculo={calculo} /></span>
+          {retorno && !calculo && <span className="apagado">Retorno: +{retornoPercentual ?? 20}% na taxa</span>}
+          {v.agendadoPara && <span className="apagado">⏰ entregador será chamado em {dataHora(new Date(v.agendadoPara))}</span>}
         </span>
         <button type="submit" className="btn btn-laranja" disabled={ocupado}>{v.agendadoPara ? "Agendar Entrega" : "Criar Entrega"}</button>
       </div>
@@ -276,7 +272,7 @@ export default function Painel() {
   return (
     <div className="painel">
       <h1 className="sr-only">Painel de Controle — {loja?.nomeFantasia}</h1>
-      <CriarRapido onPrevia={setPrevia} onCriado={() => mapa.recarregar({ silencioso: true })} />
+      <CriarRapido onPrevia={setPrevia} onCriado={() => mapa.recarregar({ silencioso: true })} retornoPercentual={loja?.retornoPercentual} />
       <ErroCaixa erro={mapa.erro} onTentar={() => mapa.recarregar()} />
 
       <div className="painel-grade">

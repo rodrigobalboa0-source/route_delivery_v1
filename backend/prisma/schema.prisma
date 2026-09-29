@@ -199,6 +199,7 @@ model Comercio {
   creditos            CreditoMovimento[]
   comissoesManuais    ComissaoManual[]
   conversa            Conversa?
+  clientes            ClienteComercio[]
 }
 
 model ComercioEndereco {
@@ -287,6 +288,7 @@ model Entregador {
 
   pedidos               Pedido[]
   comerciosPermitidos   EntregadorComercioPermitido[]
+  recusas               PedidoRecusa[]
   historicoStatus       EntregadorStatusHistorico[]
   localizacoes          EntregadorLocalizacao[]
   avisosVistos          PromocaoAvisoVisto[]
@@ -488,6 +490,7 @@ model Pedido {
   complemento     String?      // apto, bloco, referência — fora do endereço para não atrapalhar o mapa
   // Entrega com retorno: o entregador volta à loja depois (maquininha, troco, devolução de mercadoria).
   retorno         Boolean      @default(false)
+  acrescimoRetorno Float?      // quanto do "valor" é o acréscimo do retorno (Configurações › % do retorno)
   // Agendamento: o pedido fica "Criado" e é liberado sozinho para os entregadores neste horário.
   agendadoPara    DateTime?
   latDestino      Float?
@@ -530,10 +533,45 @@ model Pedido {
 
   logs            PedidoLog[]
   historicoStatus PedidoStatusHistorico[]
+  recusas         PedidoRecusa[]
 
   @@unique([integracaoSlug, idExterno])
   @@index([createdAt])
   @@index([entregadorId, entregueEm])
+}
+
+// Entregador recusou a corrida: ela some da lista dele (continua disponível para os outros).
+model PedidoRecusa {
+  id           String     @id @default(cuid())
+  pedidoId     String
+  pedido       Pedido     @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  entregadorId String
+  entregador   Entregador @relation(fields: [entregadorId], references: [id], onDelete: Cascade)
+  createdAt    DateTime   @default(now())
+
+  @@unique([pedidoId, entregadorId])
+  @@index([entregadorId])
+}
+
+// Clientes de cada comércio, salvos pelo telefone ao criar uma entrega:
+// na próxima, digitar o telefone preenche nome, endereço e complemento.
+model ClienteComercio {
+  id             String   @id @default(cuid())
+  comercioId     String
+  comercio       Comercio @relation(fields: [comercioId], references: [id], onDelete: Cascade)
+  telefone       String   // só dígitos (com DDD)
+  nome           String
+  endereco       String
+  complemento    String?
+  lat            Float?
+  lng            Float?
+  totalPedidos   Int      @default(0)
+  ultimoPedidoEm DateTime @default(now())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @default(now()) @updatedAt
+
+  @@unique([comercioId, telefone])
+  @@index([comercioId, ultimoPedidoEm])
 }
 
 // ---------- Integrações ----------
@@ -805,4 +843,6 @@ model Configuracao {
   empresaEmail             String?
   // Chave da API do Google Maps (criptografada) — usada só para localizar endereços e medir o km da rota.
   googleMapsChave          String?
+  // Entrega com retorno à loja: acréscimo sobre a taxa calculada (%).
+  retornoPercentual        Float   @default(20)
 }

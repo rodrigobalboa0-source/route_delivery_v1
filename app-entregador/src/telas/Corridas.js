@@ -1,6 +1,6 @@
 // Corridas: o "motor" da operação (online/offline, GPS, listas) e as telas Disponíveis e Em andamento.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Linking, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Linking, Modal, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import * as Location from "expo-location";
 import { api } from "../api";
 import { assinarTempoReal } from "../tempoReal";
@@ -28,8 +28,10 @@ export function useOperacao(entregador, setEntregador) {
   const [aviso, setAviso] = useState(null);
   const [mudandoStatus, setMudandoStatus] = useState(false);
   const [aceitando, setAceitando] = useState(null);
+  const [novas, setNovas] = useState([]); // corridas que acabaram de aparecer (pop-up Aceitar/Recusar)
   const online = !!entregador?.online;
   const ultimoEnvio = useRef(0);
+  const vistas = useRef(null); // ids já mostrados (null = primeira carga: não avisa as que já estavam lá)
 
   const carregar = useCallback(async () => {
     try {
@@ -39,6 +41,18 @@ export function useOperacao(entregador, setEntregador) {
       ]);
       setAtivos(meus);
       setDisponiveis(lista);
+      // Corrida nova (inclusive agendada que chegou no horário): entra na fila do pop-up.
+      if (online) {
+        if (vistas.current) {
+          const chegaram = lista.filter(p => !vistas.current.has(p.id));
+          if (chegaram.length) setNovas(f => [...f, ...chegaram.filter(p => !f.some(x => x.id === p.id))]);
+        }
+        vistas.current = new Set([...(vistas.current || []), ...lista.map(p => p.id)]);
+      } else {
+        vistas.current = null;
+      }
+      // Some do pop-up o que já não está disponível (outro entregador aceitou, loja cancelou...).
+      setNovas(f => f.filter(p => lista.some(x => x.id === p.id)));
       setErro(null);
     } catch (e) {
       setErro(e.message);
@@ -133,11 +147,28 @@ export function useOperacao(entregador, setEntregador) {
     }
   }
 
+  async function recusar(p) {
+    setNovas(f => f.filter(x => x.id !== p.id));
+    setDisponiveis(l => l.filter(x => x.id !== p.id));
+    try {
+      await api.post(`/pedidos/${p.id}/recusar`);
+    } catch (e) {
+      setErro(e.message);
+    }
+    carregar();
+  }
+
+  // Fecha o pop-up sem decidir (a corrida continua em Disponíveis).
+  const depois = p => setNovas(f => f.filter(x => x.id !== p.id));
+
   async function atualizarTudo() {
     await Promise.all([carregar(), carregarGanho()]);
   }
 
-  return { ativos, disponiveis, posicao, ganhoHoje, erro, setErro, aviso, online, mudandoStatus, aceitando, alternarOnline, aceitar, atualizarTudo };
+  return {
+    ativos, disponiveis, posicao, ganhoHoje, erro, setErro, aviso, online, mudandoStatus, aceitando, alternarOnline, aceitar, recusar, atualizarTudo,
+    novaCorrida: novas[0] || null, depois,
+  };
 }
 
 // ---------- Cartões ----------
@@ -219,20 +250,70 @@ function EntregaAtiva({ p, onAtualizar, onErro }) {
   );
 }
 
-function Disponivel({ p, onAceitar, ocupado }) {
+function DadosCorrida({ p }) {
+  return (
+    <>
+      <InfoLinha rotulo="Coleta" valor={enderecoLoja(p.comercio)} />
+      <InfoLinha rotulo="Entrega" valor={p.complemento ? `${p.endereco} · ${p.complemento}` : p.endereco} />
+      {p.retorno ? <InfoLinha rotulo="Retorno" valor="Sim — volta à loja depois de entregar" destaque /> : null}
+      <InfoLinha rotulo="Percurso" valor={p.distanciaKm != null ? km(p.distanciaKm) : null} />
+      {p.agendadoPara ? <InfoLinha rotulo="Agendada" valor={`para ${hora(p.agendadoPara)}`} /> : null}
+      <InfoLinha rotulo="Pronto desde" valor={hora(p.prontoEm || p.updatedAt)} />
+    </>
+  );
+}
+
+function Disponivel({ p, onAceitar, onRecusar, ocupado }) {
   return (
     <Cartao>
       <View style={st.topoCartao}>
         <Text style={st.codigo}>{p.comercio?.nomeFantasia}</Text>
         {p.distanciaAteColetaKm != null && <Selo texto={`${km(p.distanciaAteColetaKm)} de você`} />}
       </View>
-      <InfoLinha rotulo="Coleta" valor={enderecoLoja(p.comercio)} />
-      <InfoLinha rotulo="Entrega" valor={p.complemento ? `${p.endereco} · ${p.complemento}` : p.endereco} />
-      {p.retorno ? <InfoLinha rotulo="Retorno" valor="Sim — volta à loja depois de entregar" /> : null}
-      <InfoLinha rotulo="Percurso" valor={p.distanciaKm != null ? km(p.distanciaKm) : null} />
-      <InfoLinha rotulo="Pronto desde" valor={hora(p.prontoEm || p.updatedAt)} />
-      <Botao titulo="Aceitar corrida" variante="sucesso" onPress={() => onAceitar(p)} carregando={ocupado} />
+      <DadosCorrida p={p} />
+      <View style={st.acoes}>
+        <Botao titulo="Recusar" variante="perigo" onPress={() => onRecusar(p)} estilo={{ flex: 1 }} />
+        <Botao titulo="Aceitar corrida" variante="sucesso" onPress={() => onAceitar(p)} carregando={ocupado} estilo={{ flex: 2 }} />
+      </View>
     </Cartao>
+  );
+}
+
+// Pop-up "Nova corrida" (qualquer tela): Aceitar ou Recusar. Fecha sozinho em 45 s (continua em Disponíveis).
+export function PopupCorrida({ op, onAceitou }) {
+  const p = op.novaCorrida;
+  const [resta, setResta] = useState(45);
+  useEffect(() => {
+    if (!p) return;
+    setResta(45);
+    const t = setInterval(() => setResta(s => {
+      if (s <= 1) { clearInterval(t); op.depois(p); return 0; }
+      return s - 1;
+    }), 1000);
+    return () => clearInterval(t);
+  }, [p?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!p) return null;
+  return (
+    <Modal visible transparent animationType="slide" onRequestClose={() => op.depois(p)}>
+      <View style={st.popFundo}>
+        <View style={st.pop}>
+          <View style={st.popFaixa}><Text style={st.popFaixaTexto}>🔔 Nova corrida{p.agendadoPara ? " (agendada)" : ""}</Text><Text style={st.popTempo}>{resta}s</Text></View>
+          <View style={{ padding: 18, gap: 10 }}>
+            <View style={st.topoCartao}>
+              <Text style={st.codigo}>{p.comercio?.nomeFantasia}</Text>
+              {p.distanciaAteColetaKm != null && <Selo texto={`${km(p.distanciaAteColetaKm)} de você`} />}
+            </View>
+            <DadosCorrida p={p} />
+            <View style={st.acoes}>
+              <Botao titulo="Recusar" variante="perigo" onPress={() => op.recusar(p)} estilo={{ flex: 1 }} />
+              <Botao titulo="Aceitar" variante="sucesso" carregando={op.aceitando === p.id} estilo={{ flex: 2 }}
+                onPress={async () => { const ok = await op.aceitar(p); op.depois(p); if (ok) onAceitou?.(); }} />
+            </View>
+            <Botao pequeno variante="fantasma" titulo="Decidir depois" onPress={() => op.depois(p)} />
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -259,7 +340,7 @@ export function ListaDisponiveis({ op, entregador, onAceitou }) {
       )}
       {op.online && op.disponiveis.length === 0 && <Vazio titulo="Nenhuma corrida no momento" texto="A lista atualiza sozinha a cada 10 segundos." />}
       {op.online && op.disponiveis.map(p => (
-        <Disponivel key={p.id} p={p} ocupado={op.aceitando === p.id} onAceitar={async x => { if (await op.aceitar(x)) onAceitou?.(); }} />
+        <Disponivel key={p.id} p={p} ocupado={op.aceitando === p.id} onRecusar={op.recusar} onAceitar={async x => { if (await op.aceitar(x)) onAceitou?.(); }} />
       ))}
     </ScrollView>
   );
@@ -290,4 +371,9 @@ const st = StyleSheet.create({
   linhaValor: { color: cor.texto2, fontSize: 14, flex: 1 },
   acoes: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   acao: { flexGrow: 1 },
+  popFundo: { flex: 1, backgroundColor: "rgba(3,8,18,0.75)", justifyContent: "flex-end", padding: 14 },
+  pop: { backgroundColor: cor.superficie, borderRadius: 18, borderWidth: 2, borderColor: cor.ok, overflow: "hidden", maxWidth: 520, width: "100%", alignSelf: "center" },
+  popFaixa: { backgroundColor: cor.ok, paddingHorizontal: 16, paddingVertical: 10, flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  popFaixaTexto: { color: "#04210f", fontSize: 17, fontWeight: "800" },
+  popTempo: { color: "#04210f", fontSize: 14, fontWeight: "700" },
 });

@@ -12,10 +12,10 @@ import { PopupAviso } from "./src/componentes";
 import { cor, moeda } from "./src/tema";
 import Mapa from "./src/mapa/Mapa";
 import Entrada from "./src/telas/Entrada";
-import { ListaAndamento, ListaDisponiveis, useOperacao } from "./src/telas/Corridas";
+import { ListaAndamento, ListaDisponiveis, PopupCorrida, useOperacao } from "./src/telas/Corridas";
 import { Carteira, Mensagens, Perfil, Promocoes, Treinamento } from "./src/telas/Outras";
 
-const VERSAO = "v1.1.0";
+const VERSAO = "v1.2.0";
 const TITULOS = {
   home: "Home", disponiveis: "Disponíveis", andamento: "Em andamento", promocao: "Promoção",
   mensagens: "Mensagens", carteira: "Carteira", conta: "Conta", treinamento: "Treinamento",
@@ -201,7 +201,7 @@ function Principal({ entregador, setEntregador, onSair }) {
             {tela === "promocao" && <Promocoes />}
             {tela === "mensagens" && <Mensagens />}
             {tela === "carteira" && <Carteira />}
-            {tela === "conta" && <Perfil entregador={entregador} onSair={onSair} />}
+            {tela === "conta" && <Perfil entregador={entregador} setEntregador={setEntregador} onSair={onSair} />}
             {tela === "treinamento" && <Treinamento />}
           </View>
         )}
@@ -210,6 +210,7 @@ function Principal({ entregador, setEntregador, onSair }) {
 
       <MenuLateral aberto={menu} tela={tela} ir={ir} onFechar={() => setMenu(false)} />
       <PopupAviso aviso={atual} onFechar={fechar} />
+      {!atual && !menu && <PopupCorrida op={op} onAceitou={() => setTela("andamento")} />}
     </View>
   );
 }

@@ -5,12 +5,12 @@ const prisma = require("../../lib/prisma");
 const { asyncHandler } = require("../../middleware/errorHandler");
 const { requireAuth, requireTipo, assinarToken, TIPOS } = require("../../middleware/auth");
 const { semSenha } = require("../../utils/sanitizar");
-const { distanciaLinhaRetaKm } = require("../../utils/geo");
+const { distanciaLinhaRetaKm, buscarEnderecos } = require("../../utils/geo");
 const { COM_ENTREGADOR, ETAPAS_ENTREGADOR, ROTULOS } = require("../../utils/statusPedido");
 const { INCLUDE_PADRAO, erroHttp, registrarLog, aceitarPedido } = require("../../services/pedidos.service");
 const { obterRegras } = require("../../services/saque.service");
 const { comissaoDoPedido, entregasDoPeriodo } = require("../../services/financeiro.service");
-const { versaoEntregador } = require("../../services/tempoReal.service");
+const { versaoEntregador, liberarAgendados } = require("../../services/tempoReal.service");
 const { vigentesPara, avisosPara, marcarVisto, publico: publicoPromocao } = require("../../services/promocoes.service");
 const { carimbos, registrarStatusPedido, registrarStatusEntregador, registrarLocalizacao } = require("../../services/historico.service");
 
@@ -23,7 +23,46 @@ const INCLUDE_PEDIDO_APP = {
   comercio: { select: { id: true, nomeFantasia: true, telefone: true, enderecos: { where: { principal: true } } } },
 };
 
+// Endereço do entregador vindo do app (busca no OpenStreetMap ou digitado).
+const CAMPOS_ENDERECO = ["cep", "rua", "numero", "complemento", "bairro", "cidade"];
+function dadosEndereco(body = {}) {
+  const r = {};
+  CAMPOS_ENDERECO.forEach(c => {
+    if (body[c] !== undefined) r[c] = String(body[c] ?? "").trim().slice(0, 160) || null;
+  });
+  return r;
+}
+
+// Limite simples por IP para a busca pública de endereços (usada no cadastro, antes do login).
+const buscasPorIp = new Map();
+function limitarBusca(req, res, next) {
+  const agora = Date.now();
+  const ip = req.ip || "?";
+  const r = buscasPorIp.get(ip) || { inicio: agora, n: 0 };
+  if (agora - r.inicio > 60000) { r.inicio = agora; r.n = 0; }
+  r.n++;
+  buscasPorIp.set(ip, r);
+  if (buscasPorIp.size > 5000) buscasPorIp.clear();
+  if (r.n > 60) return res.status(429).json({ erro: "Muitas buscas seguidas. Aguarde um instante." });
+  next();
+}
+
 // ---------- Público ----------
+
+// GET /api/app/entregador/enderecos?q=..&lat=..&lng=.. — busca de endereços no OpenStreetMap
+router.get(
+  "/enderecos",
+  limitarBusca,
+  asyncHandler(async (req, res) => {
+    const lat = Number(req.query.lat), lng = Number(req.query.lng);
+    const perto = Number.isFinite(lat) && Number.isFinite(lng) && req.query.lat !== undefined ? { lat, lng } : null;
+    try {
+      res.json(await buscarEnderecos(req.query.q, perto));
+    } catch (err) {
+      throw erroHttp(503, err.message);
+    }
+  })
+);
 
 // POST /api/app/entregador/login  { email, senha }
 router.post(
@@ -49,7 +88,7 @@ router.post(
 router.post(
   "/cadastro",
   asyncHandler(async (req, res) => {
-    const { nomeCompleto, email, senha, telefone, cpf, veiculoTipo, veiculoModelo, veiculoPlaca, cidade } = req.body;
+    const { nomeCompleto, email, senha, telefone, cpf, veiculoTipo, veiculoModelo, veiculoPlaca } = req.body;
     if (!nomeCompleto || !email || !senha) {
       return res.status(400).json({ erro: 'Informe "nomeCompleto", "email" e "senha".' });
     }
@@ -57,7 +96,8 @@ router.post(
 
     const entregador = await prisma.entregador.create({
       data: {
-        nomeCompleto, email, telefone, cpf, cidade, veiculoModelo, veiculoPlaca,
+        nomeCompleto, email, telefone, cpf, veiculoModelo, veiculoPlaca,
+        ...dadosEndereco(req.body),
         veiculoTipo: ["MOTO", "BIKE", "CARRO"].includes(veiculoTipo) ? veiculoTipo : "MOTO",
         tipoEntrega: "PROPRIO",
         status: "EM_ANALISE",
@@ -166,8 +206,10 @@ router.get(
   asyncHandler(async (req, res) => {
     exigirAtivo(req);
     if (!req.entregador.online) return res.json([]);
+    await liberarAgendados().catch(() => {}); // agendados cuja hora chegou entram na lista agora
 
-    const where = { status: "PENDENTE", entregadorId: null, comercio: { bloqueado: false } };
+    // Recusadas por este entregador não voltam para ele (continuam para os outros).
+    const where = { status: "PENDENTE", entregadorId: null, comercio: { bloqueado: false }, recusas: { none: { entregadorId: req.entregador.id } } };
     if (req.entregador.permissaoColeta === "SOMENTE_SELECIONADOS") {
       const permitidos = await prisma.entregadorComercioPermitido.findMany({
         where: { entregadorId: req.entregador.id }, select: { comercioId: true },
@@ -231,6 +273,36 @@ router.patch(
     exigirAtivo(req);
     if (!req.entregador.online) throw erroHttp(403, "Fique online para aceitar corridas.");
     res.json(await aceitarPedido(req.params.id, req.entregador.id));
+  })
+);
+
+// POST /api/app/entregador/pedidos/:id/recusar — some da lista deste entregador; segue para os outros
+router.post(
+  "/pedidos/:id/recusar",
+  asyncHandler(async (req, res) => {
+    exigirAtivo(req);
+    const pedido = await prisma.pedido.findUnique({ where: { id: req.params.id }, select: { id: true, status: true, entregadorId: true } });
+    if (!pedido) throw erroHttp(404, "Pedido não encontrado.");
+    if (pedido.status !== "PENDENTE" || pedido.entregadorId) return res.json({ ok: true }); // já saiu da fila
+    const nova = await prisma.pedidoRecusa.upsert({
+      where: { pedidoId_entregadorId: { pedidoId: pedido.id, entregadorId: req.entregador.id } },
+      create: { pedidoId: pedido.id, entregadorId: req.entregador.id },
+      update: {},
+    });
+    if (Date.now() - new Date(nova.createdAt).getTime() < 5000) {
+      await registrarLog(pedido.id, `${req.entregador.nomeCompleto} recusou a corrida.`);
+    }
+    res.json({ ok: true });
+  })
+);
+
+// PATCH /api/app/entregador/endereco { cep, rua, numero, complemento, bairro, cidade } — o entregador atualiza o próprio endereço
+router.patch(
+  "/endereco",
+  asyncHandler(async (req, res) => {
+    const dados = dadosEndereco(req.body);
+    if (!dados.rua) throw erroHttp(400, "Informe pelo menos a rua.");
+    res.json(semSenha(await prisma.entregador.update({ where: { id: req.entregador.id }, data: dados })));
   })
 );
 

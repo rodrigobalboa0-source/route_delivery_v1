@@ -46,6 +46,11 @@ router.put(
   "/",
   asyncHandler(async (req, res) => {
     const config = await obterOuCriarConfiguracao();
+    if (req.body.retornoPercentual !== undefined) {
+      const pct = Number(req.body.retornoPercentual);
+      if (!Number.isFinite(pct) || pct < 0 || pct > 300) return res.status(400).json({ erro: "O acréscimo do retorno deve ficar entre 0% e 300%." });
+      req.body.retornoPercentual = pct;
+    }
     const atualizado = await prisma.configuracao.update({
       where: { id: config.id },
       data: omitir(req.body, ["id", "googleMapsChave", "googleMaps"]),

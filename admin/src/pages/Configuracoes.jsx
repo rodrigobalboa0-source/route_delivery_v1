@@ -85,6 +85,10 @@ const CAMPOS = [
     nome: "raioMaximoKm", rotulo: "Raio máximo para oferecer pedidos (km)", tipo: "number", obrigatorio: true,
     dica: "O app do entregador só mostra pedidos cuja coleta esteja dentro deste raio da posição dele.",
   },
+  {
+    nome: "retornoPercentual", rotulo: "Acréscimo da entrega com retorno (%)", tipo: "number", obrigatorio: true,
+    dica: "Quando a loja marca “Retorno?” (o entregador volta à loja), a taxa calculada fica esta % maior. Padrão: 20%.",
+  },
   { nome: "notificacoesPush", rotulo: "Notificações push", tipo: "checkbox" },
   { nome: "notificacoesEmail", rotulo: "Notificações por e-mail", tipo: "checkbox" },
   { nome: "notificacoesSms", rotulo: "Notificações por SMS", tipo: "checkbox" },

@@ -1029,3 +1029,21 @@ code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-siz
 .google-passos { margin: 6px 0 0; padding-left: 18px; font-size: 12.5px; color: var(--texto-2); display: grid; gap: 3px; }
 .google-teste { display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; align-items: end; margin-top: 10px; }
 @media (max-width: 700px) { .google-teste { grid-template-columns: 1fr; } }
+/* ---------- Busca de endereço (OpenStreetMap) ---------- */
+.busca-endereco { position: relative; width: 100%; }
+.busca-endereco input { width: 100%; }
+.busca-endereco-lista {
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0; min-width: min(420px, 90vw); z-index: 30;
+  background: var(--superficie); border: 1px solid var(--borda-forte); border-radius: var(--raio-sm); box-shadow: var(--sombra-alta);
+  padding: 4px; max-height: 320px; overflow-y: auto;
+}
+.busca-endereco-lista button {
+  display: block; width: 100%; text-align: left; background: none; border: 0; padding: 7px 9px; border-radius: 5px; cursor: pointer; color: var(--texto);
+}
+.busca-endereco-lista button:hover, .busca-endereco-lista button.ativo { background: var(--superficie-2); }
+.busca-endereco-lista small { display: block; color: var(--texto-3); }
+.busca-endereco-vazio { padding: 8px 10px; color: var(--texto-3); }
+.busca-endereco-rodape { padding: 4px 9px 2px; font-size: 10px; color: var(--texto-3); text-align: right; border-top: 1px solid var(--borda); margin-top: 4px; }
+.aviso-cliente-adm { font-size: 11.5px; }
+.aviso-cliente-adm.salvo { color: var(--ok); }
+.aviso-cliente-adm.novo { color: var(--info); }

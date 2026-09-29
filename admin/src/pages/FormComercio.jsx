@@ -6,6 +6,7 @@ import { useAuth } from "../auth";
 import { useApi } from "../hooks/useApi";
 import { Botao, Cabecalho, Campo, Carregando, ErroCaixa, useAcao } from "../components/ui";
 import MapaLocalizacao from "../components/MapaLocalizacao";
+import BuscaEndereco from "../components/BuscaEndereco";
 import { reduzirImagem } from "../utils/imagem";
 import { CADASTRO_VIA, VEICULOS, paraInputData } from "../utils/format";
 import { buscarCep, erroDocumento, mascaraCep, mascaraDocumento, mascaraTelefone, soDigitos } from "../utils/documento";
@@ -48,6 +49,7 @@ function textoDoEndereco(e) {
 }
 
 function BlocoEndereco({ e, indice, total, onChange, onRemover, onTornarPrincipal, onAjustarMapa }) {
+  const [busca, setBusca] = useState("");
   const set = campo => ev => {
     let valor = ev.target.value;
     if (campo === "cep") valor = mascaraCep(valor);
@@ -74,6 +76,23 @@ function BlocoEndereco({ e, indice, total, onChange, onRemover, onTornarPrincipa
         </div>
       )}
       <div className="grade-campos">
+        <Campo rotulo="Buscar endereço" largo dica="Digite a rua e o número e escolha na lista (OpenStreetMap): preenche os campos e a posição no mapa.">
+          <BuscaEndereco
+            valor={busca}
+            rotulo="Buscar endereço"
+            placeholder="Ex.: Av. Paulista, 1000, São Paulo"
+            onChange={setBusca}
+            onEscolher={x => {
+              setBusca("");
+              onChange({
+                ...e,
+                cep: x.cep ? mascaraCep(x.cep) : e.cep, rua: x.rua || x.titulo || e.rua, numero: x.numero || e.numero,
+                bairro: x.bairro || "", cidade: x.cidade || e.cidade,
+                lat: x.exato ? x.lat : null, lng: x.exato ? x.lng : null,
+              });
+            }}
+          />
+        </Campo>
         <Campo rotulo="CEP"><input value={e.cep} onChange={set("cep")} inputMode="numeric" placeholder="00000-000" /></Campo>
         <Campo rotulo={`Rua${indice === 0 ? " *" : ""}`}><input value={e.rua} onChange={set("rua")} required={indice === 0} /></Campo>
         <Campo rotulo="Número"><input value={e.numero} onChange={set("numero")} /></Campo>

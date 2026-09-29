@@ -28,10 +28,11 @@ async function desligarSemSinal() {
 }
 
 // Pedidos agendados cuja hora chegou: passam para "Pedido pronto" e os entregadores são chamados.
-// Roda junto das consultas de tempo real (painel, app e loja consultam a cada ~2 s), no máximo a cada 15 s.
+// Roda junto das consultas de tempo real (painel, app e loja consultam a cada ~2 s), no máximo a cada 5 s
+// (consulta leve: índice parcial só com os agendados ainda "Criado").
 let ultimaLiberacao = 0;
 async function liberarAgendados() {
-  if (Date.now() - ultimaLiberacao < 15000) return;
+  if (Date.now() - ultimaLiberacao < 5000) return;
   ultimaLiberacao = Date.now();
   const vencidos = await prisma.pedido.findMany({
     where: { status: "PREPARANDO", agendadoPara: { lte: new Date() } }, select: { id: true, status: true, prontoEm: true }, take: 50,

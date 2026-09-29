@@ -153,6 +153,88 @@ function calcularValorEntrega({ distanciaKm, precificacaoPadrao, tabelaPrecoKm }
   return Math.max(base + porKm * distanciaKm, minimo);
 }
 
+// ---------- Busca de endereços enquanto digita (OpenStreetMap / Photon) ----------
+// O Photon é o serviço do OpenStreetMap feito para "pesquisar enquanto digita" (o Nominatim público
+// não permite autocompletar). Resultados só no Brasil, com preferência para perto da loja/entregador.
+
+const PHOTON_URL = "https://photon.komoot.io/api/";
+const BBOX_BRASIL = "-74.1,-33.9,-34.7,5.4";
+const UF = {
+  Acre: "AC", Alagoas: "AL", "Amapá": "AP", Amazonas: "AM", Bahia: "BA", "Ceará": "CE", "Distrito Federal": "DF",
+  "Espírito Santo": "ES", "Goiás": "GO", "Maranhão": "MA", "Mato Grosso": "MT", "Mato Grosso do Sul": "MS",
+  "Minas Gerais": "MG", "Pará": "PA", "Paraíba": "PB", "Paraná": "PR", Pernambuco: "PE", "Piauí": "PI",
+  "Rio de Janeiro": "RJ", "Rio Grande do Norte": "RN", "Rio Grande do Sul": "RS", "Rondônia": "RO", Roraima: "RR",
+  "Santa Catarina": "SC", "São Paulo": "SP", Sergipe: "SE", Tocantins: "TO",
+};
+const cacheBusca = new Map(); // chave -> { em, itens }
+const CACHE_BUSCA_MS = 10 * 60 * 1000;
+
+// Número da casa digitado ("rua augusta 1500" -> "1500"), para completar resultados que só acham a rua.
+function numeroDigitado(q) {
+  const m = String(q).match(/(?:^|[\s,])(\d{1,5}[A-Za-z]?)(?=[\s,-]|$)/);
+  return m ? m[1] : null;
+}
+
+function formatarPhoton(f, numero) {
+  const p = f.properties || {};
+  const [lng, lat] = f.geometry?.coordinates || [];
+  if (lat == null || lng == null) return null;
+  const rua = p.street || (p.osm_key === "highway" || p.type === "street" ? p.name : null);
+  // Estabelecimento, prédio, praça... (nome que é só o próprio endereço não conta)
+  const local = p.name && p.name !== rua && !(rua && p.name.toLowerCase().startsWith(rua.toLowerCase())) ? p.name : null;
+  if (!rua && !local) return null; // cidade/estado inteiros não servem como destino
+  let num = p.housenumber || null;
+  let exato = !!num || (!!local && !!rua);
+  if (!num && numero && rua && !local) { num = numero; exato = false; } // achou só a rua: usa o número digitado
+  const bairro = p.district || p.locality || null;
+  const cidade = p.city || p.town || p.village || p.county || null;
+  const uf = UF[p.state] || p.state || null;
+  const linha = [rua, num].filter(Boolean).join(", ");
+  const endereco = [
+    linha || local,
+    bairro && ` - ${bairro}`,
+    cidade && `, ${cidade}`,
+    uf && ` - ${uf}`,
+  ].filter(Boolean).join("");
+  const regiao = [bairro, cidade && `${cidade}${uf ? ` - ${uf}` : ""}`, p.postcode].filter(Boolean).join(" · ");
+  return {
+    titulo: local || linha,
+    subtitulo: local ? [linha, regiao].filter(Boolean).join(" · ") : regiao,
+    endereco: local && linha ? `${local}, ${endereco}` : endereco,
+    rua, numero: num, bairro, cidade, uf, cep: p.postcode || null,
+    lat, lng,
+    exato, // false = posição da rua (o número foi o digitado); o cálculo localiza o número
+  };
+}
+
+// Devolve até 6 sugestões { titulo, subtitulo, endereco, rua, numero, bairro, cidade, uf, cep, lat, lng, exato }.
+async function buscarEnderecos(q, perto) {
+  const texto = String(q || "").trim().slice(0, 150);
+  if (texto.length < 3) return [];
+  const chave = `${texto.toLowerCase()}|${perto ? `${perto.lat.toFixed(1)},${perto.lng.toFixed(1)}` : ""}`;
+  const guardado = cacheBusca.get(chave);
+  if (guardado && Date.now() - guardado.em < CACHE_BUSCA_MS) return guardado.itens;
+
+  const params = new URLSearchParams({ q: texto, limit: "10", bbox: BBOX_BRASIL });
+  if (perto?.lat != null && perto?.lng != null) { params.set("lat", perto.lat); params.set("lon", perto.lng); }
+  const resp = await buscar(`${PHOTON_URL}?${params}`, { headers: { "User-Agent": "RouteDelivery/1.0 (sistema de entregas)" } });
+  if (!resp.ok) throw new Error("Serviço de endereços indisponível no momento.");
+  const data = await resp.json();
+  const numero = numeroDigitado(texto);
+  const vistos = new Set();
+  const itens = [];
+  for (const f of data.features || []) {
+    const e = formatarPhoton(f, numero);
+    if (!e || vistos.has(e.endereco.toLowerCase())) continue;
+    vistos.add(e.endereco.toLowerCase());
+    itens.push(e);
+    if (itens.length === 6) break;
+  }
+  if (cacheBusca.size > 1000) cacheBusca.clear();
+  cacheBusca.set(chave, { em: Date.now(), itens });
+  return itens;
+}
+
 // Distância em linha reta (Haversine). Usada SÓ para ordenar/filtrar pedidos
 // próximos do entregador — o valor da entrega continua sendo por percurso.
 function distanciaLinhaRetaKm(a, b) {
@@ -166,5 +248,5 @@ function distanciaLinhaRetaKm(a, b) {
 
 module.exports = {
   geocodificarEndereco, calcularDistanciaRotaKm, calcularValorEntrega, distanciaLinhaRetaKm, normalizarFaixas,
-  googleGeocodificar, googleDistanciaKm, chaveGoogle, esquecerChaveGoogle,
+  googleGeocodificar, googleDistanciaKm, chaveGoogle, esquecerChaveGoogle, buscarEnderecos,
 };
