@@ -1,0 +1,66 @@
+/* Estilos próprios do sistema do comerciante (a base visual vem de styles.css, igual ao painel ADM). */
+
+.stat-ok .stat-valor { color: var(--ok); }
+.stat-info .stat-valor { color: var(--info); }
+
+.linha-clicavel { cursor: pointer; }
+.linha-clicavel:hover { background: var(--superficie-2); }
+
+.filtro-data { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--texto-2); }
+.erro-leve { background: var(--critico-fundo); color: var(--critico); margin-bottom: 14px; }
+
+.avatar { overflow: hidden; flex: 0 0 auto; }
+.avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+/* Aviso de mensagem nova no menu */
+.menu-item { position: relative; }
+.menu-bolinha { width: 8px; height: 8px; border-radius: 50%; background: #ff5b5b; margin-left: auto; box-shadow: 0 0 0 2px var(--menu-fundo, #0b1628); }
+
+/* Início: lista de entregas em andamento + mapa */
+.inicio-grade { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 14px; align-items: start; }
+.cartao-mapa .mapa { border-radius: var(--raio-sm); overflow: hidden; }
+.lista-andamento { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; max-height: 460px; overflow-y: auto; }
+.lista-andamento li { display: flex; align-items: center; gap: 8px; border: 1px solid var(--borda); border-radius: var(--raio-sm); padding: 4px 8px 4px 0; }
+.andamento-item {
+  flex: 1; min-width: 0; text-align: left; background: none; border: 0; padding: 6px 10px; cursor: pointer;
+  display: flex; flex-direction: column; gap: 3px; color: inherit; font: inherit;
+}
+.andamento-item:hover strong { color: var(--primaria); }
+.andamento-topo { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.andamento-item .celula-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Etapas da entrega no detalhe do pedido */
+.etapas { list-style: none; margin: 4px 0 18px; padding: 0; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.etapas li { position: relative; display: flex; flex-direction: column; align-items: center; gap: 5px; text-align: center; }
+.etapas li::before {
+  content: ""; position: absolute; top: 10px; left: -50%; width: 100%; height: 2px; background: var(--borda); z-index: 0;
+}
+.etapas li:first-child::before { display: none; }
+.etapas li.feita::before, .etapas li.atual::before { background: var(--primaria); }
+.etapa-ponto {
+  position: relative; z-index: 1; width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--borda);
+  background: var(--superficie); display: grid; place-items: center; font-size: 11px; color: #fff; font-weight: 700;
+}
+.etapas li.feita .etapa-ponto { background: var(--primaria); border-color: var(--primaria); }
+.etapas li.atual .etapa-ponto { border-color: var(--primaria); box-shadow: 0 0 0 4px var(--primaria-suave); }
+.etapas li.atual .etapa-ponto::after { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--primaria); }
+.etapa-rotulo { font-size: 10.5px; color: var(--texto-3); line-height: 1.2; }
+.etapas li.feita .etapa-rotulo, .etapas li.atual .etapa-rotulo { color: var(--texto); }
+.etapas li.atual .etapa-rotulo { font-weight: 650; }
+
+.cartao-motoboy { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.cartao-motoboy .avatar { width: 40px; height: 40px; font-size: 16px; }
+
+/* Nova entrega: chave "já está pronto" em destaque */
+.pronto-agora { margin-top: 16px; padding: 12px 14px; border: 1px solid var(--borda); border-radius: var(--raio-sm); background: var(--superficie-2); align-items: flex-start; }
+
+.chat-loja { max-width: 760px; }
+
+@media (max-width: 960px) {
+  .inicio-grade { grid-template-columns: 1fr; }
+}
+@media (max-width: 560px) {
+  .etapas { grid-template-columns: repeat(7, minmax(38px, 1fr)); overflow-x: auto; }
+  .etapa-rotulo { font-size: 9.5px; }
+  .topo .btn-primario { padding-inline: 10px; }
+}

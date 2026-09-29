@@ -379,3 +379,4 @@ router.post(
 );
 
 module.exports = router;
+module.exports.localizarPendentes = localizarPendentes; // usado também pelo mapa do sistema do comerciante

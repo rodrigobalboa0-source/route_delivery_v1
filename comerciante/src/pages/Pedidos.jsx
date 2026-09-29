@@ -1,0 +1,113 @@
+import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import { api, qs } from "../api";
+import { useApi } from "../hooks/useApi";
+import { Abas, BadgeMapa, Botao, Cabecalho, Carregando, ErroCaixa, Vazio, useAcao } from "../components/ui";
+import DetalhePedido from "../components/DetalhePedido";
+import { COM_ENTREGADOR, STATUS_PEDIDO, dataHora, moeda, paraInputData } from "../utils/format";
+
+const ABERTOS = ["PREPARANDO", "PENDENTE", ...COM_ENTREGADOR];
+const VISOES = {
+  abertos: { rotulo: "Em aberto", status: ABERTOS.join(",") },
+  entregues: { rotulo: "Entregues", status: "ENTREGUE" },
+  cancelados: { rotulo: "Cancelados", status: "CANCELADO" },
+  todos: { rotulo: "Todos", status: "" },
+};
+
+export default function Pedidos() {
+  const [params, setParams] = useSearchParams();
+  const hoje = paraInputData(new Date());
+  const [ver, setVer] = useState(VISOES[params.get("ver")] ? params.get("ver") : "todos");
+  const [desde, setDesde] = useState(hoje);
+  const [ate, setAte] = useState(hoje);
+  const [busca, setBusca] = useState("");
+  const [buscaAplicada, setBuscaAplicada] = useState("");
+  const [aberto, setAberto] = useState(params.get("abrir"));
+  const { executar, ocupado } = useAcao();
+
+  // Busca digitada: aplica depois de uma pausa curta.
+  useEffect(() => {
+    const t = setTimeout(() => setBuscaAplicada(busca.trim()), 350);
+    return () => clearTimeout(t);
+  }, [busca]);
+
+  // Em aberto aparece sempre, mesmo que tenha sido criado antes do período.
+  const caminho = `/pedidos${qs({ status: VISOES[ver].status, desde, ate, busca: buscaAplicada, abertos: ver === "todos" ? "1" : "" })}`;
+  const { dados, erro, carregando, recarregar } = useApi(caminho, { aoVivo: ["pedidos"] });
+  const lista = dados || [];
+  const total = lista.filter(p => p.status === "ENTREGUE").reduce((t, p) => t + (p.valor || 0), 0);
+
+  function fechar() {
+    setAberto(null);
+    if (params.get("abrir")) { params.delete("abrir"); setParams(params, { replace: true }); }
+  }
+
+  async function pronto(p) {
+    if (await executar(() => api.patch(`/pedidos/${p.id}/pronto`), `Pedido de ${p.clienteNome} pronto — chamando entregador.`)) {
+      recarregar({ silencioso: true });
+    }
+  }
+
+  return (
+    <>
+      <Cabecalho titulo="Pedidos" subtitulo="Todas as entregas da sua loja. A lista se atualiza sozinha." />
+
+      <div className="filtros">
+        <label className="filtro-data">De <input type="date" value={desde} max={ate || undefined} onChange={e => setDesde(e.target.value)} /></label>
+        <label className="filtro-data">Até <input type="date" value={ate} min={desde || undefined} onChange={e => setAte(e.target.value)} /></label>
+        <Botao pequeno variante="fantasma" onClick={() => { setDesde(hoje); setAte(hoje); }}>Hoje</Botao>
+        <input type="search" value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar cliente, código, telefone ou endereço" aria-label="Buscar" style={{ flex: "1 1 220px" }} />
+      </div>
+
+      <Abas ativa={ver} onChange={setVer} abas={Object.entries(VISOES).map(([valor, x]) => ({ valor, rotulo: x.rotulo }))} />
+      <ErroCaixa erro={erro} onTentar={() => recarregar()} />
+
+      <div className="cartao cartao-tabela">
+        {carregando && !dados ? <Carregando /> : lista.length === 0 ? (
+          <Vazio titulo="Nenhum pedido encontrado">Mude o período ou a busca.</Vazio>
+        ) : (
+          <div className="tabela-rolagem">
+            <table className="tabela">
+              <thead>
+                <tr>
+                  <th>Pedido</th>
+                  <th>Cliente</th>
+                  <th>Status</th>
+                  <th>Pedido pronto</th>
+                  <th>Entregador</th>
+                  <th className="num">Valor</th>
+                </tr>
+              </thead>
+              <tbody>
+                {lista.map(p => (
+                  <tr key={p.id} className="linha-clicavel" onClick={() => setAberto(p.id)}>
+                    <td><strong>{p.codigo}</strong><div className="celula-sub">{dataHora(p.createdAt)}</div></td>
+                    <td>{p.clienteNome}<div className="celula-sub">{p.endereco}</div></td>
+                    <td><BadgeMapa mapa={STATUS_PEDIDO} valor={p.status} /></td>
+                    <td onClick={e => e.stopPropagation()}>
+                      {p.status === "PREPARANDO" ? (
+                        <Botao pequeno variante="primario" disabled={ocupado} onClick={() => pronto(p)}>Pedido pronto</Botao>
+                      ) : p.prontoEm || !["PREPARANDO", "CANCELADO"].includes(p.status) ? (
+                        <span className="apagado">✓ {p.prontoEm ? dataHora(p.prontoEm) : "Pronto"}</span>
+                      ) : <span className="apagado">—</span>}
+                    </td>
+                    <td>{p.entregador?.nomeCompleto || <span className="apagado">{p.status === "PENDENTE" ? "Procurando…" : "—"}</span>}</td>
+                    <td className="num">{moeda(p.valor)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {lista.length > 0 && (
+          <div className="tabela-barra">
+            <span className="apagado">{lista.length} pedido(s)</span>
+            <span>Entregues no filtro: <strong>{moeda(total)}</strong></span>
+          </div>
+        )}
+      </div>
+
+      {aberto && <DetalhePedido id={aberto} onFechar={fechar} />}
+    </>
+  );
+}

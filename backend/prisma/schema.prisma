@@ -198,6 +198,7 @@ model Comercio {
   lojasIntegracao     IntegracaoLoja[]
   creditos            CreditoMovimento[]
   comissoesManuais    ComissaoManual[]
+  conversa            Conversa?
 }
 
 model ComercioEndereco {
@@ -740,6 +741,9 @@ model Conversa {
   // Conversa do app do entregador com a equipe (uma por entregador). NOS = equipe, ELES = entregador.
   entregadorId String?     @unique
   entregador   Entregador? @relation(fields: [entregadorId], references: [id], onDelete: SetNull)
+  // Conversa do sistema do comerciante com a equipe (uma por comércio). NOS = equipe, ELES = comércio.
+  comercioId   String?     @unique
+  comercio     Comercio?   @relation(fields: [comercioId], references: [id], onDelete: SetNull)
 
   mensagens Mensagem[]
 }

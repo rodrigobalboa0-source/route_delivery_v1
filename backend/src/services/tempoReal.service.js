@@ -64,4 +64,22 @@ async function versaoEntregador(entregadorId) {
   };
 }
 
-module.exports = { versaoPainel, versaoEntregador, desligarSemSinal, SEM_SINAL_MS };
+// Sistema do comerciante: os pedidos da loja, a posição dos entregadores com pedidos dela e as mensagens.
+async function versaoComercio(comercioId) {
+  await desligarSemSinal().catch(() => {});
+  const [r] = await prisma.$queryRaw`SELECT
+    (SELECT max("updatedAt") FROM "Pedido" WHERE "comercioId" = ${comercioId}) AS "pedidoMax",
+    (SELECT count(*)::int FROM "Pedido" WHERE "comercioId" = ${comercioId}) AS "pedidoQtd",
+    (SELECT max(e."localizacaoEm") FROM "Entregador" e JOIN "Pedido" p ON p."entregadorId" = e.id
+      WHERE p."comercioId" = ${comercioId} AND p.status IN ('ATRIBUIDO','NA_LOJA','EM_ROTA','NO_CLIENTE','ATRASADO')) AS "posicaoMax",
+    (SELECT concat(max("createdAt"), '|', max("pagaEm"), '|', count(*), '|', count(*) FILTER (WHERE paga)) FROM "Fatura" WHERE "comercioId" = ${comercioId}) AS "faturaMax",
+    (SELECT max(m."createdAt") FROM "Mensagem" m JOIN "Conversa" c ON c.id = m."conversaId" WHERE c."comercioId" = ${comercioId}) AS "msgMax"`;
+  return {
+    pedidos: v(r.pedidoMax, r.pedidoQtd),
+    entregadores: v(r.posicaoMax),
+    faturas: v(r.faturaMax),
+    mensagens: v(r.msgMax),
+  };
+}
+
+module.exports = { versaoPainel, versaoEntregador, versaoComercio, desligarSemSinal, SEM_SINAL_MS };

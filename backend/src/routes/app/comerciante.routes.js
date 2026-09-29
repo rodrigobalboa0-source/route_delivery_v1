@@ -6,6 +6,9 @@ const { asyncHandler } = require("../../middleware/errorHandler");
 const { requireAuth, requireTipo, assinarToken, TIPOS } = require("../../middleware/auth");
 const { INCLUDE_PADRAO, erroHttp, registrarLog, calcularEntrega, criarPedido } = require("../../services/pedidos.service");
 const { carimbos, registrarStatusPedido } = require("../../services/historico.service");
+const { versaoComercio } = require("../../services/tempoReal.service");
+const { TODOS, ABERTOS } = require("../../utils/statusPedido");
+const { localizarPendentes } = require("../pedidos.routes");
 
 const autorComerciante = req => ({ autorTipo: "COMERCIANTE", autorNome: `${req.comercio.nomeFantasia} (${req.conta.email})` });
 
@@ -20,7 +23,9 @@ router.post(
     const { email, senha } = req.body;
     if (!email || !senha) return res.status(400).json({ erro: 'Informe "email" e "senha".' });
 
-    const usuario = await prisma.comercioUsuario.findUnique({ where: { email }, include: { comercio: true } });
+    const usuario = await prisma.comercioUsuario.findFirst({
+      where: { email: { equals: String(email).trim(), mode: "insensitive" } }, include: { comercio: true },
+    });
     if (!usuario || !(await bcrypt.compare(senha, usuario.senhaHash))) {
       return res.status(401).json({ erro: "Credenciais inválidas." });
     }
@@ -64,9 +69,15 @@ async function pedidoDoComercio(req) {
 router.get(
   "/me",
   asyncHandler(async (req, res) => {
+    // Só o que a loja precisa ver (observações internas e dados de comissão ficam no ADM).
     res.json(await prisma.comercio.findUnique({
       where: { id: req.comercio.id },
-      include: { enderecos: true, precificacoesModal: true },
+      select: {
+        id: true, fotoUrl: true, segmento: true, razaoSocial: true, nomeFantasia: true, tipoDocumento: true, documento: true,
+        nomeCompleto: true, telefone: true, email: true, metodoPagamento: true, createdAt: true,
+        enderecos: { orderBy: { principal: "desc" } },
+        precificacoesModal: { select: { veiculo: true } },
+      },
     }));
   })
 );
@@ -97,13 +108,67 @@ router.get(
   })
 );
 
-// GET /api/app/comerciante/pedidos?status=..
+// GET /api/app/comerciante/tempo-real — "algo mudou?" (a tela consulta a cada ~2 s enquanto está visível)
+router.get(
+  "/tempo-real",
+  asyncHandler(async (req, res) => {
+    res.set("Cache-Control", "no-store").json(await versaoComercio(req.comercio.id));
+  })
+);
+
+// GET /api/app/comerciante/pedidos?status=..&desde=AAAA-MM-DD&ate=AAAA-MM-DD&busca=..&abertos=1
+// "status" aceita vários separados por vírgula. Pedidos em aberto sempre aparecem (mesmo criados antes de "desde").
 router.get(
   "/pedidos",
   asyncHandler(async (req, res) => {
+    const { status, desde, ate, busca } = req.query;
     const where = { comercioId: req.comercio.id };
-    if (req.query.status) where.status = req.query.status;
-    res.json(await prisma.pedido.findMany({ where, include: INCLUDE_PADRAO, orderBy: { createdAt: "desc" }, take: 200 }));
+    const e = [];
+    if (status) {
+      const lista = String(status).split(",").filter(s => TODOS.includes(s));
+      if (lista.length) e.push({ status: { in: lista } });
+    }
+    if (desde || ate) {
+      const periodo = {};
+      if (desde) periodo.gte = new Date(`${desde}T00:00:00-03:00`);
+      if (ate) periodo.lte = new Date(`${ate}T23:59:59.999-03:00`);
+      e.push(req.query.abertos === "1" ? { OR: [{ createdAt: periodo }, { status: { in: ABERTOS } }] } : { createdAt: periodo });
+    }
+    if (busca) {
+      const q = String(busca).trim();
+      e.push({ OR: [
+        { codigo: { contains: q, mode: "insensitive" } },
+        { clienteNome: { contains: q, mode: "insensitive" } },
+        { clienteTelefone: { contains: q } },
+        { endereco: { contains: q, mode: "insensitive" } },
+      ] });
+    }
+    if (e.length) where.AND = e;
+    res.json(await prisma.pedido.findMany({ where, include: INCLUDE_PADRAO, orderBy: { createdAt: "desc" }, take: 300 }));
+  })
+);
+
+// GET /api/app/comerciante/mapa — entregas em aberto da loja: destino (cliente) e o entregador com a posição dele
+router.get(
+  "/mapa",
+  asyncHandler(async (req, res) => {
+    const pedidos = await prisma.pedido.findMany({
+      where: { comercioId: req.comercio.id, status: { in: ABERTOS } }, orderBy: { createdAt: "desc" }, take: 100,
+      select: {
+        id: true, codigo: true, status: true, clienteNome: true, endereco: true, comercioId: true, latDestino: true, lngDestino: true, createdAt: true,
+        entregador: { select: { id: true, nomeCompleto: true, veiculoTipo: true, telefone: true, lat: true, lng: true, localizacaoEm: true } },
+      },
+    });
+    localizarPendentes(pedidos);
+    const loja = await prisma.comercioEndereco.findFirst({ where: { comercioId: req.comercio.id, principal: true }, select: { lat: true, lng: true, rua: true, numero: true } });
+    res.json({
+      loja: { nome: req.comercio.nomeFantasia, lat: loja?.lat ?? null, lng: loja?.lng ?? null },
+      pedidos: pedidos.map(p => ({
+        id: p.id, codigo: p.codigo, status: p.status, clienteNome: p.clienteNome, endereco: p.endereco, createdAt: p.createdAt,
+        destino: p.latDestino != null ? { lat: p.latDestino, lng: p.lngDestino } : null,
+        entregador: p.entregador,
+      })),
+    });
   })
 );
 
@@ -116,7 +181,7 @@ router.get(
       where: { id: req.params.id },
       include: {
         ...INCLUDE_PADRAO,
-        entregador: { select: { id: true, nomeCompleto: true, telefone: true, veiculoTipo: true, veiculoPlaca: true, lat: true, lng: true, localizacaoEm: true } },
+        entregador: { select: { id: true, nomeCompleto: true, telefone: true, fotoUrl: true, veiculoTipo: true, veiculoPlaca: true, lat: true, lng: true, localizacaoEm: true } },
         logs: { orderBy: { createdAt: "asc" } },
       },
     }));
@@ -144,9 +209,19 @@ router.post(
       "SISTEMA_COMERCIANTE",
       autorComerciante(req)
     );
-    res.status(201).json(pedido);
+    // "Já está pronto": libera na hora para os entregadores.
+    res.status(201).json(req.body.pronto ? await marcarPronto(req, pedido) : pedido);
   })
 );
+
+async function marcarPronto(req, pedido) {
+  const atualizado = await prisma.pedido.update({
+    where: { id: pedido.id }, data: { status: "PENDENTE", ...carimbos(pedido, "PENDENTE") }, include: INCLUDE_PADRAO,
+  });
+  await registrarStatusPedido({ pedidoId: pedido.id, de: pedido.status, para: "PENDENTE", autor: autorComerciante(req) });
+  await registrarLog(pedido.id, "Comércio marcou o pedido como pronto — liberado para entregadores.");
+  return atualizado;
+}
 
 // PATCH /api/app/comerciante/pedidos/:id/pronto — libera para os entregadores
 router.patch(
@@ -154,12 +229,7 @@ router.patch(
   asyncHandler(async (req, res) => {
     const pedido = await pedidoDoComercio(req);
     if (pedido.status !== "PREPARANDO") throw erroHttp(409, "Só pedidos em preparo podem ser marcados como prontos.");
-    const atualizado = await prisma.pedido.update({
-      where: { id: pedido.id }, data: { status: "PENDENTE", ...carimbos(pedido, "PENDENTE") }, include: INCLUDE_PADRAO,
-    });
-    await registrarStatusPedido({ pedidoId: pedido.id, de: pedido.status, para: "PENDENTE", autor: autorComerciante(req) });
-    await registrarLog(pedido.id, "Comércio marcou o pedido como pronto — liberado para entregadores.");
-    res.json(atualizado);
+    res.json(await marcarPronto(req, pedido));
   })
 );
 
@@ -185,7 +255,72 @@ router.patch(
 router.get(
   "/faturas",
   asyncHandler(async (req, res) => {
-    res.json(await prisma.fatura.findMany({ where: { comercioId: req.comercio.id }, orderBy: { vencimento: "desc" } }));
+    res.json(await prisma.fatura.findMany({
+      where: { comercioId: req.comercio.id }, orderBy: { vencimento: "desc" },
+      include: { _count: { select: { pedidos: true } } },
+    }));
+  })
+);
+
+// GET /api/app/comerciante/faturas/:id — fatura com as entregas cobradas
+router.get(
+  "/faturas/:id",
+  asyncHandler(async (req, res) => {
+    const f = await prisma.fatura.findUnique({
+      where: { id: req.params.id },
+      include: { pedidos: { orderBy: { createdAt: "asc" }, select: { id: true, codigo: true, clienteNome: true, endereco: true, valor: true, distanciaKm: true, createdAt: true, entregueEm: true } } },
+    });
+    if (!f || f.comercioId !== req.comercio.id) throw erroHttp(404, "Fatura não encontrada.");
+    res.json(f);
+  })
+);
+
+// ---------- Mensagens com a equipe (aparecem no painel ADM em Mensagens) ----------
+
+async function conversaDo(comercio) {
+  const existente = await prisma.conversa.findUnique({ where: { comercioId: comercio.id } });
+  if (existente) return existente;
+  return prisma.conversa.create({ data: { nome: comercio.nomeFantasia, tipo: "CLIENTE", comercioId: comercio.id } });
+}
+
+// GET /api/app/comerciante/mensagens — histórico (de: ELES = comércio, NOS = equipe)
+router.get(
+  "/mensagens",
+  asyncHandler(async (req, res) => {
+    const c = await conversaDo(req.comercio);
+    const mensagens = await prisma.mensagem.findMany({ where: { conversaId: c.id }, orderBy: { createdAt: "asc" }, take: 300 });
+    res.json(mensagens.map(m => ({ id: m.id, texto: m.texto, minha: m.de === "ELES", createdAt: m.createdAt })));
+  })
+);
+
+// POST /api/app/comerciante/mensagens { texto }
+router.post(
+  "/mensagens",
+  asyncHandler(async (req, res) => {
+    const texto = String(req.body?.texto || "").trim();
+    if (!texto) throw erroHttp(400, "Escreva a mensagem.");
+    if (texto.length > 2000) throw erroHttp(400, "Mensagem muito longa.");
+    const c = await conversaDo(req.comercio);
+    const m = await prisma.mensagem.create({ data: { conversaId: c.id, de: "ELES", texto } });
+    await prisma.conversa.update({ where: { id: c.id }, data: { naoLida: true, nome: req.comercio.nomeFantasia } });
+    await prisma.notificacao.create({ data: { tipo: "mensagem", texto: `Nova mensagem de ${req.comercio.nomeFantasia}: “${texto.slice(0, 80)}”` } });
+    res.status(201).json({ id: m.id, texto: m.texto, minha: true, createdAt: m.createdAt });
+  })
+);
+
+// ---------- Conta ----------
+
+// PATCH /api/app/comerciante/senha { atual, nova }
+router.patch(
+  "/senha",
+  asyncHandler(async (req, res) => {
+    const { atual, nova } = req.body || {};
+    if (!atual || !nova) throw erroHttp(400, "Informe a senha atual e a nova.");
+    if (String(nova).length < 6) throw erroHttp(400, "A nova senha precisa ter pelo menos 6 caracteres.");
+    const u = await prisma.comercioUsuario.findUnique({ where: { id: req.conta.id } });
+    if (!(await bcrypt.compare(atual, u.senhaHash))) throw erroHttp(400, "Senha atual incorreta.");
+    await prisma.comercioUsuario.update({ where: { id: u.id }, data: { senhaHash: await bcrypt.hash(String(nova), 10) } });
+    res.json({ ok: true });
   })
 );
 
