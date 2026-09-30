@@ -40,7 +40,8 @@ app.set("trust proxy", 1);
 // CORS_ORIGIN aceita várias origens separadas por vírgula (painel ADM, sistema do comerciante...).
 const origens = (process.env.CORS_ORIGIN || "*").split(",").map(o => o.trim());
 app.use(cors({ origin: origens.includes("*") ? "*" : origens }));
-app.use(express.json({ limit: "5mb" })); // limite maior por causa da importação de CSV
+// Limite maior por causa da importação de CSV. rawBody: corpo original, para conferir assinaturas (webhook do iFood).
+app.use(express.json({ limit: "5mb", verify: (req, res, buf) => { req.rawBody = buf; } }));
 
 app.get(["/health", "/api/health"], (req, res) => res.json({ status: "ok" }));
 
@@ -61,6 +62,8 @@ app.use("/api/app/comerciante", appComercianteRoutes);
 
 // ---- Webhook de entrada das integrações (público; autenticado pelo token na URL) ----
 app.use("/api/integracoes/webhook", integracoesWebhookRoutes);
+// ---- Webhook do iFood (público; autenticado pela assinatura X-IFood-Signature) ----
+app.use("/api/ifood", require("./routes/ifoodWebhook.routes"));
 
 // ---- Painel ADM ----
 // Login é público; todo o resto exige token de conta gerencial e respeita a permissão da conta.

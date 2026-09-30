@@ -170,6 +170,8 @@ async function enviarWebhook(integ, tipo, dados, pedidoId = null) {
 
 // Chamado a cada mudança de status (fora da requisição: não atrasa quem mudou o status).
 async function notificarStatus(pedidoId, de, para) {
+  // iFood (API direta): "Em rota" vira dispatch no iFood.
+  await require("./ifood.service").aoMudarStatus(pedidoId, de, para).catch(err => console.error("[ifood] status:", err.message));
   const integracoes = await prisma.integracao.findMany({ where: { ativa: true, webhookSaidaUrl: { not: null } } });
   if (!integracoes.length) return;
   const pedido = await prisma.pedido.findUnique({

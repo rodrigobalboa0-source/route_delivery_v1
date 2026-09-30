@@ -199,6 +199,7 @@ async function criarPedido(dados, origem, autor = { autorTipo: "SISTEMA", autorN
       ...nf,
       integracaoSlug: dados.integracaoSlug || null,
       idExterno: dados.idExterno || null,
+      codigoExterno: dados.codigoExterno || null,
       logs: { create: [
         { texto: `Pedido ${codigo} criado (${origem === "INTEGRACAO" ? autor.autorNome : ORIGENS[origem]}) e enviado para preparo.` },
         ...(agendadoPara ? [{ texto: `Agendado: o entregador será chamado em ${agendadoPara.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" })}.` }] : []),

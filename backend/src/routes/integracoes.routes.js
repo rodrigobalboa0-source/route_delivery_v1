@@ -71,7 +71,9 @@ async function detalhe(req, integ) {
     slug: integ.slug, nome: cat.nome, categoria: cat.categoria, tipo: cat.tipo, descricao: cat.descricao,
     ativa: integ.ativa,
     credenciais: credenciaisParaPainel(cat, integ.credenciais),
-    config: { liberarAutomaticamente: !!integ.config?.liberarAutomaticamente, eventos: eventosDaIntegracao(integ) },
+    config: { liberarAutomaticamente: !!integ.config?.liberarAutomaticamente, confirmarAutomaticamente: !!integ.config?.confirmarAutomaticamente, eventos: eventosDaIntegracao(integ) },
+    // iFood: endereço para cadastrar como webhook no aplicativo, no Portal do Desenvolvedor.
+    ...(integ.slug === "ifood" ? { ifoodWebhookUrl: `${baseUrl(req)}/api/ifood/webhook` } : {}),
     statusDisponiveis: STATUS_TODOS,
     webhookEntradaUrl: cat.tipo === "saida" ? null : `${baseUrl(req)}/api/integracoes/webhook/${integ.webhookToken}`,
     // Mesmo token: autentica a entrada e assina (HMAC) os webhooks de saída.
@@ -122,6 +124,7 @@ router.put(
       data.config = {
         ...(integ.config || {}),
         liberarAutomaticamente: !!req.body.config.liberarAutomaticamente,
+        ...(req.body.config.confirmarAutomaticamente !== undefined ? { confirmarAutomaticamente: !!req.body.config.confirmarAutomaticamente } : {}),
         ...(eventos ? { eventos } : {}),
       };
     }
@@ -201,6 +204,15 @@ router.post(
       ok: true,
       lojas: lojas.map(l => ({ ...l, comercioId: porId.get(l.id)?.comercioId || null, comercioNome: porId.get(l.id)?.comercio?.nomeFantasia || null })),
     });
+  })
+);
+
+// POST /api/integracoes/ifood/sincronizar — busca agora os eventos pendentes no iFood (polling manual)
+router.post(
+  "/ifood/sincronizar",
+  asyncHandler(async (req, res) => {
+    const r = await require("../services/ifood.service").sincronizar({ forcar: true });
+    res.json(r || { recebidos: 0, novos: 0, ignorados: 0, erros: 0, aviso: "Salve as credenciais e vincule ao menos uma loja." });
   })
 );
 

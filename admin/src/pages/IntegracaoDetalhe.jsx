@@ -66,11 +66,17 @@ function Lojas({ slug, lojas, pode, onSalvo }) {
 
 // iFood: testa a conexão com as credenciais salvas e mostra as lojas que o aplicativo enxerga
 // (com o Merchant ID), para vincular cada uma a um comércio com um clique.
-function ConexaoIfood({ lojas, pode, credenciaisSalvas, onSalvo }) {
+function ConexaoIfood({ lojas, pode, credenciaisSalvas, onSalvo, webhookUrl, ativa }) {
   const { dados: comercios } = useApi("/comercios");
   const [resultado, setResultado] = useState(null);
   const [escolha, setEscolha] = useState({});
+  const [sinc, setSinc] = useState(null);
   const { executar, ocupado } = useAcao();
+
+  async function sincronizar() {
+    const r = await executar(() => api.post("/integracoes/ifood/sincronizar"));
+    if (r) { setSinc(r); onSalvo(await api.get("/integracoes/ifood")); }
+  }
 
   async function testar() {
     setResultado(null);
@@ -132,6 +138,32 @@ function ConexaoIfood({ lojas, pode, credenciaisSalvas, onSalvo }) {
             </div>
           </>
         )
+      )}
+
+      <h3 className="secao-titulo">Receber os pedidos</h3>
+      <p className="apagado" style={{ marginTop: 0 }}>
+        Cadastre este endereço como <strong>Webhook</strong> do aplicativo no Portal do Desenvolvedor iFood (Meus apps › seu app › Webhook).
+        O iFood avisa cada pedido na hora; o sistema também busca os pedidos a cada 30 s como reserva, enquanto o painel ou o app estiverem abertos.
+      </p>
+      {webhookUrl && (
+        <div className="linha-acao">
+          <input readOnly value={webhookUrl} className="mono" onFocus={e => e.target.select()} aria-label="URL do webhook do iFood" />
+          <Copiar texto={webhookUrl} />
+        </div>
+      )}
+      <p className="apagado">
+        Só entram os pedidos de <strong>entrega própria</strong> (o iFood marca a entrega como feita pela loja). Pedidos entregues pelo iFood ou para retirar são ignorados.
+        {!ativa && <strong> Ative a integração (botão no topo) para começar a receber.</strong>}
+      </p>
+      {pode && (
+        <div className="linha-acao">
+          <Botao disabled={ocupado || !credenciaisSalvas || !lojas.length} onClick={sincronizar}>Buscar pedidos agora</Botao>
+          {sinc && (
+            <span className={sinc.erros ? "texto-erro" : "sucesso-inline"}>
+              {sinc.aviso || `${sinc.recebidos} evento(s) · ${sinc.novos} entrega(s) criada(s)${sinc.erros ? ` · ${sinc.erros} com erro (veja os eventos)` : ""}`}
+            </span>
+          )}
+        </div>
       )}
     </section>
   );
@@ -220,7 +252,7 @@ export default function IntegracaoDetalhe() {
       </Cabecalho>
 
       {!pode && <div className="aviso-caixa">Somente contas com permissão Total podem alterar integrações.</div>}
-      {d.tipo !== "saida" && (
+      {d.tipo !== "saida" && slug !== "ifood" && (
         <div className="aviso-caixa">
           <strong>Conexão direta com {d.nome}:</strong> exige cadastro como parceiro e homologação com a plataforma. Até lá, os
           pedidos podem chegar pelo <strong>webhook de entrada</strong> abaixo (por exemplo, a partir de um integrador ou do suporte técnico da plataforma).
@@ -257,6 +289,16 @@ export default function IntegracaoDetalhe() {
               <input type="checkbox" checked={cfg.liberarAutomaticamente} disabled={!pode}
                 onChange={e => setConfig({ ...cfg, liberarAutomaticamente: e.target.checked })} />
               <span>Liberar o pedido para os entregadores assim que chegar (pular a etapa “Em preparo”)</span>
+            </label>
+          )}
+          {slug === "ifood" && (
+            <label className="campo-check" style={{ paddingTop: 8 }}>
+              <input type="checkbox" checked={!!cfg.confirmarAutomaticamente} disabled={!pode}
+                onChange={e => setConfig({ ...cfg, confirmarAutomaticamente: e.target.checked })} />
+              <span>
+                Confirmar o pedido no iFood automaticamente ao receber
+                <span className="celula-sub">Marque se a loja não usa outro sistema (ou o Gestor de Pedidos) para confirmar. O iFood cancela pedidos não confirmados em 8 minutos.</span>
+              </span>
             </label>
           )}
 
@@ -351,7 +393,7 @@ export default function IntegracaoDetalhe() {
       </div>
 
       {slug === "ifood" && (
-        <ConexaoIfood lojas={d.lojas} pode={pode} onSalvo={setDados}
+        <ConexaoIfood lojas={d.lojas} pode={pode} onSalvo={setDados} webhookUrl={d.ifoodWebhookUrl} ativa={d.ativa}
           credenciaisSalvas={["clientId", "clientSecret"].every(n => d.credenciais.campos.find(c => c.nome === n)?.preenchido)} />
       )}
       {d.tipo !== "saida" && <Lojas slug={slug} lojas={d.lojas} pode={pode} onSalvo={setDados} />}

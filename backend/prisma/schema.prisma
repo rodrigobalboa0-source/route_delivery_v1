@@ -533,6 +533,9 @@ model Pedido {
   // Pedidos recebidos por integração: qual integração e o id do pedido lá.
   integracaoSlug  String?
   idExterno       String?
+  codigoExterno   String?      // número curto do pedido na plataforma (ex.: iFood #1234)
+  // iFood: o cliente precisa informar o código de entrega ao entregador para concluir.
+  exigeCodigoEntrega Boolean   @default(false)
   // Financeiro: fatura em que o pedido foi cobrado do comércio e acerto em que foi pago ao entregador.
   faturaId           String?
   fatura             Fatura?           @relation(fields: [faturaId], references: [id], onDelete: SetNull)
@@ -614,6 +617,15 @@ model IntegracaoLoja {
   idExterno    String
 
   @@unique([integracaoId, idExterno])
+}
+
+// Eventos já processados de plataformas (ex.: iFood) — o mesmo evento pode chegar pelo webhook e pelo polling.
+model IntegracaoEventoRecebido {
+  id        String   @id // id do evento na plataforma
+  slug      String
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
 }
 
 model IntegracaoEvento {

@@ -111,6 +111,7 @@ export default function DetalhePedido({ id, onFechar }) {
           )}
 
           <dl className="detalhes">
+            {pedido.codigoExterno && <><dt>Pedido</dt><dd><strong>{pedido.codigoExterno}</strong></dd></>}
             <dt>Cliente</dt><dd>{pedido.clienteNome}{pedido.clienteTelefone && <span className="apagado"> · {pedido.clienteTelefone}</span>}</dd>
             <dt>Entrega em</dt>
             <dd>

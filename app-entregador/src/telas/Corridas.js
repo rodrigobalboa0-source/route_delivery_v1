@@ -214,11 +214,17 @@ function EntregaAtiva({ p, posicao, raio = 200, onAtualizar, onErro }) {
   const alvo = alvoLoja ? (loja?.lat != null ? { lat: loja.lat, lng: loja.lng } : null) : (p.latDestino != null ? { lat: p.latDestino, lng: p.lngDestino } : null);
   const distancia = metrosEntre(posicao, alvo);
 
-  async function avancar() {
+  const [pedirCodigo, setPedirCodigo] = useState(false);
+  const [codigoEntrega, setCodigoEntrega] = useState("");
+
+  async function avancar(codigo) {
+    // iFood: finalizar exige o código de entrega que o cliente informa.
+    if (etapa.proxima === "ENTREGUE" && p.exigeCodigoEntrega && !codigo) { setPedirCodigo(true); return; }
+    setPedirCodigo(false);
     setOcupado(true);
     try {
       const local = await posicaoAgora();
-      if (etapa.proxima === "ENTREGUE") await api.patch(`/pedidos/${p.id}/finalizar`, local);
+      if (etapa.proxima === "ENTREGUE") await api.patch(`/pedidos/${p.id}/finalizar`, { ...local, ...(codigo ? { codigoEntrega: codigo } : {}) });
       else await api.patch(`/pedidos/${p.id}/etapa`, { status: etapa.proxima, ...local });
       await onAtualizar();
     } catch (e) {
@@ -231,7 +237,7 @@ function EntregaAtiva({ p, posicao, raio = 200, onAtualizar, onErro }) {
   return (
     <Cartao estilo={{ borderColor: p.status === "ATRASADO" ? cor.critico : cor.primaria }}>
       <View style={st.topoCartao}>
-        <Text style={st.codigo}>{p.codigo}</Text>
+        <Text style={st.codigo}>{p.codigo}{p.codigoExterno ? <Text style={st.externo}>  {p.codigoExterno}</Text> : null}</Text>
         {p.status !== "ATRIBUIDO" && (
           <Selo texto={etapa?.rotulo || p.status} corFundo={p.status === "ATRASADO" ? "rgba(239,68,68,0.18)" : "rgba(42,120,214,0.2)"} corTexto={p.status === "ATRASADO" ? "#fca5a5" : cor.primariaClara} />
         )}
@@ -255,7 +261,18 @@ function EntregaAtiva({ p, posicao, raio = 200, onAtualizar, onErro }) {
           {distancia > raio ? ` — chegue ao local para confirmar (até ${raio} m)` : " — pode confirmar"}
         </Text>
       )}
-      {etapa && <Botao titulo={etapa.botao} variante={etapa.proxima === "ENTREGUE" ? "sucesso" : "primario"} onPress={avancar} carregando={ocupado} />}
+      {etapa && <Botao titulo={etapa.botao} variante={etapa.proxima === "ENTREGUE" ? "sucesso" : "primario"} onPress={() => avancar()} carregando={ocupado} />}
+      <Confirmar
+        visivel={pedirCodigo}
+        titulo="Código de entrega do iFood"
+        texto="Peça ao cliente o código de entrega que aparece no app do iFood dele e digite abaixo."
+        rotuloOk="Finalizar entrega"
+        variante="sucesso"
+        onOk={() => avancar(codigoEntrega.trim())}
+        onCancelar={() => setPedirCodigo(false)}
+      >
+        <Campo rotulo="Código" value={codigoEntrega} onChangeText={t => setCodigoEntrega(t.replace(/\D/g, "").slice(0, 8))} keyboardType="number-pad" autoFocus placeholder="Ex.: 1234" />
+      </Confirmar>
       <View style={st.acoes}>
         {indoParaLoja
           ? <Botao pequeno variante="secundario" titulo="Rota até a loja" onPress={() => abrirRota(loja?.lat, loja?.lng, enderecoLoja(p.comercio))} estilo={st.acao} />
@@ -389,6 +406,7 @@ const st = StyleSheet.create({
   acoes: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   acao: { flexGrow: 1 },
   distancia: { color: cor.aviso, fontSize: 14, fontWeight: "600" },
+  externo: { color: "#ea1d2c", fontSize: 14, fontWeight: "800" },
   popFundo: { flex: 1, backgroundColor: "rgba(3,8,18,0.75)", justifyContent: "flex-end", padding: 14 },
   pop: { backgroundColor: cor.superficie, borderRadius: 18, borderWidth: 2, borderColor: cor.ok, overflow: "hidden", maxWidth: 520, width: "100%", alignSelf: "center" },
   popFaixa: { backgroundColor: cor.ok, paddingHorizontal: 16, paddingVertical: 10, flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
