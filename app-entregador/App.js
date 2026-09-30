@@ -12,11 +12,12 @@ import { PopupAviso } from "./src/componentes";
 import { cor, moeda } from "./src/tema";
 import Mapa from "./src/mapa/Mapa";
 import Entrada from "./src/telas/Entrada";
+import { registrarPush, useToqueNotificacao } from "./src/notificacoes";
 import { ListaAndamento, ListaDisponiveis, PopupCorrida, useOperacao } from "./src/telas/Corridas";
 import { Carteira, Mensagens, Perfil, Promocoes, Treinamento } from "./src/telas/Outras";
 import Ranking from "./src/telas/Ranking";
 
-const VERSAO = "v1.4.0";
+const VERSAO = "v1.5.0";
 const TITULOS = {
   home: "Home", disponiveis: "Disponíveis", andamento: "Em andamento", promocao: "Promoção",
   mensagens: "Mensagens", carteira: "Carteira", conta: "Conta", treinamento: "Treinamento", ranking: "Ranking",
@@ -172,7 +173,11 @@ function Principal({ entregador, setEntregador, onSair }) {
   const [recentralizar, setRecentralizar] = useState(0);
   const op = useOperacao(entregador, setEntregador);
   const { atual, fechar } = useAvisos();
-  const ir = t => { setTela(t); setMenu(false); };
+  const ir = useCallback(t => { setTela(t); setMenu(false); }, []);
+  useToqueNotificacao(ir);
+
+  // Notificações no celular (novas corridas, promoções e taxas): registra este aparelho ao entrar.
+  useEffect(() => { registrarPush(); }, []);
 
   useEffect(() => {
     const atualizar = () => api.get("/me").then(setEntregador).catch(() => {});

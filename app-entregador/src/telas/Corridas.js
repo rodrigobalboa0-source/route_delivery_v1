@@ -291,7 +291,14 @@ function Ganho({ p }) {
 // Km da entrega: só da loja até o cliente (rota calculada; sem ela, estimativa marcada com ≈).
 function Km({ p }) {
   const entrega = p.kmEntrega ?? p.distanciaKm ?? null;
-  if (entrega == null) return null;
+  if (entrega == null) {
+    return (
+      <View style={st.kmItem}>
+        <Text style={st.kmValor}>— km</Text>
+        <Text style={st.kmRotulo}>endereço do cliente sem localização no mapa</Text>
+      </View>
+    );
+  }
   return (
     <View style={st.kmItem}>
       <Text style={st.kmValor}>{p.kmEstimado ? "≈ " : ""}{km(entrega)}</Text>

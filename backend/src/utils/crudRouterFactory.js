@@ -16,6 +16,7 @@ const CAMPOS_AUTOMATICOS = ["id", "createdAt", "updatedAt", "atualizadoEm"];
  * @param {object} options
  *   - orderBy: campo/objeto de ordenação padrão
  *   - beforeCreate / beforeUpdate: hooks assíncronos para transformar o body antes de salvar
+ *   - afterSave(registro, anterior): chamado depois de criar (anterior = null) ou editar
  */
 function createCrudRouter(modelName, options = {}) {
   const router = express.Router();
@@ -50,6 +51,7 @@ function createCrudRouter(modelName, options = {}) {
       const body = omitir(req.body, CAMPOS_AUTOMATICOS);
       const data = options.beforeCreate ? await options.beforeCreate(body) : body;
       const criado = await model.create({ data });
+      if (options.afterSave) await options.afterSave(criado, null);
       res.status(201).json(criado);
     })
   );
@@ -59,7 +61,9 @@ function createCrudRouter(modelName, options = {}) {
     asyncHandler(async (req, res) => {
       const body = omitir(req.body, CAMPOS_AUTOMATICOS);
       const data = options.beforeUpdate ? await options.beforeUpdate(body) : body;
+      const anterior = options.afterSave ? await model.findUnique({ where: { id: req.params.id } }) : null;
       const atualizado = await model.update({ where: { id: req.params.id }, data });
+      if (options.afterSave) await options.afterSave(atualizado, anterior);
       res.json(atualizado);
     })
   );

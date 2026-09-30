@@ -322,6 +322,11 @@ function DetalheEntregador({ id, onFechar, onAlterado }) {
                         : "Nenhum celular conectado. O próximo aparelho em que o entregador entrar fica vinculado à conta."}
                     </p>
                     {e.aparelhoConectado && (
+                      <p className="apagado" style={{ marginTop: 0 }}>
+                        {e.notificacoesAtivas ? "🔔 Notificações ativas: o celular toca quando chega corrida, promoção ou taxa." : "🔕 Notificações desligadas neste celular (app antigo ou permissão negada)."}
+                      </p>
+                    )}
+                    {e.aparelhoConectado && (
                       <BotaoConfirmar variante="primario" confirmar="Desconectar este celular?" onConfirm={() => acao(() => api.patch(`/entregadores/${id}/liberar-aparelho`), "Celular liberado — o entregador pode entrar em outro aparelho.")}>
                         Liberar aparelho
                       </BotaoConfirmar>

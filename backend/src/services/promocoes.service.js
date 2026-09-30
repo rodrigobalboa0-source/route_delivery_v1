@@ -83,6 +83,8 @@ async function mudarAtiva(id, ativa, autorNome) {
     prisma.promocaoEntregador.update({ where: { id }, data: { ativa } }),
     prisma.promocaoEvento.create({ data: { promocaoId: id, tipo: ativa ? "ATIVADA" : "DESATIVADA", autorNome } }),
   ]);
+  // Promoção ligada: notificação no celular dos entregadores (além do pop-up no app).
+  if (ativa) require("../utils/segundoPlano").emSegundoPlano(() => require("./push.service").avisarPromocao(p), "Push promoção");
   return p;
 }
 

@@ -12,8 +12,13 @@ function semSenha(registro) {
   if (Array.isArray(registro)) return registro.map(semSenha);
   if (!registro) return registro;
   // aparelhoId (identificador do celular logado) também não sai da API — só se há um aparelho conectado.
-  const { senhaHash, aparelhoId, ...resto } = registro;
-  return { ...resto, temAcessoApp: !!senhaHash, ...(aparelhoId !== undefined ? { aparelhoConectado: !!aparelhoId } : {}) };
+  // O token de push também fica só no servidor — a API diz apenas se as notificações estão ativas.
+  const { senhaHash, aparelhoId, pushToken, ...resto } = registro;
+  return {
+    ...resto, temAcessoApp: !!senhaHash,
+    ...(aparelhoId !== undefined ? { aparelhoConectado: !!aparelhoId } : {}),
+    ...(pushToken !== undefined ? { notificacoesAtivas: !!pushToken } : {}),
+  };
 }
 
 // Converte campos de formulário (strings) para os tipos esperados pelo schema.

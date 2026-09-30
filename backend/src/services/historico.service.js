@@ -35,6 +35,10 @@ async function registrarStatusPedido({ pedidoId, de = null, para, entregadorId =
   });
   // Import tardio: integracoes.service também importa este módulo.
   require("./integracoes.service").agendarNotificacao(pedidoId, de, para);
+  // Pedido liberado para os entregadores: notificação no celular (toca o alarme), depois da resposta.
+  if (para === "PENDENTE") {
+    require("../utils/segundoPlano").emSegundoPlano(() => require("./push.service").avisarNovaCorrida(pedidoId), "Push nova corrida");
+  }
   await require("./comissaoAutomatica.service").aoMudarStatus(pedidoId, de, para);
   return registro;
 }

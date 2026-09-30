@@ -62,6 +62,8 @@ function dadosDaEntrega(o) {
     endereco,
     complemento: [a.complement, a.reference && `ref.: ${a.reference}`].filter(Boolean).join(" · ") || null,
     destino: Number.isFinite(lat) && Number.isFinite(lng) && (lat || lng) ? { lat, lng } : null,
+    // Sem coordenadas: o CEP localiza o cliente aproximadamente (para o km e o mapa do entregador).
+    cepBusca: /\d{5}-?\d{3}/.test(String(a.postalCode || "")) ? [a.postalCode, a.city, a.state].filter(Boolean).join(", ") : null,
     formaPagamento: pagamentoIfood(o.payments),
     observacao: obs || null,
     codigoExterno: o.displayId ? `iFood #${o.displayId}` : null,
@@ -93,8 +95,11 @@ async function aoPedidoNovo(integ, evento) {
   if (!loja) throw Object.assign(new Error(`Loja iFood ${evento.merchantId} não está vinculada a nenhum comércio.`), { registrar: true });
 
   const o = await ifood.obterPedidoIfood(orderId);
-  const dados = dadosDaEntrega(o);
+  const { cepBusca, ...dados } = dadosDaEntrega(o);
   if (dados.ignorar) return dados.ignorar;
+  if (!dados.destino && cepBusca) {
+    dados.destinoAprox = await require("../utils/geo").geocodificarEndereco(cepBusca).catch(() => null);
+  }
 
   const { criarPedido } = require("./pedidos.service");
   const { carimbos, registrarStatusPedido } = require("./historico.service");

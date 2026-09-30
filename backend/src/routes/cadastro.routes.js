@@ -76,9 +76,16 @@ const validarRegraPreco = tipoPadrao => body => {
   if (tipoAplicacao === "MULTIPLICADOR" && valor > 10) erro("Multiplicador muito alto (máximo 10x).");
   return { nome, tipoAplicacao, valor, ativo: body.ativo === undefined ? true : !!body.ativo };
 };
-const opcoesRegraPreco = tipoPadrao => ({ orderBy: { nome: "asc" }, beforeCreate: validarRegraPreco(tipoPadrao), beforeUpdate: validarRegraPreco(tipoPadrao) });
-router.use("/preco-dinamico-demanda", createCrudRouter("precoDinamicoDemanda", opcoesRegraPreco("MULTIPLICADOR")));
-router.use("/preco-dinamico-entregador", createCrudRouter("precoDinamicoEntregador", opcoesRegraPreco("VALOR_FIXO")));
+// Regra criada ativa ou ligada agora (ex.: "Chuva"): notificação no celular dos entregadores.
+const avisarAoLigar = tipo => (regra, anterior) => {
+  if (!regra.ativo || anterior?.ativo) return;
+  require("../utils/segundoPlano").emSegundoPlano(() => require("../services/push.service").avisarTaxaDinamica(regra, tipo), "Push taxa dinâmica");
+};
+const opcoesRegraPreco = (tipoPadrao, tipo) => ({
+  orderBy: { nome: "asc" }, beforeCreate: validarRegraPreco(tipoPadrao), beforeUpdate: validarRegraPreco(tipoPadrao), afterSave: avisarAoLigar(tipo),
+});
+router.use("/preco-dinamico-demanda", createCrudRouter("precoDinamicoDemanda", opcoesRegraPreco("MULTIPLICADOR", "demanda")));
+router.use("/preco-dinamico-entregador", createCrudRouter("precoDinamicoEntregador", opcoesRegraPreco("VALOR_FIXO", "entregador")));
 router.use("/servicos-opcionais", createCrudRouter("servicoOpcional"));
 router.use("/promocoes", createCrudRouter("promocao"));
 router.use("/franquias", createCrudRouter("franquia"));

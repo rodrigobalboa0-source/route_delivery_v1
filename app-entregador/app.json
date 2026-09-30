@@ -2,7 +2,7 @@
   "expo": {
     "name": "Route Entregador",
     "slug": "route-entregador",
-    "version": "1.4.0",
+    "version": "1.5.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -13,7 +13,7 @@
     },
     "android": {
       "package": "com.routedelivery.entregador",
-      "versionCode": 4,
+      "versionCode": 5,
       "adaptiveIcon": {
         "backgroundColor": "#0b1628",
         "foregroundImage": "./assets/android-icon-foreground.png"
@@ -48,6 +48,15 @@
           "cameraPermission": "O Route Entregador usa a câmera para você tirar a selfie e fotografar a CNH, o comprovante de endereço e o documento do veículo no cadastro.",
           "photosPermission": "O Route Entregador acessa suas fotos para você escolher as imagens dos documentos do cadastro.",
           "microphonePermission": false
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notificacao-icone.png",
+          "color": "#2a78d6",
+          "defaultChannel": "avisos",
+          "sounds": ["./assets/corrida.wav"]
         }
       ]
     ],

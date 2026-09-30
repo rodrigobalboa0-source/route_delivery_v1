@@ -294,6 +294,9 @@ model Entregador {
   aparelhoId            String?
   aparelhoNome          String?
   aparelhoEm            DateTime?
+  // Notificações push (Expo): token do celular conectado; limpo ao sair ou quando o celular desinstala o app.
+  pushToken             String?
+  pushTokenEm           DateTime?
   historicoStatus       EntregadorStatusHistorico[]
   localizacoes          EntregadorLocalizacao[]
   avisosVistos          PromocaoAvisoVisto[]

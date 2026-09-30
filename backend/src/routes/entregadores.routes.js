@@ -216,7 +216,7 @@ router.patch(
   asyncHandler(async (req, res) => {
     const atual = await prisma.entregador.findUnique({ where: { id: req.params.id } });
     if (!atual) return res.status(404).json({ erro: "Entregador não encontrado." });
-    const entregador = await prisma.entregador.update({ where: { id: req.params.id }, data: { aparelhoId: null, aparelhoNome: null, online: false } });
+    const entregador = await prisma.entregador.update({ where: { id: req.params.id }, data: { aparelhoId: null, aparelhoNome: null, pushToken: null, online: false } });
     await registrarStatusEntregador({ entregadorId: entregador.id, tipo: "APARELHO", de: atual.aparelhoNome || "aparelho", para: "LIBERADO", autor: autorDe(req) }).catch(() => {});
     res.json(semSenha(entregador));
   })

@@ -156,7 +156,7 @@ router.post(
     }
     await prisma.$transaction([
       prisma.entregadorCodigoSenha.update({ where: { id: registro.id }, data: { usado: true } }),
-      prisma.entregador.update({ where: { id: e.id }, data: { senhaHash: await bcrypt.hash(novaSenha, 10), aparelhoId: null, aparelhoNome: null, online: false } }),
+      prisma.entregador.update({ where: { id: e.id }, data: { senhaHash: await bcrypt.hash(novaSenha, 10), aparelhoId: null, aparelhoNome: null, pushToken: null, online: false } }),
     ]);
     res.json({ ok: true, mensagem: "Senha alterada! Entre com a nova senha." });
   })
@@ -309,10 +309,23 @@ router.post(
   "/sair",
   asyncHandler(async (req, res) => {
     const e = req.entregador;
-    await prisma.entregador.update({ where: { id: e.id }, data: { online: false, aparelhoId: null, aparelhoNome: null } });
+    await prisma.entregador.update({ where: { id: e.id }, data: { online: false, aparelhoId: null, aparelhoNome: null, pushToken: null } });
     if (e.online) {
       await registrarStatusEntregador({ entregadorId: e.id, tipo: "ONLINE", de: "ONLINE", para: "OFFLINE", autor: autorEntregador(req) }).catch(() => {});
     }
+    res.json({ ok: true });
+  })
+);
+
+// POST /api/app/entregador/push-token  { token } — celular registrado para receber notificações
+// (nova corrida, promoções, taxas). O mesmo token em outra conta é tirado de lá (celular trocou de conta).
+router.post(
+  "/push-token",
+  asyncHandler(async (req, res) => {
+    const token = String(req.body?.token || "").trim();
+    if (!require("../../services/push.service").tokenValido(token)) throw erroHttp(400, "Token de notificação inválido.");
+    await prisma.entregador.updateMany({ where: { pushToken: token, id: { not: req.entregador.id } }, data: { pushToken: null } });
+    await prisma.entregador.update({ where: { id: req.entregador.id }, data: { pushToken: token, pushTokenEm: new Date() } });
     res.json({ ok: true });
   })
 );
