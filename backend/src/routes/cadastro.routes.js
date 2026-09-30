@@ -44,6 +44,18 @@ const validarTabelaComissao = body => {
     }
   }
   if (d.tipoCalculo === "PERCENTUAL" && !(d.percentual > 0 && d.percentual <= 100)) erro("Informe o percentual (entre 0 e 100).");
+  // Retorno (entrega em que o entregador volta à loja)
+  if (d.tipoRetorno !== undefined) {
+    d.tipoRetorno = d.tipoRetorno || "REPASSE_LOJA";
+    if (!["REPASSE_LOJA", "PORCENTAGEM", "VALOR_FIXO", "SEM_ADICIONAL"].includes(d.tipoRetorno)) erro("Tipo de retorno inválido.");
+  }
+  if (d.valorRetorno !== undefined) {
+    d.valorRetorno = n(d.valorRetorno);
+    if (d.valorRetorno !== null && (!Number.isFinite(d.valorRetorno) || d.valorRetorno < 0)) erro("O valor do retorno não pode ser negativo.");
+  }
+  if (["PORCENTAGEM", "VALOR_FIXO"].includes(d.tipoRetorno) && !(d.valorRetorno > 0)) erro("Informe o valor do retorno.");
+  if (d.tipoRetorno === "PORCENTAGEM" && d.valorRetorno > 300) erro("A porcentagem do retorno deve ficar até 300%.");
+  if (["REPASSE_LOJA", "SEM_ADICIONAL"].includes(d.tipoRetorno)) d.valorRetorno = null;
   if (d.faixas !== undefined) d.faixas = d.faixas === null ? Prisma.DbNull : validarFaixas(d.faixas);
   if (d.tipoCalculo === "FAIXAS" && !(Array.isArray(d.faixas) && d.faixas.length)) erro("Cadastre pelo menos uma faixa de km.");
   return d;

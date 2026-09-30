@@ -13,8 +13,31 @@ const km = v => `${String(v).replace(".", ",")} km`;
 //                               PERCENTUAL: % do valor da entrega. Os dois respeitam o mínimo da tabela.
 //   3. entregador com repasse fixo (taxaEntrega) -> esse valor
 //   4. nenhuma regra         -> 0 (aparece como "sem regra" para corrigir o cadastro)
+// Entrega com retorno: soma o adicional do retorno (ver adicionalRetorno).
 function comissaoDoPedido(p) {
   if (p.acertoId && p.comissaoEntregador != null) return { valor: p.comissaoEntregador, regra: "Valor do acerto", tipo: "ACERTADO" };
+  const base = comissaoBase(p);
+  if (!p.retorno) return base;
+  const extra = adicionalRetorno(p, base.valor);
+  if (!extra.valor) return base;
+  return { ...base, valor: r2(base.valor + extra.valor), regra: `${base.regra} + ${extra.regra}`, adicionalRetorno: extra.valor };
+}
+
+// Adicional do entregador numa entrega com retorno à loja, conforme a tabela de comissão do comércio
+// (sem tabela: repassa o acréscimo cobrado da loja).
+function adicionalRetorno(p, comissao) {
+  const t = p.comercio?.tabelaComissao;
+  const tipo = t?.tipoRetorno || "REPASSE_LOJA";
+  if (tipo === "SEM_ADICIONAL") return { valor: 0, regra: "" };
+  if (tipo === "PORCENTAGEM") {
+    const pct = t.valorRetorno || 0;
+    return { valor: r2((comissao * pct) / 100), regra: `retorno ${String(pct).replace(".", ",")}% da comissão` };
+  }
+  if (tipo === "VALOR_FIXO") return { valor: r2(t.valorRetorno || 0), regra: `retorno ${moeda(t.valorRetorno || 0)}` };
+  return { valor: r2(p.acrescimoRetorno || 0), regra: `retorno (acréscimo da loja) ${moeda(p.acrescimoRetorno || 0)}` };
+}
+
+function comissaoBase(p) {
   const t = p.comercio?.tabelaComissao;
   if (t?.tipoCalculo === "FAIXAS") {
     const r = p.distanciaKm != null ? valorPorFaixas(p.distanciaKm, t.faixas, t.kmAdicional, t.valorMinimo) : null;
@@ -29,7 +52,8 @@ function comissaoDoPedido(p) {
     return { valor: 0, regra: "Entrega sem km calculado para a tabela por faixas", tipo: "SEM_REGRA" };
   }
   if (t && t.percentual != null) {
-    const pct = r2(((p.valor || 0) * t.percentual) / 100);
+    // % sobre a taxa sem o acréscimo do retorno (o retorno é pago à parte, sem contar duas vezes).
+    const pct = r2((((p.valor || 0) - (p.acrescimoRetorno || 0)) * t.percentual) / 100);
     const minimo = t.valorMinimo || 0;
     return {
       valor: r2(Math.max(pct, minimo)),

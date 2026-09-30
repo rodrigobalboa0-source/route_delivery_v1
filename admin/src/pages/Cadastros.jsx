@@ -119,6 +119,27 @@ function resumoTabelaKm(r) {
   return `mín. ${moeda(r.valorMinimo)} + ${moeda(r.kmAdicional)}/km`;
 }
 
+// Adicional do entregador nas entregas com retorno à loja (Tabela de comissões).
+const TIPO_RETORNO_COMISSAO = {
+  REPASSE_LOJA: "Repassar o acréscimo cobrado da loja",
+  PORCENTAGEM: "Porcentagem sobre a comissão",
+  VALOR_FIXO: "Valor fixo por entrega",
+  SEM_ADICIONAL: "Sem adicional",
+};
+const DICA_RETORNO = {
+  REPASSE_LOJA: "O entregador recebe o acréscimo que a loja paga no retorno (Configurações › Acréscimo da entrega com retorno, padrão 20%).",
+  PORCENTAGEM: "Ex.: 20 = o entregador ganha 20% a mais sobre a comissão da entrega quando ela tem retorno.",
+  VALOR_FIXO: "Ex.: 3,00 = o entregador ganha R$ 3,00 a mais em cada entrega com retorno.",
+  SEM_ADICIONAL: "O entregador recebe só a comissão normal, mesmo com retorno.",
+};
+function resumoRetorno(r) {
+  const t = r.tipoRetorno || "REPASSE_LOJA";
+  if (t === "PORCENTAGEM") return `+${String(r.valorRetorno ?? 0).replace(".", ",")}% da comissão`;
+  if (t === "VALOR_FIXO") return `+${moeda(r.valorRetorno)}`;
+  if (t === "SEM_ADICIONAL") return "Sem adicional";
+  return "Acréscimo da loja";
+}
+
 const TIPO_PROMOCAO ={ DESCONTO_PERCENTUAL: "Desconto percentual", CUPOM_FIXO: "Cupom de valor fixo", FRETE_GRATIS: "Frete grátis" };
 
 // Cada cadastro simples é descrito aqui: rota na API, campos do formulário e colunas da tabela.
@@ -159,7 +180,7 @@ const CADASTROS = [
     descricao: "Quanto o entregador ganha por entrega: cadastre vários km e valores (faixas) ou um percentual do valor da entrega. Vincule a tabela ao comércio no cadastro dele. O km é o da rota da entrega.",
     rotuloItem: "tabela de comissão",
     modalLargo: true,
-    padrao: { tipoCalculo: "FAIXAS", categoria: "MOTO" },
+    padrao: { tipoCalculo: "FAIXAS", categoria: "MOTO", tipoRetorno: "REPASSE_LOJA" },
     campos: [
       { nome: "nome", rotulo: "Nome", largo: true, placeholder: "Ex.: Comissão Moto Centro" },
       { nome: "categoria", rotulo: "Categoria (veículo)", tipo: "select", obrigatorio: true, opcoes: opcoes(VEICULOS) },
@@ -167,6 +188,14 @@ const CADASTROS = [
       { nome: "percentual", rotulo: "Percentual do valor da entrega (%)", tipo: "number", obrigatorio: true, mostrar: v => v.tipoCalculo === "PERCENTUAL" },
       { nome: "valorMinimo", rotulo: "Comissão mínima (R$)", tipo: "number" },
       { nome: "kmAdicional", rotulo: "Valor por km acima da última faixa (R$)", tipo: "number", mostrar: v => v.tipoCalculo === "FAIXAS" },
+      {
+        nome: "tipoRetorno", rotulo: "Tipo de retorno", tipo: "select", obrigatorio: true, opcoes: opcoes(TIPO_RETORNO_COMISSAO),
+        dica: v => DICA_RETORNO[v.tipoRetorno || "REPASSE_LOJA"],
+      },
+      {
+        nome: "valorRetorno", tipo: "number", obrigatorio: true, mostrar: v => ["PORCENTAGEM", "VALOR_FIXO"].includes(v.tipoRetorno),
+        rotulo: v => (v.tipoRetorno === "PORCENTAGEM" ? "Valor do retorno (% da comissão)" : "Valor do retorno (R$ por entrega)"),
+      },
     ],
     Extra: ({ valores, onChange }) => (valores.tipoCalculo === "FAIXAS"
       ? <EditorFaixas valores={valores} onChange={onChange} rotuloValor="Comissão (R$)" rotuloSimular="Simular comissão numa entrega de" />
@@ -178,6 +207,7 @@ const CADASTROS = [
       { rotulo: "Cálculo", valor: r => (r.tipoCalculo === "FAIXAS" ? `Faixas (${(r.faixas || []).length})` : "Percentual") },
       { rotulo: "Comissão", valor: r => (r.tipoCalculo === "FAIXAS" ? resumoTabelaKm(r) : `${String(r.percentual ?? 0).replace(".", ",")}% do valor`) },
       { rotulo: "Mínimo", valor: r => moeda(r.valorMinimo), num: true },
+      { rotulo: "Retorno", valor: resumoRetorno },
     ],
   },
   {

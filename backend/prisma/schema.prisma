@@ -389,6 +389,13 @@ model TabelaComissao {
   valorMinimo Float?
   kmAdicional Float?
   faixas      Json?
+  // Adicional do entregador nas entregas com retorno à loja:
+  //   REPASSE_LOJA  = recebe o acréscimo cobrado da loja (Configurações › % do retorno)  [padrão]
+  //   PORCENTAGEM   = valorRetorno % sobre a comissão da entrega
+  //   VALOR_FIXO    = valorRetorno em R$ por entrega com retorno
+  //   SEM_ADICIONAL = nada a mais
+  tipoRetorno  String @default("REPASSE_LOJA")
+  valorRetorno Float?
 
   comercios   Comercio[]
 }
