@@ -71,7 +71,7 @@ async function detalhe(req, integ) {
     slug: integ.slug, nome: cat.nome, categoria: cat.categoria, tipo: cat.tipo, descricao: cat.descricao,
     ativa: integ.ativa,
     credenciais: credenciaisParaPainel(cat, integ.credenciais),
-    config: { liberarAutomaticamente: !!integ.config?.liberarAutomaticamente, confirmarAutomaticamente: !!integ.config?.confirmarAutomaticamente, eventos: eventosDaIntegracao(integ) },
+    config: { liberarAutomaticamente: !!integ.config?.liberarAutomaticamente, confirmarAutomaticamente: integ.config?.confirmarAutomaticamente !== false, eventos: eventosDaIntegracao(integ) },
     // iFood: endereço para cadastrar como webhook no aplicativo, no Portal do Desenvolvedor.
     ...(integ.slug === "ifood" ? { ifoodWebhookUrl: `${baseUrl(req)}/api/ifood/webhook` } : {}),
     statusDisponiveis: STATUS_TODOS,

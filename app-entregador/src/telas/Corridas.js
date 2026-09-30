@@ -228,7 +228,11 @@ function EntregaAtiva({ p, posicao, raio = 200, onAtualizar, onErro }) {
       else await api.patch(`/pedidos/${p.id}/etapa`, { status: etapa.proxima, ...local });
       await onAtualizar();
     } catch (e) {
-      onErro(e.message);
+      // iFood passou a exigir o código de entrega: abre o campo do código (ou avisa que o código está errado).
+      if (e.dados?.codigo === "CODIGO_ENTREGA") {
+        setPedirCodigo(true);
+        if (codigo) onErro(e.message);
+      } else onErro(e.message);
     } finally {
       setOcupado(false);
     }

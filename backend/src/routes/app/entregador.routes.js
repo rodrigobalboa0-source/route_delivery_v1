@@ -469,8 +469,10 @@ router.patch(
     if (!COM_ENTREGADOR.includes(pedido.status)) throw erroHttp(409, "Este pedido não está em andamento com você.");
     await conferirLocal(req, pedido, "cliente");
     // iFood com código de entrega: o cliente informa o código e o iFood confere antes de concluir.
-    if (pedido.integracaoSlug === "ifood" && pedido.exigeCodigoEntrega) {
-      await require("../../services/ifood.service").validarCodigoEntrega(pedido, req.body?.codigoEntrega);
+    const ifoodSvc = require("../../services/ifood.service");
+    const atual = pedido.integracaoSlug === "ifood" ? await ifoodSvc.atualizarAntesDeFinalizar(pedido) : pedido;
+    if (atual.integracaoSlug === "ifood" && atual.exigeCodigoEntrega) {
+      await ifoodSvc.validarCodigoEntrega(atual, req.body?.codigoEntrega);
       await registrarLog(pedido.id, "Código de entrega do iFood confirmado.");
     }
     const atualizado = await prisma.pedido.update({

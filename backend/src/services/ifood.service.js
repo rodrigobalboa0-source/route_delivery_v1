@@ -108,7 +108,8 @@ async function aoPedidoNovo(integ, evento) {
   }
   let msg = `Entrega ${pedido.codigo} criada (${dados.codigoExterno || orderId}).`;
 
-  if (integ.config?.confirmarAutomaticamente) {
+  // Confirmação automática: ligada por padrão (o iFood cancela pedidos não confirmados em 8 minutos).
+  if (integ.config?.confirmarAutomaticamente !== false) {
     const r = await ifood.confirmarPedidoIfood(orderId).catch(e => ({ ok: false, dados: { message: e.message } }));
     msg += r.ok ? " Pedido confirmado no iFood." : ` Não confirmou no iFood: ${ifood.mensagemIfood(r)}.`;
     await prisma.pedidoLog.create({ data: { pedidoId: pedido.id, texto: r.ok ? "Pedido confirmado no iFood." : `Falha ao confirmar no iFood: ${ifood.mensagemIfood(r)}` } });
@@ -194,11 +195,17 @@ async function sincronizar({ forcar = false } = {}) {
 
 // ---------- Saída: status da entrega -> iFood ----------
 
+// Etapas a partir de "saiu para entrega": ao chegar em qualquer uma (mesmo pulando etapas pelo painel),
+// avisa o dispatch ao iFood uma única vez — é depois dele que o iFood pode pedir o código de entrega.
+const SAIU_OU_DEPOIS = ["EM_ROTA", "NO_CLIENTE", "ENTREGUE"];
+
 async function aoMudarStatus(pedidoId, de, para) {
-  if (para !== "EM_ROTA" || de === "EM_ROTA") return;
+  if (!SAIU_OU_DEPOIS.includes(para) || SAIU_OU_DEPOIS.includes(de)) return;
   const p = await prisma.pedido.findUnique({ where: { id: pedidoId }, select: { id: true, integracaoSlug: true, idExterno: true } });
   if (p?.integracaoSlug !== SLUG || !p.idExterno) return;
   const integ = await obterOuCriar(SLUG);
+  const jaAvisado = await prisma.integracaoEvento.findFirst({ where: { integracaoId: integ.id, pedidoId: p.id, tipo: "ifood.dispatch", sucesso: true } });
+  if (jaAvisado) return;
   const r = await ifood.despacharPedidoIfood(p.idExterno).catch(err => ({ ok: false, dados: { message: err.message } }));
   const msg = r.ok ? "iFood avisado: pedido saiu para entrega." : `Falha ao avisar a saída no iFood: ${ifood.mensagemIfood(r)}`;
   await prisma.pedidoLog.create({ data: { pedidoId: p.id, texto: msg } }).catch(() => {});
@@ -215,4 +222,12 @@ async function validarCodigoEntrega(pedido, codigo) {
   if (!r.ok) throw Object.assign(new Error(r.status >= 500 ? "O iFood não respondeu. Tente de novo em instantes." : "Código de entrega incorreto. Confira com o cliente."), { status: 422, extra: { codigo: "CODIGO_ENTREGA" } });
 }
 
-module.exports = { processarEventos, sincronizar, aoMudarStatus, validarCodigoEntrega, dadosDaEntrega };
+// Antes de finalizar: o aviso "exige código" chega pouco depois do dispatch. Se ainda não chegou pelo webhook,
+// busca os eventos pendentes agora e relê o pedido.
+async function atualizarAntesDeFinalizar(pedido) {
+  if (pedido.integracaoSlug !== SLUG || pedido.exigeCodigoEntrega) return pedido;
+  await sincronizar({ forcar: true }).catch(() => {});
+  return (await prisma.pedido.findUnique({ where: { id: pedido.id } })) || pedido;
+}
+
+module.exports = { processarEventos, sincronizar, aoMudarStatus, validarCodigoEntrega, dadosDaEntrega, atualizarAntesDeFinalizar };
