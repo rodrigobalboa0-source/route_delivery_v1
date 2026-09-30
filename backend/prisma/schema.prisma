@@ -200,6 +200,7 @@ model Comercio {
   comissoesManuais    ComissaoManual[]
   conversa            Conversa?
   clientes            ClienteComercio[]
+  entregadoresBloqueados ComercioEntregadorBloqueio[]
 }
 
 model ComercioEndereco {
@@ -303,6 +304,7 @@ model Entregador {
   acertos               AcertoEntregador[]
   comissoesManuais      ComissaoManual[]
   conversa              Conversa?
+  bloqueiosLoja         ComercioEntregadorBloqueio[]
 }
 
 // Mudanças do próprio entregador: cadastro, aprovação/inativação, bloqueio, online/offline.
@@ -887,6 +889,26 @@ model Configuracao {
   smtpUsuario              String?
   smtpSenha                String? // criptografada
   resendChave              String? // criptografada
+  // O que o sistema da loja pode fazer nos pedidos (liberado pelo ADM em Configurações).
+  lojaPodeFinalizar          Boolean @default(false)
+  lojaPodeEditarComercio     Boolean @default(false)
+  lojaPodeEditarEntregador   Boolean @default(false)
+  lojaPodeBloquearEntregador Boolean @default(false)
+}
+
+// Entregador bloqueado por uma loja: não vê nem recebe corridas dela (continua trabalhando para as outras).
+model ComercioEntregadorBloqueio {
+  id           String     @id @default(cuid())
+  comercioId   String
+  comercio     Comercio   @relation(fields: [comercioId], references: [id], onDelete: Cascade)
+  entregadorId String
+  entregador   Entregador @relation(fields: [entregadorId], references: [id], onDelete: Cascade)
+  motivo       String?
+  autorNome    String?
+  createdAt    DateTime   @default(now())
+
+  @@unique([comercioId, entregadorId])
+  @@index([entregadorId])
 }
 
 // Semanas do ranking já fechadas (segunda 00:00 a domingo 23:59, horário de Brasília).

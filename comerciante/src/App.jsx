@@ -1,4 +1,5 @@
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
+import Rastreio from "./pages/Rastreio";
 import { useAuth } from "./auth";
 import Layout from "./components/Layout";
 import { Carregando } from "./components/ui";
@@ -15,7 +16,12 @@ import Conta from "./pages/Conta";
 
 export default function App() {
   const { loja, carregando } = useAuth();
+  const { pathname } = useLocation();
 
+  // Rastreio público: o cliente abre sem login.
+  if (pathname.startsWith("/rastreio/")) {
+    return <Routes><Route path="/rastreio/:token" element={<Rastreio />} /></Routes>;
+  }
   if (carregando) return <div className="tela-cheia"><Carregando texto="Verificando sessão…" /></div>;
   if (!loja) return <Login />;
 

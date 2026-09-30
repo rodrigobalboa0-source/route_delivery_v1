@@ -10,6 +10,7 @@ import { useApi } from "../hooks/useApi";
 import { BadgeMapa, Botao, Carregando, ErroCaixa, useAcao } from "../components/ui";
 import MapaEntregadores from "../components/MapaEntregadores";
 import DetalhePedido from "../components/DetalhePedido";
+import AcoesPedido from "../components/AcoesPedido";
 import CampoCliente from "../components/CampoCliente";
 import CampoEndereco from "../components/CampoEndereco";
 import { textoValor, useFormEntrega } from "../hooks/useFormEntrega";
@@ -53,7 +54,8 @@ export function ResumoValor({ calculo }) {
 function CriarRapido({ onPrevia, onCriado, retornoPercentual }) {
   const f = useFormEntrega({ vazio: VAZIO, onPrevia });
   const { v, mudar, calculo, retorno, ocupado } = f;
-  const [pronto, setPronto] = useState(true);
+  // Pronto manual: por padrão o pedido fica "Criado" e a loja clica em "Pedido pronto" na hora certa.
+  const [pronto, setPronto] = useState(false);
   const [mais, setMais] = useState(false);
   const set = k => valor => mudar(k, valor);
 
@@ -161,7 +163,7 @@ const FILTROS = [
 ];
 const casaFiltro = (p, f) => (f === "COM_ENTREGADOR" ? COM_ENTREGADOR.includes(p.status) && p.status !== "ATRASADO" : p.status === f);
 
-function EmAberto({ pedidos, carregado, onAbrir, onPronto, ocupado }) {
+function EmAberto({ pedidos, carregado, onAbrir, onPronto, ocupado, onAlterado }) {
   const navegar = useNavigate();
   const [busca, setBusca] = useState("");
   const [filtros, setFiltros] = useState([]);
@@ -217,7 +219,7 @@ function EmAberto({ pedidos, carregado, onAbrir, onPronto, ocupado }) {
           <table className={`tabela tabela-aberto ${compacto ? "tabela-compacta" : ""}`}>
             <thead>
               <tr>
-                <th>Pedido</th><th>Cliente</th><th>Status</th><th>Pedido pronto</th><th>Entregador</th><th className="num">Valor</th>
+                <th>Pedido</th><th>Cliente</th><th>Status</th><th>Pedido pronto</th><th>Entregador</th><th className="num">Valor</th><th className="num">Ações</th>
               </tr>
             </thead>
             <tbody>
@@ -240,6 +242,9 @@ function EmAberto({ pedidos, carregado, onAbrir, onPronto, ocupado }) {
                   </td>
                   <td>{p.entregador ? `🏍 ${p.entregador.nomeCompleto}` : <span className="apagado">{p.status === "PENDENTE" ? "Procurando…" : "—"}</span>}</td>
                   <td className="num">{moeda(p.valor)}</td>
+                  <td className="num" onClick={e => e.stopPropagation()}>
+                    <AcoesPedido pedido={p} onDetalhes={() => onAbrir(p.id)} onAlterado={onAlterado} />
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -298,7 +303,7 @@ export default function Painel() {
               )}
             </div>
           )}
-          <EmAberto pedidos={pedidos} carregado={!!mapa.dados} onAbrir={setAberto} onPronto={pronto} ocupado={ocupado} />
+          <EmAberto pedidos={pedidos} carregado={!!mapa.dados} onAbrir={setAberto} onPronto={pronto} ocupado={ocupado} onAlterado={() => mapa.recarregar({ silencioso: true })} />
         </div>
         <Entregadores pedidos={pedidos} onPedido={setAberto} />
       </div>

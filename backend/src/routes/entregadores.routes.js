@@ -93,7 +93,10 @@ router.get(
   asyncHandler(async (req, res) => {
     const entregador = await prisma.entregador.findUnique({
       where: { id: req.params.id },
-      include: { comerciosPermitidos: { select: { comercioId: true } } },
+      include: {
+        comerciosPermitidos: { select: { comercioId: true } },
+        bloqueiosLoja: { orderBy: { createdAt: "desc" }, include: { comercio: { select: { id: true, nomeFantasia: true } } } },
+      },
     });
     if (!entregador) return res.status(404).json({ erro: "Entregador não encontrado." });
 
@@ -106,6 +109,7 @@ router.get(
     res.json({
       ...semSenha(entregador),
       comerciosPermitidos: entregador.comerciosPermitidos.map(c => c.comercioId),
+      bloqueiosLoja: entregador.bloqueiosLoja.map(b => ({ comercioId: b.comercio.id, loja: b.comercio.nomeFantasia, motivo: b.motivo, autorNome: b.autorNome, createdAt: b.createdAt })),
       estatisticas: {
         totalPedidos,
         entregues: entregues._count._all,
@@ -168,6 +172,15 @@ router.patch(
     const entregador = await prisma.entregador.update({ where: { id: req.params.id }, data });
     await registrarStatusEntregador({ entregadorId: entregador.id, tipo: "STATUS", de: atual.status, para: status, autor: autorDe(req) });
     res.json(semSenha(entregador));
+  })
+);
+
+// DELETE /api/entregadores/:id/bloqueios-loja/:comercioId — desfaz o bloqueio feito por uma loja
+router.delete(
+  "/:id/bloqueios-loja/:comercioId",
+  asyncHandler(async (req, res) => {
+    await prisma.comercioEntregadorBloqueio.deleteMany({ where: { entregadorId: req.params.id, comercioId: req.params.comercioId } });
+    res.status(204).send();
   })
 );
 

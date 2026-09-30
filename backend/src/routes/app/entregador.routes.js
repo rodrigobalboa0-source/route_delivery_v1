@@ -426,7 +426,11 @@ router.get(
     await liberarAgendados().catch(() => {}); // agendados cuja hora chegou entram na lista agora
 
     // Recusadas por este entregador não voltam para ele (continuam para os outros).
-    const where = { status: "PENDENTE", entregadorId: null, comercio: { bloqueado: false }, recusas: { none: { entregadorId: req.entregador.id } } };
+    // Lojas que bloquearam este entregador também não aparecem.
+    const where = {
+      status: "PENDENTE", entregadorId: null, recusas: { none: { entregadorId: req.entregador.id } },
+      comercio: { bloqueado: false, entregadoresBloqueados: { none: { entregadorId: req.entregador.id } } },
+    };
     if (req.entregador.permissaoColeta === "SOMENTE_SELECIONADOS") {
       const permitidos = await prisma.entregadorComercioPermitido.findMany({
         where: { entregadorId: req.entregador.id }, select: { comercioId: true },

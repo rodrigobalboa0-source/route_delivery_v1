@@ -306,3 +306,57 @@ input[type="datetime-local"], input[type="date"] { color-scheme: dark; }
   .etapa-rotulo { font-size: 9.5px; }
   .grade-campos { grid-template-columns: 1fr; }
 }
+
+/* ---- Menu "Ações" do pedido ---- */
+.menu-acoes { position: relative; display: inline-block; }
+.menu-acoes-botao { white-space: nowrap; }
+.menu-acoes-lista {
+  position: fixed; z-index: 1200; min-width: 250px; margin: 0; padding: 6px; list-style: none; overflow-y: auto;
+  background: var(--superficie); border: 1px solid var(--borda-forte); border-radius: var(--raio); box-shadow: var(--sombra-alta);
+}
+.menu-acoes-lista button {
+  display: block; width: 100%; padding: 8px 10px; border: 0; border-radius: var(--raio-sm); background: none;
+  color: var(--texto); font: inherit; font-size: 13.5px; text-align: left; cursor: pointer;
+}
+.menu-acoes-lista button:hover, .menu-acoes-lista button:focus-visible { background: var(--superficie-2); outline: none; }
+.menu-acoes-lista button.destaque { color: var(--ok); font-weight: 700; }
+.menu-acoes-lista button.perigo { color: var(--critico); border-top: 1px solid var(--borda); border-radius: 0 0 var(--raio-sm) var(--raio-sm); margin-top: 4px; }
+.lista-escolha { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.lista-escolha li { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--borda); border-radius: var(--raio); }
+.lista-escolha .avatar { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; background: var(--superficie-2); font-weight: 700; }
+.lista-escolha-texto { flex: 1; min-width: 0; display: grid; }
+.lista-escolha-texto small { color: var(--texto-3); }
+.foto-loja-edicao { flex-direction: row; align-items: center; gap: 12px; flex-wrap: wrap; }
+.avatar-grande { width: 64px; height: 64px; border-radius: 14px; display: grid; place-items: center; background: var(--superficie-2); font-size: 24px; font-weight: 800; }
+.acoes-detalhe { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+
+/* ---- Rastreio público (cliente) ---- */
+.rastreio { min-height: 100vh; display: flex; justify-content: center; padding: 20px 16px 32px; background: var(--fundo); }
+.rastreio-cartao { width: 100%; max-width: 560px; background: var(--superficie); border: 1px solid var(--borda); border-radius: 14px; padding: 18px; box-shadow: var(--sombra-alta); align-self: flex-start; }
+.rastreio-cartao h1 { margin: 0; font-size: 19px; }
+.rastreio-topo { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; }
+.rastreio-topo small, .rastreio-entregador small { display: block; color: var(--texto-3); }
+.rastreio-logo { width: 52px; height: 52px; border-radius: 12px; overflow: hidden; display: grid; place-items: center; background: var(--superficie-2); font-size: 22px; font-weight: 800; flex: 0 0 auto; }
+.rastreio-logo.pequeno { width: 40px; height: 40px; border-radius: 50%; font-size: 16px; }
+.rastreio-logo img { width: 100%; height: 100%; object-fit: cover; }
+.rastreio-etapas { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 0; }
+.rastreio-etapas li { position: relative; display: flex; align-items: center; gap: 12px; padding: 7px 0; color: var(--texto-3); }
+.rastreio-etapas li:not(:last-child)::after { content: ""; position: absolute; left: 11px; top: 30px; bottom: -8px; width: 2px; background: var(--borda); }
+.rastreio-etapas li.feita::after { background: var(--verde); }
+.rastreio-ponto { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--borda-forte); display: grid; place-items: center; font-size: 13px; font-weight: 800; flex: 0 0 auto; background: var(--superficie); z-index: 1; }
+.rastreio-etapas li.feita { color: var(--texto-2); }
+.rastreio-etapas li.feita .rastreio-ponto { background: var(--verde); border-color: var(--verde); color: #fff; }
+.rastreio-etapas li.atual { color: var(--texto); font-weight: 700; }
+.rastreio-etapas li.atual .rastreio-ponto { border-color: var(--primaria); box-shadow: 0 0 0 4px var(--primaria-suave); }
+.rastreio-aviso { padding: 12px; border-radius: var(--raio); margin-bottom: 12px; }
+.rastreio-aviso.cancelado { background: var(--critico-fundo); color: var(--critico); }
+.rastreio-dica { color: var(--texto-2); margin: 0 0 12px; }
+.rastreio-entregador { display: flex; gap: 12px; align-items: center; padding: 10px 12px; border: 1px solid var(--borda); border-radius: var(--raio); margin-bottom: 12px; }
+.rastreio-mapa { height: 300px; border-radius: var(--raio); overflow: hidden; border: 1px solid var(--borda); }
+.rastreio-pino { width: 100%; height: 100%; display: grid; place-items: center; border-radius: 50%; background: #fff; box-shadow: 0 2px 6px rgba(0,0,0,.35); font-size: 18px; }
+.rastreio-pino.moto { background: var(--primaria); font-size: 22px; }
+.rastreio-marcador { background: none; border: 0; }
+.rastreio-endereco { margin: 12px 0 4px; color: var(--texto-2); }
+.rastreio-rodape { margin: 0; color: var(--texto-3); font-size: 12px; }
+/* Modais do menu ficam dentro da célula da tabela (alinhada à direita): voltam ao alinhamento normal. */
+.menu-acoes .sobreposicao, .menu-acoes-lista { text-align: left; white-space: normal; font-variant-numeric: normal; }

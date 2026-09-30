@@ -237,7 +237,7 @@ export function CampoDef({ def, valor, onChange, desabilitado }) {
       <label className={`campo campo-switch ${def.largo ? "campo-largo" : ""}`}>
         <input type="checkbox" role="switch" checked={!!valor} disabled={desabilitado} onChange={e => onChange(e.target.checked)} />
         <span className="interruptor" aria-hidden="true" />
-        <span>{def.rotulo}</span>
+        <span>{def.rotulo}{def.dica && <small className="campo-dica" style={{ display: "block", marginTop: 2 }}>{def.dica}</small>}</span>
       </label>
     );
   } else if (def.tipo === "textarea") {

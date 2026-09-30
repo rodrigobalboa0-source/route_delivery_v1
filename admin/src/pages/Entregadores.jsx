@@ -333,6 +333,26 @@ function DetalheEntregador({ id, onFechar, onAlterado }) {
                     )}
                   </section>
 
+                  {e.bloqueiosLoja?.length > 0 && (
+                    <section className="bloco">
+                      <h3>Bloqueado por lojas</h3>
+                      <p className="apagado" style={{ marginTop: 0 }}>Não vê nem recebe corridas destas lojas (continua trabalhando para as outras).</p>
+                      <ul className="lista-simples">
+                        {e.bloqueiosLoja.map(b => (
+                          <li key={b.comercioId} className="linha-acao">
+                            <span style={{ flex: 1 }}>
+                              <strong>{b.loja}</strong> · {dataHora(b.createdAt)}
+                              {b.motivo && <div className="celula-sub">Motivo: {b.motivo}</div>}
+                            </span>
+                            <BotaoConfirmar pequeno confirmar="Desbloquear nesta loja?" onConfirm={() => acao(() => api.del(`/entregadores/${id}/bloqueios-loja/${b.comercioId}`), `Desbloqueado em ${b.loja}.`)}>
+                              Desbloquear
+                            </BotaoConfirmar>
+                          </li>
+                        ))}
+                      </ul>
+                    </section>
+                  )}
+
                   <section className="bloco">
                     <h3>Situação</h3>
                     <div className="botoes">

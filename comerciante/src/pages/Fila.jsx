@@ -4,6 +4,7 @@ import { api } from "../api";
 import { useApi } from "../hooks/useApi";
 import { Botao, Cabecalho, Carregando, ErroCaixa, useAcao } from "../components/ui";
 import DetalhePedido from "../components/DetalhePedido";
+import AcoesPedido from "../components/AcoesPedido";
 import { SemRegistros } from "./Painel";
 import { dataHora, moeda } from "../utils/format";
 
@@ -70,11 +71,10 @@ export default function Fila() {
                       {p.entregador && <small>🏍 {p.entregador.nomeCompleto}</small>}
                       <div className="fila-cartao-rodape">
                         <span>{moeda(p.valor)}{p.retorno && <span className="selo-retorno">↩ retorno</span>}{p.status === "ATRASADO" && <span className="badge badge-critico">Atrasado</span>}</span>
-                        {p.status === "PREPARANDO" && (
-                          <span onClick={e => e.stopPropagation()}>
-                            <Botao pequeno variante="primario" disabled={ocupado} onClick={() => pronto(p)}>Pedido pronto</Botao>
-                          </span>
-                        )}
+                        <span className="fila-acoes" onClick={e => e.stopPropagation()}>
+                          {p.status === "PREPARANDO" && <Botao pequeno variante="primario" disabled={ocupado} onClick={() => pronto(p)}>Pedido pronto</Botao>}
+                          <AcoesPedido pedido={p} onDetalhes={() => setAberto(p.id)} onAlterado={() => mapa.recarregar({ silencioso: true })} />
+                        </span>
                       </div>
                     </article>
                   );

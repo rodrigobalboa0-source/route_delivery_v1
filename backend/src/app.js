@@ -64,6 +64,8 @@ app.use("/api/app/comerciante", appComercianteRoutes);
 app.use("/api/integracoes/webhook", integracoesWebhookRoutes);
 // ---- Webhook do iFood (público; autenticado pela assinatura X-IFood-Signature) ----
 app.use("/api/ifood", require("./routes/ifoodWebhook.routes"));
+// ---- Rastreio público da entrega (link que a loja manda para o cliente; assinado) ----
+app.use("/api/rastreio", require("./routes/rastreio.routes"));
 
 // ---- Painel ADM ----
 // Login é público; todo o resto exige token de conta gerencial e respeita a permissão da conta.

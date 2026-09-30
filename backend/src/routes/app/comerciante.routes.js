@@ -10,6 +10,9 @@ const { carimbos, registrarStatusPedido } = require("../../services/historico.se
 const { versaoComercio } = require("../../services/tempoReal.service");
 const { TODOS, ABERTOS, COM_ENTREGADOR } = require("../../utils/statusPedido");
 const { localizarPendentes } = require("../pedidos.routes");
+const { tokenRastreio } = require("../rastreio.routes");
+const { distanciaLinhaRetaKm } = require("../../utils/geo");
+const { emSegundoPlano } = require("../../utils/segundoPlano");
 
 const autorComerciante = req => ({ autorTipo: "COMERCIANTE", autorNome: `${req.comercio.nomeFantasia} (${req.conta.email})` });
 
@@ -66,12 +69,47 @@ async function pedidoDoComercio(req) {
   return pedido;
 }
 
+// Funções que o ADM libera (ou não) para as lojas em Configurações › Permissões da loja.
+async function permissoesLoja() {
+  const c = await prisma.configuracao.findFirst({
+    select: { lojaPodeFinalizar: true, lojaPodeEditarComercio: true, lojaPodeEditarEntregador: true, lojaPodeBloquearEntregador: true },
+  });
+  return {
+    finalizar: !!c?.lojaPodeFinalizar,
+    editarComercio: !!c?.lojaPodeEditarComercio,
+    editarEntregador: !!c?.lojaPodeEditarEntregador,
+    bloquearEntregador: !!c?.lojaPodeBloquearEntregador,
+  };
+}
+async function exigirPermissao(nome) {
+  if (!(await permissoesLoja())[nome]) throw erroHttp(403, "Esta função não está liberada para a sua loja. Fale com a equipe.");
+}
+
+// Entregador que está (ou esteve) com um pedido desta loja — a loja só mexe em quem trabalhou para ela.
+async function entregadorDaLoja(req) {
+  const e = await prisma.entregador.findUnique({ where: { id: req.params.entregadorId } });
+  const trabalhou = e && await prisma.pedido.count({ where: { comercioId: req.comercio.id, entregadorId: e.id } });
+  if (!trabalhou) throw erroHttp(404, "Entregador não encontrado nos seus pedidos.");
+  return e;
+}
+
+// Volta o pedido para a fila (sem entregador); os entregadores são chamados de novo (push).
+async function voltarParaFila(req, pedido, texto) {
+  const { count } = await prisma.pedido.updateMany({
+    where: { id: pedido.id, status: pedido.status, entregadorId: pedido.entregadorId },
+    data: { entregadorId: null, status: "PENDENTE", ...carimbos(pedido, "PENDENTE") },
+  });
+  if (!count) throw erroHttp(409, "O pedido acabou de mudar. Atualize a tela.");
+  await registrarStatusPedido({ pedidoId: pedido.id, de: pedido.status, para: "PENDENTE", entregadorId: pedido.entregadorId, autor: autorComerciante(req) });
+  await registrarLog(pedido.id, texto);
+}
+
 // GET /api/app/comerciante/me
 router.get(
   "/me",
   asyncHandler(async (req, res) => {
     // Só o que a loja precisa ver (observações internas e dados de comissão ficam no ADM).
-    const [loja, retornoPercentual] = await Promise.all([
+    const [loja, retornoPercentual, permissoes] = await Promise.all([
       prisma.comercio.findUnique({
         where: { id: req.comercio.id },
         select: {
@@ -82,8 +120,9 @@ router.get(
         },
       }),
       percentualRetorno(),
+      permissoesLoja(),
     ]);
-    res.json({ ...loja, retornoPercentual });
+    res.json({ ...loja, retornoPercentual, permissoes });
   })
 );
 
@@ -101,7 +140,7 @@ router.get(
       prisma.fatura.aggregate({ where: { comercioId, paga: false }, _sum: { valor: true }, _count: { _all: true } }),
       prisma.pedido.count({ where: { comercioId, status: "PREPARANDO", agendadoPara: { not: null } } }),
       // Entregadores online que podem pegar corridas desta loja (só a quantidade).
-      prisma.entregador.count({ where: { online: true, status: "ATIVO", bloqueado: false, OR: [
+      prisma.entregador.count({ where: { online: true, status: "ATIVO", bloqueado: false, bloqueiosLoja: { none: { comercioId } }, OR: [
         { permissaoColeta: "TODOS_CLIENTES" },
         { comerciosPermitidos: { some: { comercioId } } },
       ] } }),
@@ -221,7 +260,7 @@ router.get(
       where: { comercioId: req.comercio.id, status: { in: ABERTOS } }, orderBy: { createdAt: "desc" }, take: 100,
       select: {
         id: true, codigo: true, status: true, clienteNome: true, clienteTelefone: true, endereco: true, complemento: true, retorno: true,
-        agendadoPara: true, valor: true, prontoEm: true, comercioId: true, latDestino: true, lngDestino: true, createdAt: true,
+        agendadoPara: true, valor: true, prontoEm: true, comercioId: true, latDestino: true, lngDestino: true, createdAt: true, observacao: true,
         entregador: { select: { id: true, nomeCompleto: true, fotoUrl: true, veiculoTipo: true, telefone: true, lat: true, lng: true, localizacaoEm: true } },
       },
     });
@@ -232,7 +271,7 @@ router.get(
       pedidos: pedidos.map(p => ({
         id: p.id, codigo: p.codigo, status: p.status, clienteNome: p.clienteNome, clienteTelefone: p.clienteTelefone,
         endereco: p.endereco, complemento: p.complemento, retorno: p.retorno, agendadoPara: p.agendadoPara, valor: p.valor,
-        prontoEm: p.prontoEm, createdAt: p.createdAt,
+        prontoEm: p.prontoEm, createdAt: p.createdAt, observacao: p.observacao, rastreio: tokenRastreio(p.id),
         destino: p.latDestino != null ? { lat: p.latDestino, lng: p.lngDestino } : null,
         entregador: p.entregador,
       })),
@@ -245,14 +284,16 @@ router.get(
   "/pedidos/:id",
   asyncHandler(async (req, res) => {
     await pedidoDoComercio(req);
-    res.json(await prisma.pedido.findUnique({
+    const p = await prisma.pedido.findUnique({
       where: { id: req.params.id },
       include: {
         ...INCLUDE_PADRAO,
-        entregador: { select: { id: true, nomeCompleto: true, telefone: true, fotoUrl: true, veiculoTipo: true, veiculoPlaca: true, lat: true, lng: true, localizacaoEm: true } },
+        entregador: { select: { id: true, nomeCompleto: true, telefone: true, fotoUrl: true, veiculoTipo: true, veiculoModelo: true, veiculoPlaca: true, veiculoAno: true, lat: true, lng: true, localizacaoEm: true } },
         logs: { orderBy: { createdAt: "asc" } },
       },
-    }));
+    });
+    const bloqueado = p.entregadorId && await prisma.comercioEntregadorBloqueio.count({ where: { comercioId: req.comercio.id, entregadorId: p.entregadorId } });
+    res.json({ ...p, entregadorBloqueado: !!bloqueado, rastreio: tokenRastreio(p.id) });
   })
 );
 
@@ -351,21 +392,242 @@ router.patch(
   })
 );
 
-// PATCH /api/app/comerciante/pedidos/:id/cancelar  { motivo? } — só antes de um entregador aceitar
+// PATCH /api/app/comerciante/pedidos/:id/cancelar  { motivo? } — enquanto não foi entregue
+// (com entregador, a corrida some do app dele na hora).
 router.patch(
   "/pedidos/:id/cancelar",
   asyncHandler(async (req, res) => {
     const pedido = await pedidoDoComercio(req);
-    if (!["PREPARANDO", "PENDENTE"].includes(pedido.status)) {
-      throw erroHttp(409, "Este pedido já saiu para entrega. Fale com o suporte para cancelar.");
-    }
+    if (!ABERTOS.includes(pedido.status)) throw erroHttp(409, "Este pedido já foi finalizado ou cancelado.");
     const atualizado = await prisma.pedido.update({
       where: { id: pedido.id }, data: { status: "CANCELADO", ...carimbos(pedido, "CANCELADO") }, include: INCLUDE_PADRAO,
     });
-    await registrarStatusPedido({ pedidoId: pedido.id, de: pedido.status, para: "CANCELADO", autor: autorComerciante(req) });
-    const motivo = req.body?.motivo ? ` Motivo: ${req.body.motivo}` : "";
-    await registrarLog(pedido.id, `Pedido cancelado pelo comércio.${motivo}`);
+    await registrarStatusPedido({ pedidoId: pedido.id, de: pedido.status, para: "CANCELADO", entregadorId: pedido.entregadorId, autor: autorComerciante(req) });
+    const motivo = String(req.body?.motivo || "").trim().slice(0, 300);
+    await registrarLog(pedido.id, `Pedido cancelado pelo comércio.${motivo ? ` Motivo: ${motivo}` : ""}`);
     res.json(atualizado);
+  })
+);
+
+// PATCH /api/app/comerciante/pedidos/:id/finalizar — marca como entregue (se o ADM liberou).
+// Com entregador, conta como entrega dele (ganho, ranking, acerto). iFood com código continua pelo app do entregador.
+router.patch(
+  "/pedidos/:id/finalizar",
+  asyncHandler(async (req, res) => {
+    await exigirPermissao("finalizar");
+    const pedido = await pedidoDoComercio(req);
+    if (!ABERTOS.includes(pedido.status)) throw erroHttp(409, "Este pedido já foi finalizado ou cancelado.");
+    if (pedido.exigeCodigoEntrega) throw erroHttp(409, "Pedido do iFood com código de entrega: o entregador finaliza pelo app digitando o código do cliente.");
+    const { count } = await prisma.pedido.updateMany({
+      where: { id: pedido.id, status: pedido.status }, data: { status: "ENTREGUE", ...carimbos(pedido, "ENTREGUE") },
+    });
+    if (!count) throw erroHttp(409, "O pedido acabou de mudar. Atualize a tela.");
+    await registrarStatusPedido({ pedidoId: pedido.id, de: pedido.status, para: "ENTREGUE", entregadorId: pedido.entregadorId, autor: autorComerciante(req) });
+    await registrarLog(pedido.id, "Pedido finalizado pela loja.");
+    res.json(await prisma.pedido.findUnique({ where: { id: pedido.id }, include: INCLUDE_PADRAO }));
+  })
+);
+
+// PATCH /api/app/comerciante/pedidos/:id/reprocurar — tira o entregador e chama os outros de novo
+router.patch(
+  "/pedidos/:id/reprocurar",
+  asyncHandler(async (req, res) => {
+    const pedido = await pedidoDoComercio(req);
+    if (!COM_ENTREGADOR.includes(pedido.status)) throw erroHttp(409, "Este pedido não está com entregador.");
+    const nome = (await prisma.entregador.findUnique({ where: { id: pedido.entregadorId }, select: { nomeCompleto: true } }))?.nomeCompleto;
+    await voltarParaFila(req, pedido, `Loja tirou ${nome || "o entregador"} e está procurando outro entregador.`);
+    res.json(await prisma.pedido.findUnique({ where: { id: pedido.id }, include: INCLUDE_PADRAO }));
+  })
+);
+
+// Entregadores que podem pegar corridas desta loja (online, ativos, com permissão de coleta e sem bloqueio da loja).
+async function entregadoresQuePodem(comercioId) {
+  return prisma.entregador.findMany({
+    where: {
+      online: true, status: "ATIVO", bloqueado: false, bloqueiosLoja: { none: { comercioId } },
+      OR: [{ permissaoColeta: "TODOS_CLIENTES" }, { comerciosPermitidos: { some: { comercioId } } }],
+    },
+    select: {
+      id: true, nomeCompleto: true, fotoUrl: true, veiculoTipo: true, veiculoPlaca: true, lat: true, lng: true, localizacaoEm: true,
+      _count: { select: { pedidos: { where: { status: { in: COM_ENTREGADOR } } } } },
+    },
+  });
+}
+
+// GET /api/app/comerciante/entregadores-disponiveis — para "Trocar entregador" (mais perto da loja primeiro)
+router.get(
+  "/entregadores-disponiveis",
+  asyncHandler(async (req, res) => {
+    const [lista, loja] = await Promise.all([
+      entregadoresQuePodem(req.comercio.id),
+      prisma.comercioEndereco.findFirst({ where: { comercioId: req.comercio.id, principal: true }, select: { lat: true, lng: true } }),
+    ]);
+    res.json(lista.map(e => ({
+      id: e.id, nomeCompleto: e.nomeCompleto, fotoUrl: e.fotoUrl, veiculoTipo: e.veiculoTipo, veiculoPlaca: e.veiculoPlaca,
+      emAndamento: e._count.pedidos,
+      distanciaKm: loja?.lat != null && e.lat != null ? Number(distanciaLinhaRetaKm({ lat: e.lat, lng: e.lng }, loja).toFixed(1)) : null,
+    })).sort((a, b) => (a.distanciaKm ?? 999) - (b.distanciaKm ?? 999)));
+  })
+);
+
+// PATCH /api/app/comerciante/pedidos/:id/trocar-entregador  { entregadorId } — passa a corrida para outro entregador
+router.patch(
+  "/pedidos/:id/trocar-entregador",
+  asyncHandler(async (req, res) => {
+    const pedido = await pedidoDoComercio(req);
+    if (!COM_ENTREGADOR.includes(pedido.status)) throw erroHttp(409, "Só dá para trocar o entregador depois que a corrida foi aceita.");
+    const novo = (await entregadoresQuePodem(req.comercio.id)).find(e => e.id === req.body?.entregadorId);
+    if (!novo) throw erroHttp(400, "Escolha um entregador online da lista.");
+    if (novo.id === pedido.entregadorId) throw erroHttp(400, "Este já é o entregador do pedido.");
+    const antigo = await prisma.entregador.findUnique({ where: { id: pedido.entregadorId }, select: { nomeCompleto: true } });
+    const { count } = await prisma.pedido.updateMany({
+      where: { id: pedido.id, entregadorId: pedido.entregadorId, status: pedido.status },
+      data: { entregadorId: novo.id, aceitoEm: new Date() },
+    });
+    if (!count) throw erroHttp(409, "O pedido acabou de mudar. Atualize a tela.");
+    await registrarLog(pedido.id, `Loja trocou o entregador: de ${antigo?.nomeCompleto || "—"} para ${novo.nomeCompleto}.`);
+    emSegundoPlano(() => require("../../services/push.service").avisarAtribuicao(pedido.id, novo.id), "Push atribuição");
+    res.json(await prisma.pedido.findUnique({ where: { id: pedido.id }, include: INCLUDE_PADRAO }));
+  })
+);
+
+// PUT /api/app/comerciante/entregadores/:entregadorId  — editar dados do entregador (se o ADM liberou)
+router.put(
+  "/entregadores/:entregadorId",
+  asyncHandler(async (req, res) => {
+    await exigirPermissao("editarEntregador");
+    const e = await entregadorDaLoja(req);
+    const b = req.body || {};
+    const data = {};
+    const texto = (v, max = 80) => String(v ?? "").trim().slice(0, max);
+    if (b.nomeCompleto !== undefined) {
+      if (texto(b.nomeCompleto).split(/\s+/).length < 2) throw erroHttp(400, "Informe nome e sobrenome do entregador.");
+      data.nomeCompleto = texto(b.nomeCompleto);
+    }
+    if (b.telefone !== undefined) {
+      const d = String(b.telefone).replace(/\D/g, "");
+      if (d && ![10, 11].includes(d.length)) throw erroHttp(400, "Telefone com DDD (10 ou 11 dígitos).");
+      data.telefone = texto(b.telefone, 20) || null;
+    }
+    if (b.veiculoTipo !== undefined) {
+      if (!["MOTO", "BIKE", "CARRO"].includes(b.veiculoTipo)) throw erroHttp(400, "Veículo inválido.");
+      data.veiculoTipo = b.veiculoTipo;
+    }
+    if (b.veiculoModelo !== undefined) data.veiculoModelo = texto(b.veiculoModelo) || null;
+    if (b.veiculoPlaca !== undefined) {
+      const placa = texto(b.veiculoPlaca, 8).toUpperCase();
+      if (placa && !/^[A-Z]{3}-?\d[A-Z0-9]\d{2}$/.test(placa)) throw erroHttp(400, "Placa inválida (ABC1D23 ou ABC-1234).");
+      data.veiculoPlaca = placa || null;
+    }
+    if (b.veiculoAno !== undefined) {
+      const ano = texto(b.veiculoAno, 4);
+      if (ano && !/^(19[5-9]\d|20\d{2})$/.test(ano)) throw erroHttp(400, "Ano do veículo inválido.");
+      data.veiculoAno = ano || null;
+    }
+    if (!Object.keys(data).length) throw erroHttp(400, "Nada para alterar.");
+    const atualizado = await prisma.entregador.update({
+      where: { id: e.id }, data,
+      select: { id: true, nomeCompleto: true, telefone: true, fotoUrl: true, veiculoTipo: true, veiculoModelo: true, veiculoPlaca: true, veiculoAno: true },
+    });
+    const mudou = Object.keys(data).join(", ");
+    await prisma.entregadorStatusHistorico.create({
+      data: { entregadorId: e.id, tipo: "CADASTRO", para: `Dados alterados pela loja (${mudou})`, autorTipo: "COMERCIANTE", autorNome: autorComerciante(req).autorNome },
+    });
+    await prisma.notificacao.create({ data: { tipo: "cadastro", texto: `${req.comercio.nomeFantasia} alterou dados do entregador ${atualizado.nomeCompleto} (${mudou}).` } });
+    res.json(atualizado);
+  })
+);
+
+// POST /api/app/comerciante/entregadores/:entregadorId/bloquear  { motivo?, pedidoId? }
+// Bloqueio só nesta loja (se o ADM liberou). Com pedidoId, tira o entregador desse pedido e chama outro.
+router.post(
+  "/entregadores/:entregadorId/bloquear",
+  asyncHandler(async (req, res) => {
+    await exigirPermissao("bloquearEntregador");
+    const e = await entregadorDaLoja(req);
+    const motivo = String(req.body?.motivo || "").trim().slice(0, 300) || null;
+    await prisma.comercioEntregadorBloqueio.upsert({
+      where: { comercioId_entregadorId: { comercioId: req.comercio.id, entregadorId: e.id } },
+      update: { motivo, autorNome: req.conta.email },
+      create: { comercioId: req.comercio.id, entregadorId: e.id, motivo, autorNome: req.conta.email },
+    });
+    await prisma.notificacao.create({ data: { tipo: "cadastro", texto: `${req.comercio.nomeFantasia} bloqueou o entregador ${e.nomeCompleto} na loja.${motivo ? ` Motivo: ${motivo}` : ""}` } });
+    let pedido = null;
+    if (req.body?.pedidoId) {
+      req.params.id = req.body.pedidoId;
+      pedido = await pedidoDoComercio(req);
+      if (pedido.entregadorId === e.id && COM_ENTREGADOR.includes(pedido.status)) {
+        await voltarParaFila(req, pedido, `Loja bloqueou ${e.nomeCompleto} e está procurando outro entregador.`);
+      }
+    }
+    res.json({ ok: true, mensagem: `${e.nomeCompleto} não recebe mais corridas da sua loja.` });
+  })
+);
+
+// DELETE /api/app/comerciante/entregadores/:entregadorId/bloquear — desbloqueia
+router.delete(
+  "/entregadores/:entregadorId/bloquear",
+  asyncHandler(async (req, res) => {
+    await exigirPermissao("bloquearEntregador");
+    await prisma.comercioEntregadorBloqueio.deleteMany({ where: { comercioId: req.comercio.id, entregadorId: req.params.entregadorId } });
+    res.json({ ok: true });
+  })
+);
+
+// GET /api/app/comerciante/entregadores-bloqueados
+router.get(
+  "/entregadores-bloqueados",
+  asyncHandler(async (req, res) => {
+    const lista = await prisma.comercioEntregadorBloqueio.findMany({
+      where: { comercioId: req.comercio.id }, orderBy: { createdAt: "desc" },
+      include: { entregador: { select: { id: true, nomeCompleto: true, fotoUrl: true, veiculoTipo: true } } },
+    });
+    res.json(lista.map(b => ({ id: b.id, motivo: b.motivo, createdAt: b.createdAt, entregador: b.entregador })));
+  })
+);
+
+// PUT /api/app/comerciante/me — a loja edita os próprios dados (se o ADM liberou)
+// { nomeFantasia?, nomeCompleto?, telefone?, fotoUrl?, endereco?: { rua, numero, complemento, bairro, cidade, cep, referencia, lat, lng } }
+router.put(
+  "/me",
+  asyncHandler(async (req, res) => {
+    await exigirPermissao("editarComercio");
+    const b = req.body || {};
+    const texto = (v, max = 120) => String(v ?? "").trim().slice(0, max);
+    const data = {};
+    if (b.nomeFantasia !== undefined) {
+      if (!texto(b.nomeFantasia)) throw erroHttp(400, "Informe o nome da loja.");
+      data.nomeFantasia = texto(b.nomeFantasia);
+    }
+    if (b.nomeCompleto !== undefined) data.nomeCompleto = texto(b.nomeCompleto) || null;
+    if (b.telefone !== undefined) data.telefone = texto(b.telefone, 20) || null;
+    if (b.fotoUrl !== undefined) {
+      if (b.fotoUrl && !/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(b.fotoUrl)) throw erroHttp(400, "Envie a foto em JPG, PNG ou WEBP.");
+      if (b.fotoUrl && b.fotoUrl.length > 1.5 * 1024 * 1024) throw erroHttp(400, "A foto é grande demais.");
+      data.fotoUrl = b.fotoUrl || null;
+    }
+    let novoEndereco = null;
+    if (b.endereco) {
+      const a = b.endereco;
+      const lat = Number(a.lat), lng = Number(a.lng);
+      if (!texto(a.rua)) throw erroHttp(400, "Informe a rua do endereço de coleta.");
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) throw erroHttp(400, "Escolha o endereço de coleta na lista de sugestões (para achar no mapa).");
+      novoEndereco = {
+        rua: texto(a.rua), numero: texto(a.numero, 20) || null, complemento: texto(a.complemento) || null, bairro: texto(a.bairro) || null,
+        cidade: texto(a.cidade) || null, cep: texto(a.cep, 10) || null, referencia: texto(a.referencia, 200) || null, lat, lng,
+      };
+    }
+    await prisma.$transaction(async tx => {
+      if (Object.keys(data).length) await tx.comercio.update({ where: { id: req.comercio.id }, data });
+      if (novoEndereco) {
+        const atual = await tx.comercioEndereco.findFirst({ where: { comercioId: req.comercio.id, principal: true } });
+        if (atual) await tx.comercioEndereco.update({ where: { id: atual.id }, data: novoEndereco });
+        else await tx.comercioEndereco.create({ data: { ...novoEndereco, comercioId: req.comercio.id, principal: true } });
+      }
+    });
+    const mudou = [...Object.keys(data), ...(novoEndereco ? ["endereço de coleta"] : [])];
+    if (mudou.length) await prisma.notificacao.create({ data: { tipo: "cadastro", texto: `${data.nomeFantasia || req.comercio.nomeFantasia} alterou os dados da loja (${mudou.join(", ")}).` } });
+    res.json({ ok: true });
   })
 );
 

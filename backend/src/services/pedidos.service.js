@@ -268,7 +268,7 @@ async function aceitarPedido(pedidoId, entregadorId) {
   if (entregador.status !== "ATIVO") throw erroHttp(403, "Entregador ainda não está ativo.");
 
   const { count } = await prisma.pedido.updateMany({
-    where: { id: pedidoId, status: "PENDENTE", entregadorId: null },
+    where: { id: pedidoId, status: "PENDENTE", entregadorId: null, comercio: { entregadoresBloqueados: { none: { entregadorId } } } },
     data: { entregadorId, status: "ATRIBUIDO", aceitoEm: new Date() },
   });
   if (count === 0) throw erroHttp(409, "Pedido não está mais disponível.");

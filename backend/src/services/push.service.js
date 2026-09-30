@@ -41,7 +41,10 @@ const ativosComToken = extra => ({ status: "ATIVO", bloqueado: false, pushToken:
 async function avisarNovaCorrida(pedidoId) {
   const pedido = await prisma.pedido.findUnique({
     where: { id: pedidoId },
-    include: { comercio: { select: { id: true, nomeFantasia: true, bloqueado: true, enderecos: { where: { principal: true } } } }, recusas: { select: { entregadorId: true } } },
+    include: {
+      comercio: { select: { id: true, nomeFantasia: true, bloqueado: true, enderecos: { where: { principal: true } }, entregadoresBloqueados: { select: { entregadorId: true } } } },
+      recusas: { select: { entregadorId: true } },
+    },
   });
   if (!pedido || pedido.status !== "PENDENTE" || pedido.entregadorId || pedido.comercio?.bloqueado) return 0;
 
@@ -49,7 +52,8 @@ async function avisarNovaCorrida(pedidoId) {
     prisma.entregador.findMany({ where: ativosComToken({ online: true }), include: { comerciosPermitidos: { select: { comercioId: true } } } }),
     prisma.configuracao.findFirst({ select: { raioMaximoKm: true } }),
   ]);
-  const recusaram = new Set(pedido.recusas.map(r => r.entregadorId));
+  // Quem recusou esta corrida ou foi bloqueado pela loja não é chamado.
+  const recusaram = new Set([...pedido.recusas, ...pedido.comercio.entregadoresBloqueados].map(r => r.entregadorId));
   const loja = pedido.comercio.enderecos[0];
   const raio = config?.raioMaximoKm;
   const alvo = entregadores.filter(e => {
@@ -81,6 +85,24 @@ async function avisarNovaCorrida(pedidoId) {
     });
   }
   return enviar(mensagens);
+}
+
+// A loja (ou o ADM) passou a corrida direto para este entregador: toca o alarme e abre "Em andamento".
+async function avisarAtribuicao(pedidoId, entregadorId) {
+  const [pedido, e] = await Promise.all([
+    prisma.pedido.findUnique({ where: { id: pedidoId }, include: { comercio: { select: { nomeFantasia: true } } } }),
+    prisma.entregador.findUnique({ where: { id: entregadorId }, select: { pushToken: true } }),
+  ]);
+  if (!pedido || !e?.pushToken) return 0;
+  return enviar([{
+    to: e.pushToken,
+    title: `🛵 Corrida passada para você — ${pedido.comercio.nomeFantasia}`,
+    body: `${pedido.clienteNome} · ${pedido.endereco}`.slice(0, 180),
+    data: { tipo: "atribuida", tela: "andamento", pedidoId },
+    channelId: "corridas",
+    sound: "corrida.wav",
+    priority: "high",
+  }]);
 }
 
 // Promoção ativada no painel (respeita os veículos escolhidos).
@@ -118,4 +140,4 @@ async function avisarTaxaDinamica(regra, tipo) {
   })));
 }
 
-module.exports = { enviar, avisarNovaCorrida, avisarPromocao, avisarTaxaDinamica, tokenValido };
+module.exports = { enviar, avisarNovaCorrida, avisarAtribuicao, avisarPromocao, avisarTaxaDinamica, tokenValido };
