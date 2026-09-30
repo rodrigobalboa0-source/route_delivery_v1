@@ -187,6 +187,13 @@ model Comercio {
   observacoes       String?
   // Comércio bloqueado não consegue entrar no sistema do comerciante nem criar pedidos.
   bloqueado         Boolean   @default(false)
+  // Permissões da loja (ADM › Configurações › Permissões da loja), por loja:
+  lojaPodeFinalizar          Boolean @default(false) // finalizar pedido pelo sistema da loja
+  lojaPodeEditarComercio     Boolean @default(false) // editar os próprios dados (nome, logo, endereço de coleta)
+  lojaPodeEditarEntregador   Boolean @default(false) // editar dados dos entregadores que trabalharam para ela
+  lojaPodeBloquearEntregador Boolean @default(false) // bloquear entregador só nesta loja
+  // Pedidos lançados pela loja: o entregador só finaliza com os 4 últimos números do telefone do cliente.
+  exigirCodigoTelefone       Boolean @default(false)
   createdAt         DateTime  @default(now())
 
   enderecos           ComercioEndereco[]
@@ -541,6 +548,9 @@ model Pedido {
   codigoExterno   String?      // número curto do pedido na plataforma (ex.: iFood #1234)
   // iFood: o cliente precisa informar o código de entrega ao entregador para concluir.
   exigeCodigoEntrega Boolean   @default(false)
+  // Código da loja: 4 últimos números do telefone do cliente no momento da criação (não muda se o telefone for editado).
+  // Nunca vai para o app do entregador.
+  codigoConfirmacao  String?
   // Financeiro: fatura em que o pedido foi cobrado do comércio e acerto em que foi pago ao entregador.
   faturaId           String?
   fatura             Fatura?           @relation(fields: [faturaId], references: [id], onDelete: SetNull)
@@ -889,11 +899,6 @@ model Configuracao {
   smtpUsuario              String?
   smtpSenha                String? // criptografada
   resendChave              String? // criptografada
-  // O que o sistema da loja pode fazer nos pedidos (liberado pelo ADM em Configurações).
-  lojaPodeFinalizar          Boolean @default(false)
-  lojaPodeEditarComercio     Boolean @default(false)
-  lojaPodeEditarEntregador   Boolean @default(false)
-  lojaPodeBloquearEntregador Boolean @default(false)
 }
 
 // Entregador bloqueado por uma loja: não vê nem recebe corridas dela (continua trabalhando para as outras).

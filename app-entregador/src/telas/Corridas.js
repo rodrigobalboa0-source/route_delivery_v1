@@ -247,6 +247,7 @@ function EntregaAtiva({ p, onAtualizar, onErro }) {
       <Ganho p={p} />
       <Km p={p} />
       <InfoLinha rotulo="Pagamento" valor={p.formaPagamento} />
+      {p.codigoLoja ? <Text style={st.avisoCodigo}>🔒 Para finalizar, peça ao cliente os 4 últimos números do telefone dele.</Text> : null}
       {/* Observação da loja: só aparece quando a loja escreveu alguma. */}
       {p.observacao?.trim() ? (
         <View style={st.obs}>
@@ -257,14 +258,16 @@ function EntregaAtiva({ p, onAtualizar, onErro }) {
       {etapa && <Botao titulo={etapa.botao} variante={etapa.proxima === "ENTREGUE" ? "sucesso" : "primario"} onPress={() => avancar()} carregando={ocupado} />}
       <Confirmar
         visivel={pedirCodigo}
-        titulo="Código de entrega do iFood"
-        texto="Peça ao cliente o código de entrega que aparece no app do iFood dele e digite abaixo."
+        titulo={p.codigoLoja ? "Código de entrega" : "Código de entrega do iFood"}
+        texto={p.codigoLoja
+          ? "Peça ao cliente os 4 últimos números do telefone dele e digite abaixo."
+          : "Peça ao cliente o código de entrega que aparece no app do iFood dele e digite abaixo."}
         rotuloOk="Finalizar entrega"
         variante="sucesso"
         onOk={() => avancar(codigoEntrega.trim())}
         onCancelar={() => setPedirCodigo(false)}
       >
-        <Campo rotulo="Código" value={codigoEntrega} onChangeText={t => setCodigoEntrega(t.replace(/\D/g, "").slice(0, 8))} keyboardType="number-pad" autoFocus placeholder="Ex.: 1234" />
+        <Campo rotulo={p.codigoLoja ? "4 últimos números do telefone" : "Código"} value={codigoEntrega} onChangeText={t => setCodigoEntrega(t.replace(/\D/g, "").slice(0, p.codigoLoja ? 4 : 8))} keyboardType="number-pad" autoFocus placeholder="Ex.: 1234" />
       </Confirmar>
       <View style={st.acoes}>
         {indoParaLoja
@@ -458,6 +461,7 @@ const st = StyleSheet.create({
   obs: { backgroundColor: "rgba(245,165,36,0.12)", borderColor: "rgba(245,165,36,0.45)", borderWidth: 1, borderRadius: 10, padding: 10, gap: 3 },
   obsTitulo: { color: cor.aviso, fontSize: 13, fontWeight: "800" },
   obsTexto: { color: cor.texto, fontSize: 15, lineHeight: 21 },
+  avisoCodigo: { color: cor.texto2, fontSize: 13, lineHeight: 18 },
   kmValor: { color: cor.texto, fontSize: 17, fontWeight: "800" },
   kmRotulo: { color: cor.texto3, fontSize: 12 },
   ganho: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: "rgba(34,197,94,0.12)", borderColor: "rgba(34,197,94,0.4)", borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },

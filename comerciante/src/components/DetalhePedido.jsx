@@ -126,6 +126,9 @@ export default function DetalhePedido({ id, onFechar }) {
               {pedido.acrescimoRetorno > 0 && <span className="apagado"> (inclui retorno +{moeda(pedido.acrescimoRetorno)})</span>}
             </dd>
             <dt>Distância</dt><dd>{km(pedido.distanciaKm)}</dd>
+            {pedido.codigoConfirmacao && (
+              <><dt>Código de entrega</dt><dd><strong>🔒 {pedido.codigoConfirmacao}</strong> <span className="apagado">(4 últimos números do telefone informado; o entregador digita para finalizar)</span></dd></>
+            )}
             <dt>Pagamento</dt><dd>{pedido.formaPagamento || "—"}</dd>
             <dt>Prazo</dt><dd>{pedido.prazoDesejado || "—"}</dd>
             <dt>Observação</dt><dd>{pedido.observacao || "—"}</dd>

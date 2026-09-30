@@ -69,20 +69,18 @@ async function pedidoDoComercio(req) {
   return pedido;
 }
 
-// Funções que o ADM libera (ou não) para as lojas em Configurações › Permissões da loja.
-async function permissoesLoja() {
-  const c = await prisma.configuracao.findFirst({
-    select: { lojaPodeFinalizar: true, lojaPodeEditarComercio: true, lojaPodeEditarEntregador: true, lojaPodeBloquearEntregador: true },
-  });
+// Funções que o ADM libera (ou não) para cada loja em Configurações › Permissões da loja.
+function permissoesLoja(c) {
   return {
-    finalizar: !!c?.lojaPodeFinalizar,
-    editarComercio: !!c?.lojaPodeEditarComercio,
-    editarEntregador: !!c?.lojaPodeEditarEntregador,
-    bloquearEntregador: !!c?.lojaPodeBloquearEntregador,
+    finalizar: !!c.lojaPodeFinalizar,
+    editarComercio: !!c.lojaPodeEditarComercio,
+    editarEntregador: !!c.lojaPodeEditarEntregador,
+    bloquearEntregador: !!c.lojaPodeBloquearEntregador,
+    codigoTelefone: !!c.exigirCodigoTelefone,
   };
 }
-async function exigirPermissao(nome) {
-  if (!(await permissoesLoja())[nome]) throw erroHttp(403, "Esta função não está liberada para a sua loja. Fale com a equipe.");
+function exigirPermissao(req, nome) {
+  if (!permissoesLoja(req.comercio)[nome]) throw erroHttp(403, "Esta função não está liberada para a sua loja. Fale com a equipe.");
 }
 
 // Entregador que está (ou esteve) com um pedido desta loja — a loja só mexe em quem trabalhou para ela.
@@ -109,7 +107,7 @@ router.get(
   "/me",
   asyncHandler(async (req, res) => {
     // Só o que a loja precisa ver (observações internas e dados de comissão ficam no ADM).
-    const [loja, retornoPercentual, permissoes] = await Promise.all([
+    const [loja, retornoPercentual] = await Promise.all([
       prisma.comercio.findUnique({
         where: { id: req.comercio.id },
         select: {
@@ -120,9 +118,8 @@ router.get(
         },
       }),
       percentualRetorno(),
-      permissoesLoja(),
     ]);
-    res.json({ ...loja, retornoPercentual, permissoes });
+    res.json({ ...loja, retornoPercentual, permissoes: permissoesLoja(req.comercio) });
   })
 );
 
@@ -314,9 +311,18 @@ router.post(
     const { clienteNome, clienteTelefone, endereco, complemento, retorno, agendadoPara, prazoDesejado, formaPagamento, observacao,
       notaFiscalNumero, notaFiscalChave, notaFiscalValor, destino, destinoAprox, veiculo } = req.body;
     // (o valor é sempre calculado pelo sistema — a loja não define o preço)
+    // Código de entrega da loja: o entregador finaliza com os 4 últimos números do telefone informado agora.
+    let codigoConfirmacao = null;
+    if (req.comercio.exigirCodigoTelefone) {
+      const fone = soDigitosTelefone(clienteTelefone);
+      if (![10, 11].includes(fone.length)) {
+        throw erroHttp(400, "Informe o telefone do cliente com DDD: os 4 últimos números são o código para o entregador finalizar a entrega.");
+      }
+      codigoConfirmacao = fone.slice(-4);
+    }
     const pedido = await criarPedido(
       { comercioId: req.comercio.id, clienteNome, clienteTelefone, endereco, complemento, retorno, agendadoPara, prazoDesejado, formaPagamento, observacao,
-        notaFiscalNumero, notaFiscalChave, notaFiscalValor, destino, destinoAprox, veiculo },
+        notaFiscalNumero, notaFiscalChave, notaFiscalValor, destino, destinoAprox, veiculo, codigoConfirmacao },
       "SISTEMA_COMERCIANTE",
       autorComerciante(req)
     );
@@ -414,10 +420,11 @@ router.patch(
 router.patch(
   "/pedidos/:id/finalizar",
   asyncHandler(async (req, res) => {
-    await exigirPermissao("finalizar");
+    exigirPermissao(req, "finalizar");
     const pedido = await pedidoDoComercio(req);
     if (!ABERTOS.includes(pedido.status)) throw erroHttp(409, "Este pedido já foi finalizado ou cancelado.");
-    if (pedido.exigeCodigoEntrega) throw erroHttp(409, "Pedido do iFood com código de entrega: o entregador finaliza pelo app digitando o código do cliente.");
+    // Código do iFood só o iFood confere (pelo app do entregador). O código da própria loja não impede a loja de finalizar.
+    if (pedido.integracaoSlug === "ifood" && pedido.exigeCodigoEntrega) throw erroHttp(409, "Pedido do iFood com código de entrega: o entregador finaliza pelo app digitando o código do cliente.");
     const { count } = await prisma.pedido.updateMany({
       where: { id: pedido.id, status: pedido.status }, data: { status: "ENTREGUE", ...carimbos(pedido, "ENTREGUE") },
     });
@@ -495,7 +502,7 @@ router.patch(
 router.put(
   "/entregadores/:entregadorId",
   asyncHandler(async (req, res) => {
-    await exigirPermissao("editarEntregador");
+    exigirPermissao(req, "editarEntregador");
     const e = await entregadorDaLoja(req);
     const b = req.body || {};
     const data = {};
@@ -543,7 +550,7 @@ router.put(
 router.post(
   "/entregadores/:entregadorId/bloquear",
   asyncHandler(async (req, res) => {
-    await exigirPermissao("bloquearEntregador");
+    exigirPermissao(req, "bloquearEntregador");
     const e = await entregadorDaLoja(req);
     const motivo = String(req.body?.motivo || "").trim().slice(0, 300) || null;
     await prisma.comercioEntregadorBloqueio.upsert({
@@ -568,7 +575,7 @@ router.post(
 router.delete(
   "/entregadores/:entregadorId/bloquear",
   asyncHandler(async (req, res) => {
-    await exigirPermissao("bloquearEntregador");
+    exigirPermissao(req, "bloquearEntregador");
     await prisma.comercioEntregadorBloqueio.deleteMany({ where: { comercioId: req.comercio.id, entregadorId: req.params.entregadorId } });
     res.json({ ok: true });
   })
@@ -591,7 +598,7 @@ router.get(
 router.put(
   "/me",
   asyncHandler(async (req, res) => {
-    await exigirPermissao("editarComercio");
+    exigirPermissao(req, "editarComercio");
     const b = req.body || {};
     const texto = (v, max = 120) => String(v ?? "").trim().slice(0, max);
     const data = {};

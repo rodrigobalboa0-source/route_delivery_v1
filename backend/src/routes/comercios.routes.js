@@ -16,9 +16,14 @@ const INCLUDE_PADRAO = {
 };
 
 const CAMPOS_PROTEGIDOS = ["id", "createdAt", "enderecos", "precificacoesModal", "usuariosAdicionais", "tabelaComissao",
-  "pedidos", "faturas", "entregadoresPermitidos", "_count", "estatisticas", "acesso"];
+  "pedidos", "faturas", "entregadoresPermitidos", "_count", "estatisticas", "acesso",
+  // Permissões da loja: só pela tela Configurações › Permissões da loja (rotas /permissoes abaixo).
+  "lojaPodeFinalizar", "lojaPodeEditarComercio", "lojaPodeEditarEntregador", "lojaPodeBloquearEntregador", "exigirCodigoTelefone"];
 const TIPOS_CAMPOS = { datas: ["dataInicio", "dataNascimento"] };
 const VEICULOS = ["MOTO", "BIKE", "CARRO"];
+
+// Funções que o ADM libera por loja no sistema do comerciante.
+const PERMISSOES_LOJA = ["lojaPodeFinalizar", "lojaPodeEditarComercio", "lojaPodeEditarEntregador", "lojaPodeBloquearEntregador", "exigirCodigoTelefone"];
 
 function erro400(mensagem) {
   const err = new Error(mensagem);
@@ -109,6 +114,43 @@ router.get(
 );
 
 // GET /api/comercios/contagem
+// GET /api/comercios/permissoes — todas as lojas com as permissões (Configurações › Permissões da loja)
+router.get(
+  "/permissoes",
+  asyncHandler(async (req, res) => {
+    res.json(await prisma.comercio.findMany({
+      orderBy: { nomeFantasia: "asc" },
+      select: { id: true, nomeFantasia: true, bloqueado: true, ...Object.fromEntries(PERMISSOES_LOJA.map(k => [k, true])) },
+    }));
+  })
+);
+
+// PUT /api/comercios/permissoes/todas { campo, valor } — liga/desliga uma função para todas as lojas
+router.put(
+  "/permissoes/todas",
+  asyncHandler(async (req, res) => {
+    const { campo, valor } = req.body || {};
+    if (!PERMISSOES_LOJA.includes(campo)) return res.status(400).json({ erro: "Permissão inválida." });
+    const { count } = await prisma.comercio.updateMany({ data: { [campo]: !!valor } });
+    res.json({ ok: true, lojas: count });
+  })
+);
+
+// PUT /api/comercios/:id/permissoes { lojaPodeFinalizar?, ..., exigirCodigoTelefone? } — permissões de uma loja
+router.put(
+  "/:id/permissoes",
+  asyncHandler(async (req, res) => {
+    const data = {};
+    for (const k of PERMISSOES_LOJA) if (req.body?.[k] !== undefined) data[k] = !!req.body[k];
+    if (!Object.keys(data).length) return res.status(400).json({ erro: "Nada para alterar." });
+    const c = await prisma.comercio.update({
+      where: { id: req.params.id }, data,
+      select: { id: true, nomeFantasia: true, bloqueado: true, ...Object.fromEntries(PERMISSOES_LOJA.map(k => [k, true])) },
+    });
+    res.json(c);
+  })
+);
+
 router.get(
   "/contagem",
   asyncHandler(async (req, res) => {

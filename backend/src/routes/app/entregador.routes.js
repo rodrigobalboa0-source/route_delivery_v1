@@ -162,6 +162,15 @@ router.post(
   })
 );
 
+// Pedido que vai para o app: nunca leva o código da loja. Com código, também não leva o telefone do cliente
+// (os 4 últimos números dele SÃO o código). `codigoLoja` avisa o app para pedir o código ao finalizar.
+function pedidoParaApp(p) {
+  if (!p) return p;
+  const { codigoConfirmacao, ...resto } = p;
+  return codigoConfirmacao ? { ...resto, clienteTelefone: null, codigoLoja: true } : resto;
+}
+const ganhoApp = async (pedidos, entregador) => (await ganhoParaApp(pedidos, entregador)).map(pedidoParaApp);
+
 // O que o app recebe do próprio cadastro: sem senha e sem as fotos dos documentos (pesadas; só o ADM precisa delas).
 function paraApp(e) {
   const { fotoCnhUrl, comprovanteResidenciaUrl, documentoVeiculoUrl, ...resto } = semSenha(e); // eslint-disable-line no-unused-vars
@@ -454,7 +463,7 @@ router.get(
     });
 
     // Com o ganho do entregador em cada corrida (tabela de comissão do comércio, padrão do veículo ou repasse fixo).
-    res.json(await ganhoParaApp(
+    res.json(await ganhoApp(
       comDistancia
         .filter(p => !raio || p.distanciaAteColetaKm == null || p.distanciaAteColetaKm <= raio)
         .sort((a, b) => (a.distanciaAteColetaKm ?? Infinity) - (b.distanciaAteColetaKm ?? Infinity)),
@@ -473,7 +482,7 @@ router.get(
     const pedidos = await prisma.pedido.findMany({
       where, include: INCLUDE_PEDIDO_APP, orderBy: { updatedAt: "desc" }, take: 100,
     });
-    res.json(await ganhoParaApp(pedidos, req.entregador));
+    res.json(await ganhoApp(pedidos, req.entregador));
   })
 );
 
@@ -486,7 +495,7 @@ router.get(
       where: { id: req.params.id },
       include: { ...INCLUDE_PEDIDO_APP, logs: { orderBy: { createdAt: "asc" } } },
     });
-    res.json((await ganhoParaApp([p], req.entregador))[0]);
+    res.json((await ganhoApp([p], req.entregador))[0]);
   })
 );
 
@@ -496,7 +505,7 @@ router.patch(
   asyncHandler(async (req, res) => {
     exigirAtivo(req);
     if (!req.entregador.online) throw erroHttp(403, "Fique online para aceitar corridas.");
-    res.json(await aceitarPedido(req.params.id, req.entregador.id));
+    res.json(pedidoParaApp(await aceitarPedido(req.params.id, req.entregador.id)));
   })
 );
 
@@ -549,7 +558,7 @@ router.patch(
     if (count === 0) throw erroHttp(409, "O pedido mudou enquanto isso. Atualize a tela.");
     await registrarStatusPedido({ pedidoId: pedido.id, de: pedido.status, para, entregadorId: req.entregador.id, autor: autorEntregador(req) });
     await registrarLog(pedido.id, `${req.entregador.nomeCompleto}: ${ROTULOS[para]}.`);
-    res.json(await prisma.pedido.findUnique({ where: { id: pedido.id }, include: INCLUDE_PEDIDO_APP }));
+    res.json(pedidoParaApp(await prisma.pedido.findUnique({ where: { id: pedido.id }, include: INCLUDE_PEDIDO_APP })));
   })
 );
 
@@ -567,14 +576,34 @@ router.patch(
       await ifoodSvc.validarCodigoEntrega(atual, req.body?.codigoEntrega);
       await registrarLog(pedido.id, "Código de entrega do iFood confirmado.");
     }
+    if (atual.codigoConfirmacao) await conferirCodigoLoja(req, atual);
     const atualizado = await prisma.pedido.update({
       where: { id: pedido.id }, data: { status: "ENTREGUE", ...carimbos(pedido, "ENTREGUE") }, include: INCLUDE_PEDIDO_APP,
     });
     await registrarStatusPedido({ pedidoId: pedido.id, de: pedido.status, para: "ENTREGUE", entregadorId: req.entregador.id, autor: autorEntregador(req) });
     await registrarLog(pedido.id, `Entrega concluída por ${req.entregador.nomeCompleto}.`);
-    res.json(atualizado);
+    res.json(pedidoParaApp(atualizado));
   })
 );
+
+// Código da loja: os 4 últimos números do telefone do cliente (informado quando o pedido foi criado).
+// Cada erro fica na linha do tempo do pedido; depois de 5 erros, só a loja ou a equipe finalizam.
+const MAX_ERROS_CODIGO = 5;
+const TEXTO_ERRO_CODIGO = "Código de entrega incorreto";
+async function conferirCodigoLoja(req, pedido) {
+  const erro = (msg, status = 422) => Object.assign(new Error(msg), { status, extra: { codigo: "CODIGO_ENTREGA" } });
+  const erros = await prisma.pedidoLog.count({ where: { pedidoId: pedido.id, texto: { startsWith: TEXTO_ERRO_CODIGO } } });
+  if (erros >= MAX_ERROS_CODIGO) throw erro("Muitas tentativas com o código errado. Ligue para a loja para finalizar a entrega.", 429);
+  const c = String(req.body?.codigoEntrega || "").replace(/\D/g, "");
+  if (!c) throw erro("Peça ao cliente os 4 últimos números do telefone dele e digite para finalizar.");
+  if (c !== pedido.codigoConfirmacao) {
+    await registrarLog(pedido.id, `${TEXTO_ERRO_CODIGO} digitado por ${req.entregador.nomeCompleto} (tentativa ${erros + 1} de ${MAX_ERROS_CODIGO}).`);
+    throw erro(erros + 1 >= MAX_ERROS_CODIGO
+      ? "Código incorreto. Limite de tentativas atingido: ligue para a loja para finalizar."
+      : `Código incorreto. São os 4 últimos números do telefone que o cliente informou no pedido (${MAX_ERROS_CODIGO - erros - 1} tentativa(s) restante(s)).`);
+  }
+  await registrarLog(pedido.id, "Código de entrega (4 últimos números do telefone do cliente) confirmado.");
+}
 
 // PATCH /api/app/entregador/pedidos/:id/desistir — DESATIVADO: depois de aceitar, o entregador não desiste pelo app.
 // Se precisar, a equipe troca o entregador pelo painel (Operação › pedido › Trocar entregador / Buscar outro).

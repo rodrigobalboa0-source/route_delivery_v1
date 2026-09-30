@@ -137,42 +137,95 @@ function DadosEmpresa({ dados, setDados, pode }) {
   );
 }
 
-// O que o sistema da loja pode fazer nos pedidos. Desligado = a opção nem aparece para a loja.
-const CAMPOS_LOJA = [
-  { nome: "lojaPodeFinalizar", rotulo: "Finalizar pedido", tipo: "switch", largo: true, dica: "A loja marca o pedido como entregue. Com entregador, conta como entrega dele (ganho, ranking e acerto). Pedido do iFood com código continua sendo finalizado só pelo app." },
-  { nome: "lojaPodeEditarComercio", rotulo: "Editar comércio", tipo: "switch", largo: true, dica: "A loja muda nome, responsável, telefone, logo e o endereço de coleta (escolhido no mapa). O endereço muda o km e o preço das próximas entregas. Você recebe uma notificação a cada alteração." },
-  { nome: "lojaPodeEditarEntregador", rotulo: "Editar entregador", tipo: "switch", largo: true, dica: "A loja muda nome, telefone e veículo (tipo, modelo, placa, ano) dos entregadores que trabalharam para ela. Fica no histórico do entregador e gera notificação." },
-  { nome: "lojaPodeBloquearEntregador", rotulo: "Bloquear entregador", tipo: "switch", largo: true, dica: "Bloqueio só na loja: o entregador não vê nem recebe corridas dela, mas continua trabalhando para as outras. Você vê e desfaz na ficha do entregador." },
+// O que cada loja pode fazer no sistema do comerciante. Desligado = a opção nem aparece para a loja.
+const PERMISSOES_LOJA = [
+  { nome: "exigirCodigoTelefone", rotulo: "Código de entrega", curto: "Código", dica: "Pedidos lançados pela loja: o entregador só finaliza digitando os 4 últimos números do telefone do cliente informado na criação do pedido. O telefone passa a ser obrigatório e o app não mostra o telefone do cliente ao entregador. Após 5 erros, só a loja ou a equipe finalizam." },
+  { nome: "lojaPodeFinalizar", rotulo: "Finalizar pedido", curto: "Finalizar", dica: "A loja marca o pedido como entregue. Com entregador, conta como entrega dele (ganho, ranking e acerto). Pedido do iFood com código continua sendo finalizado só pelo app." },
+  { nome: "lojaPodeEditarComercio", rotulo: "Editar comércio", curto: "Editar comércio", dica: "A loja muda nome, responsável, telefone, logo e o endereço de coleta (escolhido no mapa). O endereço muda o km e o preço das próximas entregas. Você recebe uma notificação a cada alteração." },
+  { nome: "lojaPodeEditarEntregador", rotulo: "Editar entregador", curto: "Editar entregador", dica: "A loja muda nome, telefone e veículo (tipo, modelo, placa, ano) dos entregadores que trabalharam para ela. Fica no histórico do entregador e gera notificação." },
+  { nome: "lojaPodeBloquearEntregador", rotulo: "Bloquear entregador", curto: "Bloquear entregador", dica: "Bloqueio só na loja: o entregador não vê nem recebe corridas dela, mas continua trabalhando para as outras. Você vê e desfaz na ficha do entregador." },
 ];
 
-function PermissoesLoja({ dados, setDados, pode }) {
-  const [v, setV] = useState(null);
-  const { executar, ocupado } = useAcao();
-  const valores = v || dados;
+function Chave({ ligado, onChange, desabilitado, rotulo }) {
+  return (
+    <label className="campo-switch chave-tabela" title={rotulo}>
+      <input type="checkbox" role="switch" checked={!!ligado} disabled={desabilitado} onChange={e => onChange(e.target.checked)} aria-label={rotulo} />
+      <span className="interruptor" aria-hidden="true" />
+    </label>
+  );
+}
 
-  async function salvar(e) {
-    e.preventDefault();
-    const r = await executar(() => api.put("/configuracoes", prepararValores(CAMPOS_LOJA, valores)), "Permissões da loja salvas.");
-    if (r) { setDados(r); setV(null); }
+// Permissões por loja: cada função ligada ou desligada loja a loja (ou para todas de uma vez).
+function PermissoesLoja({ pode }) {
+  const { dados: lojas, erro, setDados, recarregar } = useApi("/comercios/permissoes");
+  const [busca, setBusca] = useState("");
+  const { executar, ocupado } = useAcao();
+  const q = busca.trim().toLowerCase();
+  const lista = (lojas || []).filter(l => !q || l.nomeFantasia.toLowerCase().includes(q));
+
+  async function mudar(loja, campo, valor) {
+    setDados(ls => ls.map(l => (l.id === loja.id ? { ...l, [campo]: valor } : l)));
+    const r = await executar(() => api.put(`/comercios/${loja.id}/permissoes`, { [campo]: valor }),
+      `${PERMISSOES_LOJA.find(p => p.nome === campo).rotulo} ${valor ? "ligado" : "desligado"} para ${loja.nomeFantasia}.`);
+    if (!r) recarregar({ silencioso: true });
+  }
+
+  async function todas(campo, valor) {
+    const r = await executar(() => api.put("/comercios/permissoes/todas", { campo, valor }),
+      `${PERMISSOES_LOJA.find(p => p.nome === campo).rotulo} ${valor ? "ligado" : "desligado"} para todas as lojas.`);
+    if (r) recarregar({ silencioso: true });
   }
 
   return (
     <section className="cartao">
       <div className="cartao-topo"><h2>Permissões da loja</h2></div>
       <p className="apagado" style={{ marginTop: 0 }}>
-        Funções extras no menu de ações dos pedidos do sistema da loja. Editar, Detalhes, Copiar link de rastreio,
+        Escolha, loja por loja, as funções extras do sistema da loja. Editar, Detalhes, Copiar link de rastreio,
         Escrever observação, Trocar entregador, Reprocurar e Cancelar ficam sempre disponíveis.
       </p>
-      {!valores ? <Carregando /> : (
-        <form onSubmit={salvar}>
-          <GradeCampos defs={CAMPOS_LOJA} valores={valores} onChange={setV} desabilitado={!pode} />
-          {pode && v && (
-            <div className="form-rodape">
-              <Botao variante="fantasma" onClick={() => setV(null)}>Descartar</Botao>
-              <button type="submit" className="btn btn-primario" disabled={ocupado}>Salvar permissões</button>
-            </div>
-          )}
-        </form>
+      <dl className="legenda-permissoes">
+        {PERMISSOES_LOJA.map(p => <div key={p.nome}><dt>{p.rotulo}</dt><dd>{p.dica}</dd></div>)}
+      </dl>
+      <ErroCaixa erro={erro} />
+      {!lojas ? <Carregando /> : (
+        <>
+          <input type="search" className="busca-permissoes" placeholder="Buscar loja…" value={busca} onChange={e => setBusca(e.target.value)} aria-label="Buscar loja" />
+          <div className="tabela-rolagem">
+            <table className="tabela tabela-compacta tabela-permissoes">
+              <thead>
+                <tr>
+                  <th>Loja</th>
+                  {PERMISSOES_LOJA.map(p => <th key={p.nome} className="centro">{p.curto}</th>)}
+                </tr>
+                {pode && lojas.length > 1 && (
+                  <tr className="linha-todas">
+                    <td className="apagado">Todas as lojas</td>
+                    {PERMISSOES_LOJA.map(p => (
+                      <td key={p.nome} className="centro">
+                        <BotaoConfirmar pequeno variante="primario" confirmar="Ligar para todas?" disabled={ocupado} onConfirm={() => todas(p.nome, true)}>Ligar</BotaoConfirmar>
+                        <BotaoConfirmar pequeno confirmar="Desligar para todas?" disabled={ocupado} onConfirm={() => todas(p.nome, false)}>Desligar</BotaoConfirmar>
+                      </td>
+                    ))}
+                  </tr>
+                )}
+              </thead>
+              <tbody>
+                {lista.length === 0 ? (
+                  <tr><td colSpan={PERMISSOES_LOJA.length + 1} className="apagado">Nenhuma loja encontrada.</td></tr>
+                ) : lista.map(l => (
+                  <tr key={l.id}>
+                    <td>{l.nomeFantasia}{l.bloqueado && <> <Badge tom="critico">Bloqueada</Badge></>}</td>
+                    {PERMISSOES_LOJA.map(p => (
+                      <td key={p.nome} className="centro">
+                        <Chave ligado={l[p.nome]} desabilitado={!pode} rotulo={`${p.rotulo} — ${l.nomeFantasia}`} onChange={v => mudar(l, p.nome, v)} />
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </section>
   );
@@ -308,7 +361,7 @@ export default function Configuracoes() {
           </form>
         )}
       </section>
-      <PermissoesLoja dados={dados} setDados={setDados} pode={pode} />
+      <PermissoesLoja pode={pode} />
       <RankingSemanal dados={dados} setDados={setDados} pode={pode} />
       <RegrasSaque pode={pode} />
       <EmailEnvio dados={dados} setDados={setDados} pode={pode} />

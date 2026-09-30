@@ -1060,3 +1060,15 @@ code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-siz
 .semana-fechada summary { cursor: pointer; }
 .semana-fechada table { margin-top: 6px; }
 @media (max-width: 700px) { .grade-premios { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* Configurações › Permissões da loja */
+.legenda-permissoes { display: grid; gap: 6px; margin: 0 0 12px; font-size: 12.5px; }
+.legenda-permissoes div { display: grid; grid-template-columns: minmax(130px, 170px) 1fr; gap: 10px; }
+.legenda-permissoes dt { font-weight: 600; }
+.legenda-permissoes dd { margin: 0; color: var(--texto-3, #6b7280); }
+@media (max-width: 640px) { .legenda-permissoes div { grid-template-columns: 1fr; gap: 0; } }
+.busca-permissoes { width: min(320px, 100%); margin-bottom: 8px; }
+.tabela-permissoes th.centro, .tabela-permissoes td.centro { text-align: center; }
+.tabela-permissoes .chave-tabela { display: inline-flex; padding: 0; justify-content: center; }
+.tabela-permissoes .linha-todas td { background: var(--fundo, #f4f5f7); font-size: 12px; white-space: nowrap; }
+.tabela-permissoes .linha-todas .btn { margin: 1px; }

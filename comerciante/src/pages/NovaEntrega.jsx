@@ -33,6 +33,7 @@ export default function NovaEntrega({ agendar = false }) {
   const [agendadoPara, setAgendadoPara] = useState(agendar ? daquiA(60) : "");
   const [maisOpcoes, setMaisOpcoes] = useState(false);
   const pct = loja?.retornoPercentual ?? 20;
+  const comCodigo = !!loja?.permissoes?.codigoTelefone; // telefone obrigatório: os 4 últimos números são o código de entrega
 
   // Veículos com preço configurado para a loja (sem configuração: todos).
   const veiculos = loja?.precificacoesModal?.length ? loja.precificacoesModal.map(p => p.veiculo) : Object.keys(VEICULOS);
@@ -59,8 +60,11 @@ export default function NovaEntrega({ agendar = false }) {
       <form onSubmit={criar} className="painel-bloco form-pagina">
         <h3 className="secao-titulo">Cliente e destino</h3>
         <div className="grade-campos">
-          <Campo rotulo="Telefone do cliente" dica={<AvisoCliente cliente={f.cliente} />}>
-            <CampoCliente rotulo="Telefone do cliente" tipo="tel" placeholder="(11) 90000-0000" valor={v.clienteTelefone} onChange={setTexto("clienteTelefone")} onEscolher={f.aplicarCliente} autoFocus />
+          <Campo rotulo={comCodigo ? "Telefone do cliente *" : "Telefone do cliente"} dica={<>
+            <AvisoCliente cliente={f.cliente} />
+            {comCodigo && <span className="apagado"> 🔒 Os 4 últimos números são o código para o entregador finalizar a entrega.</span>}
+          </>}>
+            <CampoCliente rotulo="Telefone do cliente" tipo="tel" placeholder="(11) 90000-0000" valor={v.clienteTelefone} onChange={setTexto("clienteTelefone")} onEscolher={f.aplicarCliente} autoFocus obrigatorio={comCodigo} />
           </Campo>
           <Campo rotulo="Nome do cliente *">
             <CampoCliente rotulo="Nome do cliente" valor={v.clienteNome} onChange={setTexto("clienteNome")} onEscolher={f.aplicarCliente} obrigatorio />

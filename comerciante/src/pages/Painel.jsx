@@ -51,7 +51,7 @@ export function ResumoValor({ calculo }) {
   return <>✓ {t.base} · <strong>{t.valor}</strong>{t.extra && <span className="apagado">{t.extra}</span>}</>;
 }
 
-function CriarRapido({ onPrevia, onCriado, retornoPercentual }) {
+function CriarRapido({ onPrevia, onCriado, retornoPercentual, comCodigo }) {
   const f = useFormEntrega({ vazio: VAZIO, onPrevia });
   const { v, mudar, calculo, retorno, ocupado } = f;
   // Pronto manual: por padrão o pedido fica "Criado" e a loja clica em "Pedido pronto" na hora certa.
@@ -74,7 +74,7 @@ function CriarRapido({ onPrevia, onCriado, retornoPercentual }) {
     <form className="criar-rapido" onSubmit={criar} aria-label="Criar entrega">
       <div className="criar-linha">
         <CampoCliente className="cr-nome" rotulo="Nome do cliente" placeholder="Nome do cliente" valor={v.clienteNome} onChange={set("clienteNome")} onEscolher={f.aplicarCliente} obrigatorio />
-        <CampoCliente className="cr-tel" rotulo="Telefone" tipo="tel" placeholder="Telefone (busca o cliente)" valor={v.clienteTelefone} onChange={set("clienteTelefone")} onEscolher={f.aplicarCliente} />
+        <CampoCliente className="cr-tel" rotulo="Telefone" tipo="tel" placeholder={comCodigo ? "Telefone com DDD *" : "Telefone (busca o cliente)"} valor={v.clienteTelefone} onChange={set("clienteTelefone")} onEscolher={f.aplicarCliente} obrigatorio={comCodigo} />
         <CampoEndereco className="cr-end" valor={v.endereco} onChange={set("endereco")} onEscolherEndereco={f.escolherEndereco} onEscolherCliente={f.aplicarCliente} obrigatorio />
         <button type="button" className="botao-icone" onClick={() => f.calcular()} disabled={!v.endereco.trim() || ocupado} title="Ver no mapa e calcular o valor" aria-label="Ver no mapa e calcular o valor">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2z" /><path d="M9 4v14M15 6v14" /></svg>
@@ -102,6 +102,7 @@ function CriarRapido({ onPrevia, onCriado, retornoPercentual }) {
       <div className="criar-rodape">
         <span className="criar-calculo" aria-live="polite">
           <AvisoCliente cliente={f.cliente} />
+          {comCodigo && <span className="apagado" title="O entregador só finaliza a entrega digitando este código">🔒 Código de entrega: 4 últimos números do telefone{v.clienteTelefone.replace(/\D/g, "").length >= 10 ? ` (${v.clienteTelefone.replace(/\D/g, "").slice(-4)})` : ""}</span>}
           <span className="criar-valor"><ResumoValor calculo={calculo} /></span>
           {retorno && !calculo && <span className="apagado">Retorno: +{retornoPercentual ?? 20}% na taxa</span>}
           {v.agendadoPara && <span className="apagado">⏰ entregador será chamado em {dataHora(new Date(v.agendadoPara))}</span>}
@@ -277,7 +278,7 @@ export default function Painel() {
   return (
     <div className="painel">
       <h1 className="sr-only">Painel de Controle — {loja?.nomeFantasia}</h1>
-      <CriarRapido onPrevia={setPrevia} onCriado={() => mapa.recarregar({ silencioso: true })} retornoPercentual={loja?.retornoPercentual} />
+      <CriarRapido onPrevia={setPrevia} onCriado={() => mapa.recarregar({ silencioso: true })} retornoPercentual={loja?.retornoPercentual} comCodigo={!!loja?.permissoes?.codigoTelefone} />
       <ErroCaixa erro={mapa.erro} onTentar={() => mapa.recarregar()} />
 
       <div className="painel-grade">

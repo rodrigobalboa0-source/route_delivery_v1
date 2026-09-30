@@ -190,6 +190,7 @@ async function criarPedido(dados, origem, autor = { autorTipo: "SISTEMA", autorN
   const valorManual = dados.valor != null && dados.valor !== "";
 
   const codigo = await gerarCodigoPedido();
+  const comCodigo = /^\d{4}$/.test(dados.codigoConfirmacao || "");
   const pedido = await prisma.pedido.create({
     data: {
       codigo,
@@ -215,8 +216,12 @@ async function criarPedido(dados, origem, autor = { autorTipo: "SISTEMA", autorN
       integracaoSlug: dados.integracaoSlug || null,
       idExterno: dados.idExterno || null,
       codigoExterno: dados.codigoExterno || null,
+      // Código da loja (4 últimos números do telefone do cliente): o entregador digita para finalizar.
+      codigoConfirmacao: comCodigo ? dados.codigoConfirmacao : null,
+      exigeCodigoEntrega: comCodigo,
       logs: { create: [
         { texto: `Pedido ${codigo} criado (${origem === "INTEGRACAO" ? autor.autorNome : ORIGENS[origem]}) e enviado para preparo.` },
+        ...(comCodigo ? [{ texto: "Entrega com código: o entregador finaliza com os 4 últimos números do telefone do cliente." }] : []),
         ...(agendadoPara ? [{ texto: `Agendado: o entregador será chamado em ${agendadoPara.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" })}.` }] : []),
         ...(retorno ? [{ texto: calculo?.acrescimoRetorno && !valorManual
           ? `Entrega com retorno à loja (+${calculo.retornoPercentual}% na taxa: ${calculo.acrescimoRetorno.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}).`
