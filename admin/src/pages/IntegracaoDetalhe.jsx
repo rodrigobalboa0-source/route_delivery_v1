@@ -64,6 +64,79 @@ function Lojas({ slug, lojas, pode, onSalvo }) {
   );
 }
 
+// iFood: testa a conexão com as credenciais salvas e mostra as lojas que o aplicativo enxerga
+// (com o Merchant ID), para vincular cada uma a um comércio com um clique.
+function ConexaoIfood({ lojas, pode, credenciaisSalvas, onSalvo }) {
+  const { dados: comercios } = useApi("/comercios");
+  const [resultado, setResultado] = useState(null);
+  const [escolha, setEscolha] = useState({});
+  const { executar, ocupado } = useAcao();
+
+  async function testar() {
+    setResultado(null);
+    const r = await executar(() => api.post("/integracoes/ifood/conexao"));
+    if (r) setResultado(r);
+  }
+
+  async function vincular(loja) {
+    const comercioId = escolha[loja.id];
+    if (!comercioId) return;
+    const novas = [...lojas.filter(l => l.idExterno !== loja.id).map(l => ({ comercioId: l.comercioId, idExterno: l.idExterno })), { comercioId, idExterno: loja.id }];
+    const r = await executar(() => api.put("/integracoes/ifood/lojas", { lojas: novas }), `Loja “${loja.nome}” vinculada.`);
+    if (r) { onSalvo(r); testar(); }
+  }
+
+  return (
+    <section className="cartao">
+      <div className="cartao-topo">
+        <h2>Conexão com o iFood</h2>
+        {pode && <Botao variante="primario" disabled={ocupado || !credenciaisSalvas} onClick={testar}>{ocupado ? "Conectando…" : "Testar conexão e buscar lojas"}</Botao>}
+      </div>
+      <p className="apagado" style={{ marginTop: 0 }}>
+        {credenciaisSalvas
+          ? "Entra na API do iFood com o Client ID e o Client Secret salvos e mostra as lojas liberadas para o aplicativo, com o Merchant ID de cada uma."
+          : "Salve o Client ID e o Client Secret acima para testar a conexão."}
+      </p>
+      {resultado && (
+        resultado.lojas.length === 0 ? (
+          <div className="aviso-caixa">
+            ✓ Conectou ao iFood, mas nenhuma loja está liberada para este aplicativo ainda. No Portal do Desenvolvedor, confira se o
+            <strong> modo de teste</strong> está ativo (Perfil › Editar dados) e se a loja de teste aparece em Meus apps › Permissões.
+          </div>
+        ) : (
+          <>
+            <div className="sucesso-caixa">✓ Conectado ao iFood — {resultado.lojas.length} loja(s) encontrada(s).</div>
+            <div className="tabela-rolagem" style={{ marginTop: 10 }}>
+              <table className="tabela tabela-compacta">
+                <thead><tr><th>Loja no iFood</th><th>Merchant ID</th><th>Comércio no sistema</th></tr></thead>
+                <tbody>
+                  {resultado.lojas.map(l => (
+                    <tr key={l.id}>
+                      <td><strong>{l.nome}</strong>{l.razaoSocial && l.razaoSocial !== l.nome && <div className="celula-sub">{l.razaoSocial}</div>}</td>
+                      <td className="mono">{l.id} <Copiar texto={l.id} /></td>
+                      <td>
+                        {l.comercioId ? <Badge tom="ok">✓ {l.comercioNome}</Badge> : pode ? (
+                          <div className="linha-acao">
+                            <select value={escolha[l.id] || ""} onChange={e => setEscolha({ ...escolha, [l.id]: e.target.value })} aria-label={`Comércio para ${l.nome}`}>
+                              <option value="">Escolha o comércio…</option>
+                              {(comercios || []).map(c => <option key={c.id} value={c.id}>{c.nomeFantasia}</option>)}
+                            </select>
+                            <Botao pequeno variante="primario" disabled={!escolha[l.id] || ocupado} onClick={() => vincular(l)}>Vincular</Botao>
+                          </div>
+                        ) : <span className="apagado">Não vinculada</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )
+      )}
+    </section>
+  );
+}
+
 function Eventos({ eventos }) {
   const [aberto, setAberto] = useState(null);
   return (
@@ -277,6 +350,10 @@ export default function IntegracaoDetalhe() {
         </section>
       </div>
 
+      {slug === "ifood" && (
+        <ConexaoIfood lojas={d.lojas} pode={pode} onSalvo={setDados}
+          credenciaisSalvas={["clientId", "clientSecret"].every(n => d.credenciais.campos.find(c => c.nome === n)?.preenchido)} />
+      )}
       {d.tipo !== "saida" && <Lojas slug={slug} lojas={d.lojas} pode={pode} onSalvo={setDados} />}
       <Eventos eventos={d.eventos} />
     </>

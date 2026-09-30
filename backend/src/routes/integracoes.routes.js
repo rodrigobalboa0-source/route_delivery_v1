@@ -178,4 +178,30 @@ router.post(
   })
 );
 
+// POST /api/integracoes/ifood/conexao — entra na API do iFood com as credenciais salvas
+// e devolve as lojas que o aplicativo enxerga (com o Merchant ID), marcando as já vinculadas.
+router.post(
+  "/ifood/conexao",
+  asyncHandler(async (req, res) => {
+    const { listarLojas } = require("../integracoes/ifood");
+    const integ = await obterOuCriar("ifood");
+    let lojas;
+    try {
+      lojas = await listarLojas();
+    } catch (err) {
+      await prisma.integracaoEvento.create({ data: { integracaoId: integ.id, direcao: "SAIDA", tipo: "conexao.teste", sucesso: false, mensagem: err.message } }).catch(() => {});
+      throw err;
+    }
+    const vinculadas = await prisma.integracaoLoja.findMany({ where: { integracaoId: integ.id }, include: { comercio: { select: { nomeFantasia: true } } } });
+    const porId = new Map(vinculadas.map(v => [v.idExterno, v]));
+    await prisma.integracaoEvento.create({
+      data: { integracaoId: integ.id, direcao: "SAIDA", tipo: "conexao.teste", sucesso: true, mensagem: `Conectado ao iFood: ${lojas.length} loja(s) visível(is).` },
+    }).catch(() => {});
+    res.json({
+      ok: true,
+      lojas: lojas.map(l => ({ ...l, comercioId: porId.get(l.id)?.comercioId || null, comercioNome: porId.get(l.id)?.comercio?.nomeFantasia || null })),
+    });
+  })
+);
+
 module.exports = router;
