@@ -5,6 +5,8 @@ import { aparelhoAtual, api, salvarToken } from "../api";
 import { Botao, Campo, Cartao, Erro } from "../componentes";
 import BuscaEndereco from "../BuscaEndereco";
 import { VEICULOS, cor } from "../tema";
+import * as ImagePicker from "expo-image-picker";
+import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 
 function Login({ onEntrou, onCadastro, onEsqueci, emailInicial = "", aviso }) {
   const [email, setEmail] = useState(emailInicial);
@@ -108,7 +110,7 @@ function EsqueciSenha({ emailInicial = "", onVoltar }) {
 const ENDERECO_VAZIO = { busca: "", rua: "", numero: "", complemento: "", bairro: "", cidade: "", cep: "" };
 
 // Endereço do entregador: busca no OpenStreetMap preenche rua, bairro, cidade e CEP; número e complemento editáveis.
-export function CamposEndereco({ e, setE }) {
+export function CamposEndereco({ e, setE, completo }) {
   const set = k => t => setE({ ...e, [k]: t });
   return (
     <>
@@ -122,28 +124,156 @@ export function CamposEndereco({ e, setE }) {
         <View style={{ flex: 1 }}><Campo rotulo="Número" value={e.numero} onChangeText={set("numero")} keyboardType="number-pad" /></View>
         <View style={{ flex: 2 }}><Campo rotulo="Complemento" value={e.complemento} onChangeText={set("complemento")} placeholder="Apto, bloco…" /></View>
       </View>
-      <Campo rotulo="Cidade" value={e.cidade} onChangeText={set("cidade")} />
+      {completo && (
+        <View style={st.linha2}>
+          <View style={{ flex: 3 }}><Campo rotulo="Bairro *" value={e.bairro} onChangeText={set("bairro")} /></View>
+          <View style={{ flex: 2 }}><Campo rotulo="CEP *" value={e.cep} onChangeText={t => setE({ ...e, cep: mascaraCep(t) })} keyboardType="number-pad" placeholder="00000-000" /></View>
+        </View>
+      )}
+      <Campo rotulo={completo ? "Cidade *" : "Cidade"} value={e.cidade} onChangeText={set("cidade")} />
     </>
   );
 }
 
+// ---------- Máscaras e validação do cadastro ----------
+const dig = t => String(t || "").replace(/\D/g, "");
+const mascaraCep = t => dig(t).slice(0, 8).replace(/^(\d{5})(\d)/, "$1-$2");
+const mascaraCpf = t => dig(t).slice(0, 11).replace(/(\d{3})(\d)/, "$1.$2").replace(/(\d{3})(\d)/, "$1.$2").replace(/(\d{3})(\d{1,2})$/, "$1-$2");
+const mascaraData = t => dig(t).slice(0, 8).replace(/^(\d{2})(\d)/, "$1/$2").replace(/^(\d{2}\/\d{2})(\d)/, "$1/$2");
+function mascaraTelefone(t) {
+  const d = dig(t).slice(0, 11);
+  if (d.length <= 2) return d.length ? `(${d}` : "";
+  if (d.length <= 6) return `(${d.slice(0, 2)}) ${d.slice(2)}`;
+  if (d.length <= 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+  return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+}
+function cpfValido(v) {
+  const c = dig(v);
+  if (c.length !== 11 || /^(\d)\1{10}$/.test(c)) return false;
+  const dv = n => { let s = 0; for (let i = 0; i < n; i++) s += Number(c[i]) * (n + 1 - i); const r = (s * 10) % 11; return r === 10 ? 0 : r; };
+  return dv(9) === Number(c[9]) && dv(10) === Number(c[10]);
+}
+function maiorDeIdade(s) {
+  if (!/^\d{2}\/\d{2}\/\d{4}$/.test(s)) return null;
+  const [d, m, a] = s.split("/").map(Number);
+  const dt = new Date(a, m - 1, d);
+  if (dt.getDate() !== d || dt.getMonth() !== m - 1) return null;
+  return Date.now() - dt.getTime() >= 18 * 365.25 * 864e5;
+}
+
+// Foto tirada na hora ou escolhida na galeria, reduzida e enviada como data URI JPEG.
+const FOTOS = [
+  { campo: "fotoUrl", rotulo: "Selfie (foto do seu rosto)", largura: 600, selfie: true },
+  { campo: "fotoCnhUrl", rotulo: "CNH (aberta, frente)", largura: 1200, motorizado: true },
+  { campo: "comprovanteResidenciaUrl", rotulo: "Comprovante de endereço", largura: 1200 },
+  { campo: "documentoVeiculoUrl", rotulo: "Documento do veículo (CRLV)", largura: 1200, motorizado: true },
+];
+
+async function escolherFoto(origem, { largura, selfie }) {
+  const opcoes = { mediaTypes: ["images"], quality: 1, cameraType: selfie ? ImagePicker.CameraType.front : ImagePicker.CameraType.back };
+  let r;
+  if (origem === "camera") {
+    const perm = await ImagePicker.requestCameraPermissionsAsync();
+    if (!perm.granted) throw new Error("Permita o uso da câmera para tirar a foto (ou escolha da galeria).");
+    r = await ImagePicker.launchCameraAsync(opcoes);
+  } else {
+    r = await ImagePicker.launchImageLibraryAsync(opcoes);
+  }
+  if (r.canceled || !r.assets?.[0]) return null;
+  const a = r.assets[0];
+  const ctx = ImageManipulator.manipulate(a.uri);
+  if (!a.width || a.width > largura) ctx.resize({ width: largura });
+  const img = await ctx.renderAsync();
+  const salvo = await img.saveAsync({ format: SaveFormat.JPEG, compress: 0.6, base64: true });
+  return `data:image/jpeg;base64,${salvo.base64}`;
+}
+
+function FotoDocumento({ def, valor, onChange, onErro }) {
+  const [ocupado, setOcupado] = useState(false);
+  async function pegar(origem) {
+    onErro(null);
+    setOcupado(true);
+    try {
+      const uri = await escolherFoto(origem, def);
+      if (uri) onChange(uri);
+    } catch (e) {
+      onErro(e.message || "Não foi possível carregar a foto.");
+    } finally {
+      setOcupado(false);
+    }
+  }
+  return (
+    <View style={[st.foto, !valor && st.fotoPendente]}>
+      {valor
+        ? <Image source={{ uri: valor }} style={[st.fotoMini, def.selfie && { borderRadius: 32 }]} />
+        : <View style={[st.fotoMini, st.fotoVazia, def.selfie && { borderRadius: 32 }]}><Text style={st.fotoVaziaTexto}>{def.selfie ? "🙂" : "📄"}</Text></View>}
+      <View style={{ flex: 1, gap: 6 }}>
+        <Text style={st.fotoRotulo}>{def.rotulo} *</Text>
+        <Text style={[st.fotoStatus, valor && { color: cor.ok }]}>{ocupado ? "Carregando…" : valor ? "✓ Foto adicionada" : "Obrigatório"}</Text>
+        <View style={st.linha2}>
+          <Botao pequeno variante="secundario" titulo="📷 Câmera" onPress={() => pegar("camera")} desabilitado={ocupado} estilo={{ flex: 1 }} />
+          <Botao pequeno variante="secundario" titulo="🖼 Galeria" onPress={() => pegar("galeria")} desabilitado={ocupado} estilo={{ flex: 1 }} />
+        </View>
+      </View>
+    </View>
+  );
+}
+
+const CADASTRO_VAZIO = {
+  nomeCompleto: "", email: "", senha: "", senha2: "", telefone: "", cpf: "", dataNascimento: "",
+  veiculoTipo: "MOTO", veiculoModelo: "", veiculoPlaca: "", veiculoAno: "",
+  fotoUrl: "", fotoCnhUrl: "", comprovanteResidenciaUrl: "", documentoVeiculoUrl: "",
+};
+
+// Lista o que ainda falta; o servidor valida de novo.
+function faltandoNoCadastro(v, end) {
+  const f = [];
+  const motorizado = v.veiculoTipo !== "BIKE";
+  if (v.nomeCompleto.trim().split(/\s+/).length < 2) f.push("nome e sobrenome");
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v.email.trim())) f.push("e-mail válido");
+  if (v.senha.length < 6) f.push("senha com 6 caracteres ou mais");
+  else if (v.senha !== v.senha2) f.push("as duas senhas iguais");
+  if (![10, 11].includes(dig(v.telefone).length)) f.push("telefone com DDD");
+  if (!cpfValido(v.cpf)) f.push("CPF válido");
+  const idade = maiorDeIdade(v.dataNascimento);
+  if (idade === null) f.push("data de nascimento (dd/mm/aaaa)");
+  else if (!idade) f.push("idade mínima de 18 anos");
+  if (!end.rua.trim()) f.push("rua");
+  if (!end.numero.trim()) f.push("número do endereço");
+  if (!end.bairro.trim()) f.push("bairro");
+  if (!end.cidade.trim()) f.push("cidade");
+  if (dig(end.cep).length !== 8) f.push("CEP");
+  if (motorizado) {
+    if (!v.veiculoModelo.trim()) f.push("modelo do veículo");
+    if (!/^[A-Z]{3}-?\d[A-Z0-9]\d{2}$/i.test(v.veiculoPlaca.trim())) f.push("placa válida");
+    if (!/^(19[5-9]\d|20\d{2})$/.test(v.veiculoAno.trim())) f.push("ano do veículo");
+  }
+  FOTOS.forEach(d => { if ((!d.motorizado || motorizado) && !v[d.campo]) f.push(d.rotulo.replace(/ \(.*\)/, "").toLowerCase()); });
+  return f;
+}
+
 function Cadastro({ onVoltar }) {
-  const [v, setV] = useState({ nomeCompleto: "", email: "", senha: "", telefone: "", cpf: "", veiculoTipo: "MOTO", veiculoPlaca: "" });
+  const [v, setV] = useState(CADASTRO_VAZIO);
   const [end, setEnd] = useState(ENDERECO_VAZIO);
   const [erro, setErro] = useState(null);
   const [ok, setOk] = useState(null);
   const [carregando, setCarregando] = useState(false);
-  const set = k => t => setV({ ...v, [k]: t });
+  const set = k => t => setV(a => ({ ...a, [k]: t }));
+  const motorizado = v.veiculoTipo !== "BIKE";
 
   async function enviar() {
+    const faltando = faltandoNoCadastro(v, end);
+    if (faltando.length) { setErro(`Complete o cadastro: ${faltando.join(", ")}.`); return; }
     setErro(null);
     setCarregando(true);
     try {
       const { busca, ...endereco } = end;
-      const r = await api.post("/cadastro", { ...v, ...endereco, email: v.email.trim() });
+      const { senha2, ...dados } = v;
+      if (!motorizado) Object.assign(dados, { veiculoModelo: "", veiculoPlaca: "", veiculoAno: "", fotoCnhUrl: "", documentoVeiculoUrl: "" });
+      const r = await api.post("/cadastro", { ...dados, ...endereco, email: v.email.trim(), veiculoPlaca: dados.veiculoPlaca.trim().toUpperCase() });
       setOk(r.mensagem);
     } catch (e) {
-      setErro(/Unique|unique|email/.test(e.message) ? "Este e-mail já está cadastrado." : e.message);
+      setErro(/Unique|unique/.test(e.message) ? "Este e-mail já está cadastrado." : e.message);
     } finally {
       setCarregando(false);
     }
@@ -162,23 +292,49 @@ function Cadastro({ onVoltar }) {
   return (
     <Cartao>
       <Text style={st.titulo}>Cadastro de entregador</Text>
-      <Campo rotulo="Nome completo *" value={v.nomeCompleto} onChangeText={set("nomeCompleto")} />
-      <Campo rotulo="E-mail *" value={v.email} onChangeText={set("email")} autoCapitalize="none" keyboardType="email-address" />
+      <Text style={st.dica}>Todos os campos com * são obrigatórios. A equipe confere os documentos antes de liberar seu acesso.</Text>
+
+      <Text style={st.secao}>Dados pessoais</Text>
+      <Campo rotulo="Nome completo *" value={v.nomeCompleto} onChangeText={set("nomeCompleto")} autoCapitalize="words" />
+      <View style={st.linha2}>
+        <View style={{ flex: 1 }}><Campo rotulo="CPF *" value={v.cpf} onChangeText={t => set("cpf")(mascaraCpf(t))} keyboardType="number-pad" placeholder="000.000.000-00" /></View>
+        <View style={{ flex: 1 }}><Campo rotulo="Nascimento *" value={v.dataNascimento} onChangeText={t => set("dataNascimento")(mascaraData(t))} keyboardType="number-pad" placeholder="dd/mm/aaaa" /></View>
+      </View>
+      <Campo rotulo="Telefone (WhatsApp) *" value={v.telefone} onChangeText={t => set("telefone")(mascaraTelefone(t))} keyboardType="phone-pad" placeholder="(00) 00000-0000" />
+
+      <Text style={st.secao}>Acesso ao app</Text>
+      <Campo rotulo="E-mail *" value={v.email} onChangeText={set("email")} autoCapitalize="none" autoCorrect={false} keyboardType="email-address" />
       <Campo rotulo="Senha * (mínimo 6)" value={v.senha} onChangeText={set("senha")} secureTextEntry />
-      <Campo rotulo="Telefone" value={v.telefone} onChangeText={set("telefone")} keyboardType="phone-pad" />
-      <Campo rotulo="CPF" value={v.cpf} onChangeText={set("cpf")} keyboardType="number-pad" />
-      <CamposEndereco e={end} setE={setEnd} />
-      <Text style={st.rotulo}>Veículo</Text>
+      <Campo rotulo="Repita a senha *" value={v.senha2} onChangeText={set("senha2")} secureTextEntry />
+
+      <Text style={st.secao}>Endereço</Text>
+      <CamposEndereco e={end} setE={setEnd} completo />
+
+      <Text style={st.secao}>Veículo</Text>
       <View style={st.opcoes}>
         {Object.entries(VEICULOS).map(([k, r]) => (
-          <Pressable key={k} onPress={() => setV({ ...v, veiculoTipo: k })} style={[st.opcao, v.veiculoTipo === k && st.opcaoAtiva]}>
+          <Pressable key={k} onPress={() => setV(a => ({ ...a, veiculoTipo: k }))} style={[st.opcao, v.veiculoTipo === k && st.opcaoAtiva]}>
             <Text style={[st.opcaoTexto, v.veiculoTipo === k && { color: "#fff" }]}>{r}</Text>
           </Pressable>
         ))}
       </View>
-      {v.veiculoTipo !== "BIKE" && <Campo rotulo="Placa" value={v.veiculoPlaca} onChangeText={set("veiculoPlaca")} autoCapitalize="characters" />}
+      {motorizado && (
+        <>
+          <Campo rotulo="Modelo *" value={v.veiculoModelo} onChangeText={set("veiculoModelo")} placeholder="Ex.: Honda CG 160" />
+          <View style={st.linha2}>
+            <View style={{ flex: 3 }}><Campo rotulo="Placa *" value={v.veiculoPlaca} onChangeText={t => set("veiculoPlaca")(t.toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 8))} autoCapitalize="characters" placeholder="ABC1D23" /></View>
+            <View style={{ flex: 2 }}><Campo rotulo="Ano *" value={v.veiculoAno} onChangeText={t => set("veiculoAno")(dig(t).slice(0, 4))} keyboardType="number-pad" placeholder="2020" /></View>
+          </View>
+        </>
+      )}
+
+      <Text style={st.secao}>Fotos e documentos</Text>
+      {FOTOS.filter(d => motorizado || !d.motorizado).map(d => (
+        <FotoDocumento key={d.campo} def={d} valor={v[d.campo]} onChange={set(d.campo)} onErro={setErro} />
+      ))}
+
       <Erro texto={erro} />
-      <Botao titulo="Enviar cadastro" onPress={enviar} carregando={carregando} desabilitado={!v.nomeCompleto || !v.email || v.senha.length < 6} />
+      <Botao titulo="Enviar cadastro" onPress={enviar} carregando={carregando} />
       <Botao titulo="Já tenho conta" variante="fantasma" onPress={onVoltar} />
     </Cartao>
   );
@@ -219,4 +375,12 @@ const st = StyleSheet.create({
   opcao: { flex: 1, paddingVertical: 11, borderRadius: 10, borderWidth: 1, borderColor: cor.borda, alignItems: "center", backgroundColor: cor.superficie2 },
   opcaoAtiva: { backgroundColor: cor.primaria, borderColor: cor.primaria },
   opcaoTexto: { color: cor.texto2, fontWeight: "700" },
+  secao: { color: cor.texto, fontSize: 15, fontWeight: "800", marginTop: 6 },
+  foto: { flexDirection: "row", gap: 12, alignItems: "center", padding: 10, borderRadius: 12, borderWidth: 1, borderColor: cor.borda, backgroundColor: cor.superficie2 },
+  fotoPendente: { borderStyle: "dashed" },
+  fotoMini: { width: 64, height: 64, borderRadius: 8 },
+  fotoVazia: { alignItems: "center", justifyContent: "center", backgroundColor: cor.superficie, borderWidth: 1, borderColor: cor.borda },
+  fotoVaziaTexto: { fontSize: 26 },
+  fotoRotulo: { color: cor.texto, fontSize: 14, fontWeight: "700" },
+  fotoStatus: { color: cor.texto3, fontSize: 12 },
 });

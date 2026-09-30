@@ -4,11 +4,11 @@ const bcrypt = require("bcryptjs");
 const prisma = require("../../lib/prisma");
 const { asyncHandler } = require("../../middleware/errorHandler");
 const { requireAuth, requireTipo, assinarToken, TIPOS } = require("../../middleware/auth");
-const { INCLUDE_PADRAO, erroHttp, registrarLog, calcularEntrega, criarPedido, soDigitosTelefone, percentualRetorno } = require("../../services/pedidos.service");
+const { INCLUDE_PADRAO, erroHttp, registrarLog, calcularEntrega, criarPedido, soDigitosTelefone, percentualRetorno, recalcularRetorno, salvarCliente } = require("../../services/pedidos.service");
 const { buscarEnderecos } = require("../../utils/geo");
 const { carimbos, registrarStatusPedido } = require("../../services/historico.service");
 const { versaoComercio } = require("../../services/tempoReal.service");
-const { TODOS, ABERTOS } = require("../../utils/statusPedido");
+const { TODOS, ABERTOS, COM_ENTREGADOR } = require("../../utils/statusPedido");
 const { localizarPendentes } = require("../pedidos.routes");
 
 const autorComerciante = req => ({ autorTipo: "COMERCIANTE", autorNome: `${req.comercio.nomeFantasia} (${req.conta.email})` });
@@ -281,6 +281,54 @@ router.post(
     );
     // "Já está pronto": libera na hora para os entregadores (agendado espera o horário).
     res.status(201).json(req.body.pronto && !pedido.agendadoPara ? await marcarPronto(req, pedido) : pedido);
+  })
+);
+
+// PUT /api/app/comerciante/pedidos/:id — a loja edita os dados do pedido (até ser entregue/cancelado).
+// Retorno ligado/desligado ou endereço novo recalculam a taxa; o app do entregador atualiza sozinho.
+// { clienteNome?, clienteTelefone?, endereco?, destino?, destinoAprox?, complemento?, observacao?, formaPagamento?, retorno? }
+router.put(
+  "/pedidos/:id",
+  asyncHandler(async (req, res) => {
+    const pedido = await pedidoDoComercio(req);
+    if (["ENTREGUE", "CANCELADO"].includes(pedido.status)) throw erroHttp(409, "Pedido já finalizado — não dá para editar.");
+    const b = req.body || {};
+    const data = {};
+    const texto = v => (v === undefined ? undefined : String(v ?? "").trim() || null);
+    for (const k of ["clienteTelefone", "complemento", "observacao", "formaPagamento"]) if (b[k] !== undefined) data[k] = texto(b[k]);
+    if (b.clienteNome !== undefined) {
+      if (!String(b.clienteNome || "").trim()) throw erroHttp(400, "Informe o nome do cliente.");
+      data.clienteNome = String(b.clienteNome).trim();
+    }
+    const retorno = b.retorno !== undefined ? !!b.retorno : pedido.retorno;
+    const logs = [];
+    const novoEndereco = b.endereco !== undefined && String(b.endereco).trim() && String(b.endereco).trim() !== pedido.endereco;
+    if (novoEndereco) {
+      if (COM_ENTREGADOR.includes(pedido.status) && pedido.status !== "ATRIBUIDO") throw erroHttp(409, "O entregador já saiu com o pedido — fale com a equipe para mudar o endereço.");
+      const endereco = String(b.endereco).trim();
+      const c = await calcularEntrega({ comercioId: req.comercio.id, endereco, destino: b.destino, destinoAprox: b.destinoAprox, retorno });
+      Object.assign(data, {
+        endereco, retorno, valor: c.valor, acrescimoRetorno: retorno ? c.acrescimoRetorno : null, distanciaKm: c.distanciaKm,
+        latDestino: c.destino?.lat ?? null, lngDestino: c.destino?.lng ?? null,
+      });
+      logs.push(`Endereço alterado pela loja: taxa recalculada para ${c.valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} (${c.distanciaKm} km).`);
+    } else if (b.retorno !== undefined && retorno !== pedido.retorno) {
+      const novo = await recalcularRetorno(pedido, retorno);
+      data.retorno = retorno;
+      if (novo) { data.valor = novo.valor; data.acrescimoRetorno = novo.acrescimoRetorno; logs.push(novo.texto); }
+      else logs.push(retorno ? "Loja marcou entrega com retorno." : "Loja retirou o retorno.");
+    }
+    if (!Object.keys(data).length) return res.json(await prisma.pedido.findUnique({ where: { id: pedido.id }, include: INCLUDE_PADRAO }));
+    const atualizado = await prisma.pedido.update({ where: { id: pedido.id }, data, include: INCLUDE_PADRAO });
+    await registrarLog(pedido.id, "Dados do pedido editados pela loja.");
+    for (const l of logs) await registrarLog(pedido.id, l);
+    if (data.clienteTelefone !== undefined || data.clienteNome !== undefined || novoEndereco) {
+      await salvarCliente(req.comercio.id, {
+        telefone: atualizado.clienteTelefone, nome: atualizado.clienteNome, endereco: atualizado.endereco,
+        complemento: atualizado.complemento, lat: atualizado.latDestino, lng: atualizado.lngDestino,
+      }).catch(() => {});
+    }
+    res.json(atualizado);
   })
 );
 

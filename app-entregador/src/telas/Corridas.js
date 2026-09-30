@@ -1,6 +1,7 @@
 // Corridas: o "motor" da operação (online/offline, GPS, listas) e as telas Disponíveis e Em andamento.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Linking, Modal, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Image, Linking, Modal, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { pararAlarme, tocarAlarme } from "../alarme";
 import * as Location from "expo-location";
 import { api } from "../api";
 import { assinarTempoReal } from "../tempoReal";
@@ -184,15 +185,6 @@ function InfoLinha({ rotulo, valor, destaque }) {
   );
 }
 
-// Distância em metros entre dois pontos (para mostrar quanto falta até a loja/cliente).
-function metrosEntre(a, b) {
-  if (!a || !b || b.lat == null) return null;
-  const R = 6371000, rad = g => (g * Math.PI) / 180;
-  const h = Math.sin(rad(b.lat - a.lat) / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(rad(b.lng - a.lng) / 2) ** 2;
-  return Math.round(2 * R * Math.asin(Math.sqrt(h)));
-}
-const textoDistancia = m => (m >= 1000 ? `${(m / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} km` : `${m} m`);
-
 // Posição do GPS na hora do toque (a etapa só é aceita perto da loja / do cliente).
 async function posicaoAgora() {
   const perm = await Location.requestForegroundPermissionsAsync().catch(() => ({ status: "denied" }));
@@ -204,15 +196,11 @@ async function posicaoAgora() {
   return { lat: pos.coords.latitude, lng: pos.coords.longitude, precisao: pos.coords.accuracy };
 }
 
-function EntregaAtiva({ p, posicao, raio = 200, onAtualizar, onErro }) {
+function EntregaAtiva({ p, onAtualizar, onErro }) {
   const [ocupado, setOcupado] = useState(false);
   const etapa = ETAPA[p.status];
   const loja = p.comercio?.enderecos?.[0];
   const indoParaLoja = ["ATRIBUIDO", "NA_LOJA"].includes(p.status);
-  // Onde a próxima etapa precisa ser confirmada: Na loja / Saí para entrega -> loja; Cheguei no cliente / Finalizar -> cliente.
-  const alvoLoja = ["ATRIBUIDO", "NA_LOJA"].includes(p.status);
-  const alvo = alvoLoja ? (loja?.lat != null ? { lat: loja.lat, lng: loja.lng } : null) : (p.latDestino != null ? { lat: p.latDestino, lng: p.lngDestino } : null);
-  const distancia = metrosEntre(posicao, alvo);
 
   const [pedirCodigo, setPedirCodigo] = useState(false);
   const [codigoEntrega, setCodigoEntrega] = useState("");
@@ -257,15 +245,15 @@ function EntregaAtiva({ p, posicao, raio = 200, onAtualizar, onErro }) {
         {p.retorno ? <Text style={[st.etapaTexto, { color: cor.aviso, fontWeight: "700" }]}>↩ Com retorno: volte à loja depois de entregar</Text> : null}
       </View>
       <Ganho p={p} />
-      <Km p={p} comAteLoja={false} />
+      <Km p={p} />
       <InfoLinha rotulo="Pagamento" valor={p.formaPagamento} />
-      <InfoLinha rotulo="Observação" valor={p.observacao} destaque />
-      {distancia != null && (
-        <Text style={[st.distancia, distancia <= raio && { color: cor.ok }]}>
-          📍 Você está a {textoDistancia(distancia)} {alvoLoja ? "da loja" : "do cliente"}
-          {distancia > raio ? ` — chegue ao local para confirmar (até ${raio} m)` : " — pode confirmar"}
-        </Text>
-      )}
+      {/* Observação da loja: só aparece quando a loja escreveu alguma. */}
+      {p.observacao?.trim() ? (
+        <View style={st.obs}>
+          <Text style={st.obsTitulo}>📝 Observação da loja</Text>
+          <Text style={st.obsTexto}>{p.observacao.trim()}</Text>
+        </View>
+      ) : null}
       {etapa && <Botao titulo={etapa.botao} variante={etapa.proxima === "ENTREGUE" ? "sucesso" : "primario"} onPress={() => avancar()} carregando={ocupado} />}
       <Confirmar
         visivel={pedirCodigo}
@@ -300,24 +288,34 @@ function Ganho({ p }) {
   );
 }
 
-// Quilômetros da corrida: até a loja (da sua posição), da entrega (loja -> cliente) e o total.
-function Km({ p, comAteLoja = true }) {
-  const ateLoja = comAteLoja ? p.distanciaAteColetaKm : null;
+// Km da entrega: só da loja até o cliente (rota calculada; sem ela, estimativa marcada com ≈).
+function Km({ p }) {
   const entrega = p.kmEntrega ?? p.distanciaKm ?? null;
-  if (ateLoja == null && entrega == null) return null;
-  const itens = [
-    ateLoja != null && { rotulo: "Até a loja", valor: km(ateLoja) },
-    entrega != null && { rotulo: p.kmEstimado ? "Entrega (aprox.)" : "Entrega", valor: `${p.kmEstimado ? "≈ " : ""}${km(entrega)}` },
-    ateLoja != null && entrega != null && { rotulo: "Total", valor: `${p.kmEstimado ? "≈ " : ""}${km(ateLoja + entrega)}`, destaque: true },
-  ].filter(Boolean);
+  if (entrega == null) return null;
   return (
-    <View style={st.km}>
-      {itens.map(i => (
-        <View key={i.rotulo} style={[st.kmItem, i.destaque && st.kmTotal]}>
-          <Text style={st.kmValor}>{i.valor}</Text>
-          <Text style={st.kmRotulo}>{i.rotulo}</Text>
-        </View>
-      ))}
+    <View style={st.kmItem}>
+      <Text style={st.kmValor}>{p.kmEstimado ? "≈ " : ""}{km(entrega)}</Text>
+      <Text style={st.kmRotulo}>da loja até o cliente{p.kmEstimado ? " (aprox.)" : ""}</Text>
+    </View>
+  );
+}
+
+// Foto (logo) da loja; sem foto, a inicial do nome.
+function FotoLoja({ comercio, tamanho = 48 }) {
+  const estilo = { width: tamanho, height: tamanho, borderRadius: tamanho / 4 };
+  if (comercio?.fotoUrl) return <Image source={{ uri: comercio.fotoUrl }} style={[st.fotoLoja, estilo]} resizeMode="cover" accessibilityLabel={`Foto de ${comercio.nomeFantasia}`} />;
+  return (
+    <View style={[st.fotoLoja, st.fotoLojaVazia, estilo]}>
+      <Text style={st.fotoLojaInicial}>{(comercio?.nomeFantasia || "?").trim()[0]?.toUpperCase()}</Text>
+    </View>
+  );
+}
+
+function TopoLoja({ p }) {
+  return (
+    <View style={st.topoLoja}>
+      <FotoLoja comercio={p.comercio} />
+      <Text style={[st.codigo, { flex: 1 }]} numberOfLines={2}>{p.comercio?.nomeFantasia}</Text>
     </View>
   );
 }
@@ -331,7 +329,6 @@ function DadosCorrida({ p }) {
       <InfoLinha rotulo="Entrega" valor={p.complemento ? `${p.endereco} · ${p.complemento}` : p.endereco} />
       {p.retorno ? <InfoLinha rotulo="Retorno" valor="Sim — volta à loja depois de entregar" destaque /> : null}
       {p.agendadoPara ? <InfoLinha rotulo="Agendada" valor={`para ${hora(p.agendadoPara)}`} /> : null}
-      <InfoLinha rotulo="Pronto desde" valor={hora(p.prontoEm || p.updatedAt)} />
     </>
   );
 }
@@ -339,10 +336,7 @@ function DadosCorrida({ p }) {
 function Disponivel({ p, onAceitar, onRecusar, ocupado }) {
   return (
     <Cartao>
-      <View style={st.topoCartao}>
-        <Text style={st.codigo}>{p.comercio?.nomeFantasia}</Text>
-        {p.distanciaAteColetaKm != null && <Selo texto={`${km(p.distanciaAteColetaKm)} de você`} />}
-      </View>
+      <TopoLoja p={p} />
       <DadosCorrida p={p} />
       <View style={st.acoes}>
         <Botao titulo="Recusar" variante="perigo" onPress={() => onRecusar(p)} estilo={{ flex: 1 }} />
@@ -356,6 +350,12 @@ function Disponivel({ p, onAceitar, onRecusar, ocupado }) {
 export function PopupCorrida({ op, onAceitou }) {
   const p = op.novaCorrida;
   const [resta, setResta] = useState(45);
+  // Alarme tocando enquanto o aviso estiver aberto (para ao aceitar, recusar, "decidir depois" ou em 45 s).
+  useEffect(() => {
+    if (!p) return;
+    tocarAlarme();
+    return () => pararAlarme();
+  }, [p?.id]);
   useEffect(() => {
     if (!p) return;
     setResta(45);
@@ -372,10 +372,7 @@ export function PopupCorrida({ op, onAceitou }) {
         <View style={st.pop}>
           <View style={st.popFaixa}><Text style={st.popFaixaTexto}>🔔 Nova corrida{p.agendadoPara ? " (agendada)" : ""}</Text><Text style={st.popTempo}>{resta}s</Text></View>
           <View style={{ padding: 18, gap: 10 }}>
-            <View style={st.topoCartao}>
-              <Text style={st.codigo}>{p.comercio?.nomeFantasia}</Text>
-              {p.distanciaAteColetaKm != null && <Selo texto={`${km(p.distanciaAteColetaKm)} de você`} />}
-            </View>
+            <TopoLoja p={p} />
             <DadosCorrida p={p} />
             <View style={st.acoes}>
               <Botao titulo="Recusar" variante="perigo" onPress={() => op.recusar(p)} estilo={{ flex: 1 }} />
@@ -425,7 +422,7 @@ export function ListaAndamento({ op }) {
     <ScrollView contentContainerStyle={st.tela} refreshControl={refresh}>
       <Erro texto={op.erro} />
       {op.ativos.length === 0 && <Vazio titulo="Nenhuma entrega em andamento" texto="Aceite uma corrida em Disponíveis para começar." />}
-      {op.ativos.map(p => <EntregaAtiva key={p.id} p={p} posicao={op.posicao} raio={op.raio} onAtualizar={op.atualizarTudo} onErro={op.setErro} />)}
+      {op.ativos.map(p => <EntregaAtiva key={p.id} p={p} onAtualizar={op.atualizarTudo} onErro={op.setErro} />)}
     </ScrollView>
   );
 }
@@ -446,9 +443,14 @@ const st = StyleSheet.create({
   acao: { flexGrow: 1 },
   distancia: { color: cor.aviso, fontSize: 14, fontWeight: "600" },
   externo: { color: "#ea1d2c", fontSize: 14, fontWeight: "800" },
-  km: { flexDirection: "row", gap: 8 },
-  kmItem: { flex: 1, backgroundColor: cor.superficie2, borderRadius: 10, paddingVertical: 8, alignItems: "center", borderWidth: 1, borderColor: cor.borda },
-  kmTotal: { borderColor: cor.primariaClara },
+  kmItem: { backgroundColor: cor.superficie2, borderRadius: 10, paddingVertical: 8, alignItems: "center", borderWidth: 1, borderColor: cor.primariaClara },
+  topoLoja: { flexDirection: "row", alignItems: "center", gap: 12 },
+  fotoLoja: { backgroundColor: cor.superficie2, borderWidth: 1, borderColor: cor.borda },
+  fotoLojaVazia: { alignItems: "center", justifyContent: "center" },
+  fotoLojaInicial: { color: cor.texto, fontSize: 20, fontWeight: "800" },
+  obs: { backgroundColor: "rgba(245,165,36,0.12)", borderColor: "rgba(245,165,36,0.45)", borderWidth: 1, borderRadius: 10, padding: 10, gap: 3 },
+  obsTitulo: { color: cor.aviso, fontSize: 13, fontWeight: "800" },
+  obsTexto: { color: cor.texto, fontSize: 15, lineHeight: 21 },
   kmValor: { color: cor.texto, fontSize: 17, fontWeight: "800" },
   kmRotulo: { color: cor.texto3, fontSize: 12 },
   ganho: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: "rgba(34,197,94,0.12)", borderColor: "rgba(34,197,94,0.4)", borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },

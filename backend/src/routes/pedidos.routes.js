@@ -1,7 +1,7 @@
 const express = require("express");
 const prisma = require("../lib/prisma");
 const { asyncHandler } = require("../middleware/errorHandler");
-const { INCLUDE_PADRAO, erroHttp, gerarCodigoPedido, registrarLog, dadosNotaFiscal, localizarDestino } = require("../services/pedidos.service");
+const { INCLUDE_PADRAO, erroHttp, gerarCodigoPedido, registrarLog, dadosNotaFiscal, localizarDestino, recalcularRetorno } = require("../services/pedidos.service");
 const { autorDe, carimbos, registrarStatusPedido } = require("../services/historico.service");
 const { emSegundoPlano } = require("../utils/segundoPlano");
 
@@ -209,6 +209,15 @@ router.put(
     if (data.retorno !== undefined) data.retorno = !!data.retorno;
     if (data.complemento !== undefined) data.complemento = String(data.complemento || "").trim() || null;
     Object.assign(data, dadosNotaFiscal(req.body));
+    // Retorno ligado/desligado sem mexer no valor: recalcula a taxa (o app do entregador atualiza sozinho).
+    let logRetorno = null;
+    if (data.retorno !== undefined) {
+      const atualP = await prisma.pedido.findUnique({ where: { id: req.params.id }, select: { valor: true, retorno: true, acrescimoRetorno: true } });
+      const valorMudou = data.valor !== undefined && atualP && data.valor !== atualP.valor;
+      const novo = atualP && !valorMudou ? await recalcularRetorno(atualP, data.retorno) : null;
+      if (novo) { data.valor = novo.valor; data.acrescimoRetorno = novo.acrescimoRetorno; logRetorno = novo.texto; }
+      else if (valorMudou && !data.retorno) data.acrescimoRetorno = null;
+    }
     // Endereço mudou: a posição antiga no mapa não vale mais (o mapa localiza de novo).
     if (data.endereco !== undefined) {
       const atual = await prisma.pedido.findUnique({ where: { id: req.params.id }, select: { endereco: true } });
@@ -220,6 +229,7 @@ router.put(
 
     const pedido = await prisma.pedido.update({ where: { id: req.params.id }, data, include: INCLUDE_PADRAO });
     await registrarLog(pedido.id, "Dados do pedido editados" + autor(req) + ".");
+    if (logRetorno) await registrarLog(pedido.id, logRetorno);
     res.json(pedido);
   })
 );

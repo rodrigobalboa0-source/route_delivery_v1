@@ -16,7 +16,7 @@ import { ListaAndamento, ListaDisponiveis, PopupCorrida, useOperacao } from "./s
 import { Carteira, Mensagens, Perfil, Promocoes, Treinamento } from "./src/telas/Outras";
 import Ranking from "./src/telas/Ranking";
 
-const VERSAO = "v1.3.0";
+const VERSAO = "v1.4.0";
 const TITULOS = {
   home: "Home", disponiveis: "Disponíveis", andamento: "Em andamento", promocao: "Promoção",
   mensagens: "Mensagens", carteira: "Carteira", conta: "Conta", treinamento: "Treinamento", ranking: "Ranking",

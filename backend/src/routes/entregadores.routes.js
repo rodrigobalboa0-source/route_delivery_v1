@@ -51,7 +51,10 @@ router.get(
       orderBy: { createdAt: "desc" },
       include: { _count: { select: { pedidos: true } } },
     });
-    res.json(semSenha(entregadores));
+    // Lista sem as fotos dos documentos (pesadas) — elas vêm no detalhe (aba Documentos).
+    res.json(semSenha(entregadores).map(({ fotoCnhUrl, comprovanteResidenciaUrl, documentoVeiculoUrl, ...e }) => ({
+      ...e, documentos: [fotoCnhUrl, comprovanteResidenciaUrl, documentoVeiculoUrl].filter(Boolean).length,
+    })));
   })
 );
 

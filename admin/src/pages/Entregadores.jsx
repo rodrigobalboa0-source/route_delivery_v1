@@ -11,6 +11,7 @@ import {
   PERMISSAO_COLETA, STATUS_ENTREGADOR, STATUS_PEDIDO, TIPO_ENTREGA, VEICULOS, dataHora, moeda, numero, opcoes,
   paraInputData, tempoRelativo,
 } from "../utils/format";
+import { reduzirImagem } from "../utils/imagem";
 
 const CAMPOS_PESSOAIS = [
   { nome: "nomeCompleto", rotulo: "Nome completo", obrigatorio: true, largo: true },
@@ -37,10 +38,13 @@ const CAMPOS_OPERACAO = [
   { nome: "taxaEntrega", rotulo: "Repasse por entrega (R$)", tipo: "number", dica: "Usado no cálculo de repasse do financeiro." },
   { nome: "prioridadeBusca", rotulo: "Prioridade na busca (0–10)", tipo: "number", passo: "1" },
   { nome: "permissaoColeta", rotulo: "Pode coletar em", tipo: "select", opcoes: opcoes(PERMISSAO_COLETA), obrigatorio: true, largo: true },
-  { nome: "fotoUrl", rotulo: "URL da foto", largo: true },
-  { nome: "fotoCnhUrl", rotulo: "URL da CNH", largo: true },
-  { nome: "comprovanteResidenciaUrl", rotulo: "URL do comprovante de residência", largo: true },
-  { nome: "documentoVeiculoUrl", rotulo: "URL do documento do veículo", largo: true },
+];
+// Fotos (selfie, CNH, comprovante, documento do veículo) ficam na aba "Documentos".
+const DOCUMENTOS = [
+  { nome: "fotoUrl", rotulo: "Selfie" },
+  { nome: "fotoCnhUrl", rotulo: "CNH" },
+  { nome: "comprovanteResidenciaUrl", rotulo: "Comprovante de endereço" },
+  { nome: "documentoVeiculoUrl", rotulo: "Documento do veículo" },
 ];
 
 // Comissão automática: extra pago pela empresa a cada entrega finalizada por este entregador.
@@ -110,6 +114,57 @@ function FormEntregador({ entregador, onSalvo, desabilitado }) {
         </div>
       )}
     </form>
+  );
+}
+
+// Fotos enviadas pelo entregador no cadastro do app. Clicar abre em tamanho grande; o admin pode trocar a foto.
+function Documentos({ entregador, onSalvo, desabilitado }) {
+  const [aberta, setAberta] = useState(null);
+  const { executar, ocupado } = useAcao();
+  const toast = useToast();
+
+  async function trocar(campo, arquivo) {
+    if (!arquivo) return;
+    try {
+      const url = await reduzirImagem(arquivo, campo === "fotoUrl" ? 600 : 1400, 0.8);
+      if (await executar(() => api.put(`/entregadores/${entregador.id}`, { [campo]: url }), "Foto atualizada.")) onSalvo();
+    } catch (err) { toast?.(err.message, "erro"); }
+  }
+
+  return (
+    <div>
+      <div className="grade-documentos">
+        {DOCUMENTOS.map(d => {
+          const url = entregador[d.nome];
+          const exigido = d.nome === "fotoUrl" || d.nome === "comprovanteResidenciaUrl" || entregador.veiculoTipo !== "BIKE";
+          return (
+            <figure key={d.nome} className="documento">
+              {url ? (
+                <button type="button" className="documento-img" onClick={() => setAberta(d)} title="Ver em tamanho grande">
+                  <img src={url} alt={d.rotulo} />
+                </button>
+              ) : (
+                <div className="documento-img documento-vazio">{exigido ? "Não enviado" : "Não se aplica"}</div>
+              )}
+              <figcaption>
+                <strong>{d.rotulo}</strong>
+                {!desabilitado && (
+                  <label className="link" style={{ cursor: "pointer", fontSize: 12 }}>
+                    {url ? "Trocar" : "Enviar"}
+                    <input type="file" accept="image/*" hidden disabled={ocupado} onChange={ev => { trocar(d.nome, ev.target.files?.[0]); ev.target.value = ""; }} />
+                  </label>
+                )}
+              </figcaption>
+            </figure>
+          );
+        })}
+      </div>
+      {aberta && (
+        <Modal titulo={`${aberta.rotulo} — ${entregador.nomeCompleto}`} onFechar={() => setAberta(null)}>
+          <img src={entregador[aberta.nome]} alt={aberta.rotulo} style={{ width: "100%", borderRadius: 8 }} />
+        </Modal>
+      )}
+    </div>
   );
 }
 
@@ -198,6 +253,7 @@ function DetalheEntregador({ id, onFechar, onAlterado }) {
             abas={[
               { valor: "resumo", rotulo: "Resumo" },
               { valor: "cadastro", rotulo: "Cadastro" },
+              { valor: "documentos", rotulo: "Documentos" },
               { valor: "comercios", rotulo: "Comércios permitidos" },
               { valor: "pedidos", rotulo: "Pedidos" },
             ]}
@@ -304,6 +360,8 @@ function DetalheEntregador({ id, onFechar, onAlterado }) {
           {aba === "cadastro" && (
             <FormEntregador key={e.id} entregador={e} desabilitado={!pode} onSalvo={() => { recarregar({ silencioso: true }); onAlterado(); }} />
           )}
+
+          {aba === "documentos" && <Documentos entregador={e} desabilitado={!pode} onSalvo={() => recarregar({ silencioso: true })} />}
 
           {aba === "comercios" && <ComerciosPermitidos entregador={e} desabilitado={!pode} onSalvo={() => recarregar({ silencioso: true })} />}
 

@@ -23,7 +23,7 @@ const router = express.Router();
 
 const INCLUDE_PEDIDO_APP = {
   ...INCLUDE_PADRAO,
-  comercio: { select: { id: true, nomeFantasia: true, telefone: true, enderecos: { where: { principal: true } } } },
+  comercio: { select: { id: true, nomeFantasia: true, telefone: true, fotoUrl: true, enderecos: { where: { principal: true } } } },
 };
 
 // Endereço do entregador vindo do app (busca no OpenStreetMap ou digitado).
@@ -98,7 +98,7 @@ router.post(
     });
 
     const token = assinarToken({ tipo: TIPOS.ENTREGADOR, id: entregador.id, nome: entregador.nomeCompleto, ap: aparelhoId }, "30d");
-    res.json({ token, entregador: semSenha(atualizado) });
+    res.json({ token, entregador: paraApp(atualizado) });
   })
 );
 
@@ -162,21 +162,93 @@ router.post(
   })
 );
 
-// POST /api/app/entregador/cadastro — auto-cadastro pelo app; entra como EM_ANALISE até o ADM aprovar
+// O que o app recebe do próprio cadastro: sem senha e sem as fotos dos documentos (pesadas; só o ADM precisa delas).
+function paraApp(e) {
+  const { fotoCnhUrl, comprovanteResidenciaUrl, documentoVeiculoUrl, ...resto } = semSenha(e); // eslint-disable-line no-unused-vars
+  return resto;
+}
+
+// ---------- Cadastro pelo app: tudo obrigatório ----------
+
+const soDig = v => String(v || "").replace(/\D/g, "");
+function cpfValido(v) {
+  const c = soDig(v);
+  if (c.length !== 11 || /^(\d)\1{10}$/.test(c)) return false;
+  const dv = n => { let s = 0; for (let i = 0; i < n; i++) s += Number(c[i]) * (n + 1 - i); const r = (s * 10) % 11; return r === 10 ? 0 : r; };
+  return dv(9) === Number(c[9]) && dv(10) === Number(c[10]);
+}
+// Foto enviada pelo app: data:image/jpeg;base64,... até ~2,5 MB.
+function fotoValida(v) {
+  return typeof v === "string" && /^data:image\/(jpeg|jpg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(v) && v.length <= 3.5 * 1024 * 1024;
+}
+// Data "dd/mm/aaaa" ou "aaaa-mm-dd" -> Date (meio-dia UTC) ou null.
+function dataNascimento(v) {
+  const s = String(v || "").trim();
+  let d, m, a;
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) [d, m, a] = s.split("/").map(Number);
+  else if (/^\d{4}-\d{2}-\d{2}$/.test(s)) [a, m, d] = s.split("-").map(Number);
+  else return null;
+  const dt = new Date(Date.UTC(a, m - 1, d, 12));
+  return dt.getUTCDate() === d && dt.getUTCMonth() === m - 1 ? dt : null;
+}
+
+function validarCadastro(b) {
+  const faltando = [];
+  const exigir = (cond, rotulo) => { if (!cond) faltando.push(rotulo); };
+  const veiculo = ["MOTO", "BIKE", "CARRO"].includes(b.veiculoTipo) ? b.veiculoTipo : null;
+  const motorizado = veiculo !== "BIKE";
+  exigir(String(b.nomeCompleto || "").trim().split(/\s+/).length >= 2, "nome completo (nome e sobrenome)");
+  exigir(/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(b.email || "").trim()), "e-mail válido");
+  exigir(String(b.senha || "").length >= 6, "senha com 6 caracteres ou mais");
+  exigir([10, 11].includes(soDig(b.telefone).length), "telefone com DDD");
+  exigir(cpfValido(b.cpf), "CPF válido");
+  const nasc = dataNascimento(b.dataNascimento);
+  exigir(nasc, "data de nascimento");
+  if (nasc) exigir(Date.now() - nasc.getTime() >= 18 * 365.25 * 864e5, "idade mínima de 18 anos");
+  exigir(String(b.rua || "").trim(), "rua");
+  exigir(String(b.numero || "").trim(), "número do endereço");
+  exigir(String(b.bairro || "").trim(), "bairro");
+  exigir(String(b.cidade || "").trim(), "cidade");
+  exigir(soDig(b.cep).length === 8, "CEP");
+  exigir(veiculo, "tipo de veículo");
+  if (motorizado) {
+    exigir(String(b.veiculoModelo || "").trim(), "modelo do veículo");
+    exigir(/^[A-Z]{3}-?\d[A-Z0-9]\d{2}$/i.test(String(b.veiculoPlaca || "").trim()), "placa válida (ABC1D23 ou ABC-1234)");
+    exigir(/^(19[5-9]\d|20\d{2})$/.test(String(b.veiculoAno || "").trim()), "ano do veículo");
+  }
+  exigir(fotoValida(b.fotoUrl), "selfie");
+  exigir(fotoValida(b.comprovanteResidenciaUrl), "foto do comprovante de endereço");
+  if (motorizado) {
+    exigir(fotoValida(b.fotoCnhUrl), "foto da CNH");
+    exigir(fotoValida(b.documentoVeiculoUrl), "foto do documento do veículo");
+  }
+  if (faltando.length) throw erroHttp(400, `Complete o cadastro: ${faltando.join(", ")}.`);
+  return { veiculo, motorizado, nasc };
+}
+
+// POST /api/app/entregador/cadastro — auto-cadastro pelo app; entra como EM_ANALISE até o ADM aprovar.
+// Tudo obrigatório: dados pessoais, endereço, veículo e as fotos (selfie, comprovante de endereço; CNH e documento do veículo para moto/carro).
 router.post(
   "/cadastro",
   asyncHandler(async (req, res) => {
-    const { nomeCompleto, email, senha, telefone, cpf, veiculoTipo, veiculoModelo, veiculoPlaca } = req.body;
-    if (!nomeCompleto || !email || !senha) {
-      return res.status(400).json({ erro: 'Informe "nomeCompleto", "email" e "senha".' });
-    }
-    if (String(senha).length < 6) return res.status(400).json({ erro: "A senha precisa ter pelo menos 6 caracteres." });
+    const b = req.body || {};
+    const { veiculo, motorizado, nasc } = validarCadastro(b);
+    const emailNorm = String(b.email).trim().toLowerCase();
+    if (await prisma.entregador.findFirst({ where: { email: { equals: emailNorm, mode: "insensitive" } } })) throw erroHttp(409, "Este e-mail já está cadastrado.");
+    if (await prisma.entregador.findFirst({ where: { cpf: { in: [soDig(b.cpf), String(b.cpf).trim()] } } })) throw erroHttp(409, "Este CPF já está cadastrado. Fale com a equipe.");
+    const { nomeCompleto, senha, telefone } = b;
 
     const entregador = await prisma.entregador.create({
       data: {
-        nomeCompleto, email, telefone, cpf, veiculoModelo, veiculoPlaca,
-        ...dadosEndereco(req.body),
-        veiculoTipo: ["MOTO", "BIKE", "CARRO"].includes(veiculoTipo) ? veiculoTipo : "MOTO",
+        nomeCompleto: String(nomeCompleto).trim(), email: emailNorm, telefone: String(telefone).trim(), cpf: soDig(b.cpf),
+        dataNascimento: nasc,
+        veiculoModelo: motorizado ? String(b.veiculoModelo).trim() : null,
+        veiculoPlaca: motorizado ? String(b.veiculoPlaca).trim().toUpperCase() : null,
+        veiculoAno: motorizado ? String(b.veiculoAno).trim() : null,
+        fotoUrl: b.fotoUrl, comprovanteResidenciaUrl: b.comprovanteResidenciaUrl,
+        fotoCnhUrl: motorizado ? b.fotoCnhUrl : null, documentoVeiculoUrl: motorizado ? b.documentoVeiculoUrl : null,
+        ...dadosEndereco(b),
+        veiculoTipo: veiculo,
         tipoEntrega: "PROPRIO",
         status: "EM_ANALISE",
         senhaHash: await bcrypt.hash(senha, 10),
@@ -189,7 +261,7 @@ router.post(
     await prisma.notificacao.create({
       data: { tipo: "cadastro", texto: `Novo entregador aguardando aprovação: ${nomeCompleto}.` },
     });
-    res.status(201).json({ ok: true, mensagem: "Cadastro enviado. Aguarde a aprovação da equipe.", entregador: semSenha(entregador) });
+    res.status(201).json({ ok: true, mensagem: "Cadastro enviado. Aguarde a aprovação da equipe.", entregador: paraApp(entregador) });
   })
 );
 
@@ -228,7 +300,7 @@ router.get(
   "/me",
   asyncHandler(async (req, res) => {
     const cfg = await prisma.configuracao.findFirst({ select: { raioConfirmacaoMetros: true } });
-    res.json({ ...semSenha(req.entregador), raioConfirmacaoMetros: cfg?.raioConfirmacaoMetros ?? 200 });
+    res.json({ ...paraApp(req.entregador), raioConfirmacaoMetros: cfg?.raioConfirmacaoMetros ?? 200 });
   })
 );
 
@@ -311,7 +383,7 @@ router.patch(
       para: online ? "ONLINE" : "OFFLINE", autor: autorEntregador(req),
     });
     if (data.lat != null) await registrarLocalizacao(entregador.id, data.lat, data.lng);
-    res.json(semSenha(entregador));
+    res.json(paraApp(entregador));
   })
 );
 
@@ -437,7 +509,7 @@ router.patch(
   asyncHandler(async (req, res) => {
     const dados = dadosEndereco(req.body);
     if (!dados.rua) throw erroHttp(400, "Informe pelo menos a rua.");
-    res.json(semSenha(await prisma.entregador.update({ where: { id: req.entregador.id }, data: dados })));
+    res.json(paraApp(await prisma.entregador.update({ where: { id: req.entregador.id }, data: dados })));
   })
 );
 

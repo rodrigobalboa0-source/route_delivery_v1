@@ -87,6 +87,21 @@ async function salvarCliente(comercioId, { telefone, nome, endereco, complemento
   });
 }
 
+// Ligar/desligar o retorno depois de criado: recalcula a taxa a partir da taxa sem acréscimo.
+// Devolve { valor, acrescimoRetorno, texto } ou null se o pedido não tem valor calculado.
+async function recalcularRetorno(atual, retorno) {
+  if (atual.valor == null || !!atual.retorno === !!retorno) return null;
+  const r2 = v => Math.round(v * 100) / 100;
+  const base = r2((atual.valor || 0) - (atual.acrescimoRetorno || 0));
+  const brl = v => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  if (retorno) {
+    const pct = await percentualRetorno();
+    const acrescimo = r2((base * pct) / 100);
+    return { valor: r2(base + acrescimo), acrescimoRetorno: acrescimo, texto: `Retorno ligado: taxa de ${brl(atual.valor)} para ${brl(base + acrescimo)} (+${pct}%).` };
+  }
+  return { valor: base, acrescimoRetorno: null, texto: `Retorno retirado: taxa de ${brl(atual.valor)} para ${brl(base)}.` };
+}
+
 async function percentualRetorno() {
   const c = await prisma.configuracao.findFirst({ select: { retornoPercentual: true } });
   return c?.retornoPercentual ?? 20;
@@ -280,4 +295,6 @@ module.exports = {
   salvarCliente,
   soDigitosTelefone,
   percentualRetorno,
+  recalcularRetorno,
+  posicaoInformada,
 };
