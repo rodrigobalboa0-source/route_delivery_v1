@@ -30,6 +30,7 @@ const validarTabelaKm = body => {
 // Tabela de comissões (ganho do entregador por entrega): percentual do valor OU faixas de km.
 const VEICULOS = ["MOTO", "BIKE", "CARRO"]; // enum Veiculo do schema
 const validarTabelaComissao = body => {
+  require("../services/financeiro.service").esquecerTabelasPadrao(); // a tabela padrão do veículo pode mudar
   const erro = msg => { const e = new Error(msg); e.status = 400; throw e; };
   const d = { ...body };
   const n = v => (v === undefined || v === null || v === "" ? null : Number(String(v).replace(",", ".")));

@@ -5,7 +5,7 @@ import * as Location from "expo-location";
 import { api } from "../api";
 import { assinarTempoReal } from "../tempoReal";
 import { Botao, Campo, Cartao, Confirmar, Erro, Selo, Vazio } from "../componentes";
-import { ETAPA, cor, enderecoLoja, hora, km } from "../tema";
+import { ETAPA, cor, enderecoLoja, hora, km, moeda } from "../tema";
 
 const INTERVALO_LISTAS_MS = 30000; // reserva: o tempo real (src/tempoReal.js) atualiza em ~2 s
 const INTERVALO_POSICAO_MS = 10000;
@@ -256,6 +256,7 @@ function EntregaAtiva({ p, posicao, raio = 200, onAtualizar, onErro }) {
         {p.complemento ? <Text style={st.etapaTexto}>{p.complemento}</Text> : null}
         {p.retorno ? <Text style={[st.etapaTexto, { color: cor.aviso, fontWeight: "700" }]}>↩ Com retorno: volte à loja depois de entregar</Text> : null}
       </View>
+      <Ganho p={p} />
       <InfoLinha rotulo="Distância" valor={p.distanciaKm != null ? km(p.distanciaKm) : null} />
       <InfoLinha rotulo="Pagamento" valor={p.formaPagamento} />
       <InfoLinha rotulo="Observação" valor={p.observacao} destaque />
@@ -288,9 +289,21 @@ function EntregaAtiva({ p, posicao, raio = 200, onAtualizar, onErro }) {
   );
 }
 
+// "Você ganha R$ 8,50" (comissão da tabela, padrão do veículo ou repasse fixo; com o adicional de retorno).
+function Ganho({ p }) {
+  if (p.ganhoEntregador == null) return null;
+  return (
+    <View style={st.ganho}>
+      <Text style={st.ganhoRotulo}>Você ganha</Text>
+      <Text style={st.ganhoValor}>{moeda(p.ganhoEntregador)}</Text>
+    </View>
+  );
+}
+
 function DadosCorrida({ p }) {
   return (
     <>
+      <Ganho p={p} />
       <InfoLinha rotulo="Coleta" valor={enderecoLoja(p.comercio)} />
       <InfoLinha rotulo="Entrega" valor={p.complemento ? `${p.endereco} · ${p.complemento}` : p.endereco} />
       {p.retorno ? <InfoLinha rotulo="Retorno" valor="Sim — volta à loja depois de entregar" destaque /> : null}
@@ -411,6 +424,9 @@ const st = StyleSheet.create({
   acao: { flexGrow: 1 },
   distancia: { color: cor.aviso, fontSize: 14, fontWeight: "600" },
   externo: { color: "#ea1d2c", fontSize: 14, fontWeight: "800" },
+  ganho: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: "rgba(34,197,94,0.12)", borderColor: "rgba(34,197,94,0.4)", borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },
+  ganhoRotulo: { color: cor.texto2, fontSize: 14, fontWeight: "600" },
+  ganhoValor: { color: cor.ok, fontSize: 20, fontWeight: "800" },
   popFundo: { flex: 1, backgroundColor: "rgba(3,8,18,0.75)", justifyContent: "flex-end", padding: 14 },
   pop: { backgroundColor: cor.superficie, borderRadius: 18, borderWidth: 2, borderColor: cor.ok, overflow: "hidden", maxWidth: 520, width: "100%", alignSelf: "center" },
   popFaixa: { backgroundColor: cor.ok, paddingHorizontal: 16, paddingVertical: 10, flexDirection: "row", justifyContent: "space-between", alignItems: "center" },

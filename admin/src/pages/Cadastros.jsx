@@ -177,7 +177,7 @@ const CADASTROS = [
   },
   {
     chave: "tabela-comissoes", titulo: "Tabela de comissões", area: "precificacao",
-    descricao: "Quanto o entregador ganha por entrega: cadastre vários km e valores (faixas) ou um percentual do valor da entrega. Vincule a tabela ao comércio no cadastro dele. O km é o da rota da entrega.",
+    descricao: "Quanto o entregador ganha por entrega: cadastre vários km e valores (faixas) ou um percentual do valor da entrega. Vincule a tabela ao comércio no cadastro dele; comércio sem tabela vinculada usa a primeira tabela da categoria do veículo do entregador (tabela padrão). O km é o da rota da entrega.",
     rotuloItem: "tabela de comissão",
     modalLargo: true,
     padrao: { tipoCalculo: "FAIXAS", categoria: "MOTO", tipoRetorno: "REPASSE_LOJA" },

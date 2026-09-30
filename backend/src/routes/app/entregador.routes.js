@@ -12,7 +12,7 @@ const { distanciaLinhaRetaKm, buscarEnderecos } = require("../../utils/geo");
 const { COM_ENTREGADOR, ETAPAS_ENTREGADOR, ROTULOS } = require("../../utils/statusPedido");
 const { INCLUDE_PADRAO, erroHttp, registrarLog, aceitarPedido } = require("../../services/pedidos.service");
 const { obterRegras } = require("../../services/saque.service");
-const { comissaoDoPedido, entregasDoPeriodo } = require("../../services/financeiro.service");
+const { comissaoDoPedido, entregasDoPeriodo, ganhoParaApp } = require("../../services/financeiro.service");
 const { versaoEntregador, liberarAgendados } = require("../../services/tempoReal.service");
 const { vigentesPara, avisosPara, marcarVisto, publico: publicoPromocao } = require("../../services/promocoes.service");
 const { carimbos, registrarStatusPedido, registrarStatusEntregador, registrarLocalizacao } = require("../../services/historico.service");
@@ -364,11 +364,13 @@ router.get(
       return { ...p, distanciaAteColetaKm };
     });
 
-    res.json(
+    // Com o ganho do entregador em cada corrida (tabela de comissão do comércio, padrão do veículo ou repasse fixo).
+    res.json(await ganhoParaApp(
       comDistancia
         .filter(p => !raio || p.distanciaAteColetaKm == null || p.distanciaAteColetaKm <= raio)
-        .sort((a, b) => (a.distanciaAteColetaKm ?? Infinity) - (b.distanciaAteColetaKm ?? Infinity))
-    );
+        .sort((a, b) => (a.distanciaAteColetaKm ?? Infinity) - (b.distanciaAteColetaKm ?? Infinity)),
+      req.entregador
+    ));
   })
 );
 
@@ -382,7 +384,7 @@ router.get(
     const pedidos = await prisma.pedido.findMany({
       where, include: INCLUDE_PEDIDO_APP, orderBy: { updatedAt: "desc" }, take: 100,
     });
-    res.json(pedidos);
+    res.json(await ganhoParaApp(pedidos, req.entregador));
   })
 );
 
@@ -391,10 +393,11 @@ router.get(
   "/pedidos/:id",
   asyncHandler(async (req, res) => {
     await pedidoDoEntregador(req);
-    res.json(await prisma.pedido.findUnique({
+    const p = await prisma.pedido.findUnique({
       where: { id: req.params.id },
       include: { ...INCLUDE_PEDIDO_APP, logs: { orderBy: { createdAt: "asc" } } },
-    }));
+    });
+    res.json((await ganhoParaApp([p], req.entregador))[0]);
   })
 );
 
