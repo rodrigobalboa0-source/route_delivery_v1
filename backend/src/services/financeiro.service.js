@@ -141,8 +141,19 @@ async function ganhoParaApp(pedidos, entregador) {
   );
   return pedidos.map((p, i) => {
     const c = comissaoDoPedido(completos[i]);
-    return { ...p, ganhoEntregador: c.tipo === "SEM_REGRA" ? null : c.valor };
+    return { ...p, ganhoEntregador: c.tipo === "SEM_REGRA" ? null : c.valor, ...kmDaEntrega(p) };
   });
+}
+
+// Km da entrega (loja -> cliente): o da rota calculada; sem ele, estimativa pela linha reta × 1,3 (ruas não são retas).
+function kmDaEntrega(p) {
+  if (p.distanciaKm != null) return { kmEntrega: Number(p.distanciaKm), kmEstimado: false };
+  const loja = p.comercio?.enderecos?.[0];
+  if (loja?.lat == null || p.latDestino == null) return { kmEntrega: null, kmEstimado: false };
+  const rad = g => (g * Math.PI) / 180;
+  const h = Math.sin(rad(p.latDestino - loja.lat) / 2) ** 2 + Math.cos(rad(loja.lat)) * Math.cos(rad(p.latDestino)) * Math.sin(rad(p.lngDestino - loja.lng) / 2) ** 2;
+  const reta = 2 * 6371 * Math.asin(Math.sqrt(h));
+  return { kmEntrega: Number((reta * 1.3).toFixed(1)), kmEstimado: true };
 }
 
 module.exports = { r2, moeda, comissaoDoPedido, entregasDoPeriodo, INCLUDE_COMISSAO, tabelasPadrao, esquecerTabelasPadrao, comTabelaPadrao, ganhoParaApp };

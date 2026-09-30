@@ -257,7 +257,7 @@ function EntregaAtiva({ p, posicao, raio = 200, onAtualizar, onErro }) {
         {p.retorno ? <Text style={[st.etapaTexto, { color: cor.aviso, fontWeight: "700" }]}>↩ Com retorno: volte à loja depois de entregar</Text> : null}
       </View>
       <Ganho p={p} />
-      <InfoLinha rotulo="Distância" valor={p.distanciaKm != null ? km(p.distanciaKm) : null} />
+      <Km p={p} comAteLoja={false} />
       <InfoLinha rotulo="Pagamento" valor={p.formaPagamento} />
       <InfoLinha rotulo="Observação" valor={p.observacao} destaque />
       {distancia != null && (
@@ -300,14 +300,36 @@ function Ganho({ p }) {
   );
 }
 
+// Quilômetros da corrida: até a loja (da sua posição), da entrega (loja -> cliente) e o total.
+function Km({ p, comAteLoja = true }) {
+  const ateLoja = comAteLoja ? p.distanciaAteColetaKm : null;
+  const entrega = p.kmEntrega ?? p.distanciaKm ?? null;
+  if (ateLoja == null && entrega == null) return null;
+  const itens = [
+    ateLoja != null && { rotulo: "Até a loja", valor: km(ateLoja) },
+    entrega != null && { rotulo: p.kmEstimado ? "Entrega (aprox.)" : "Entrega", valor: `${p.kmEstimado ? "≈ " : ""}${km(entrega)}` },
+    ateLoja != null && entrega != null && { rotulo: "Total", valor: `${p.kmEstimado ? "≈ " : ""}${km(ateLoja + entrega)}`, destaque: true },
+  ].filter(Boolean);
+  return (
+    <View style={st.km}>
+      {itens.map(i => (
+        <View key={i.rotulo} style={[st.kmItem, i.destaque && st.kmTotal]}>
+          <Text style={st.kmValor}>{i.valor}</Text>
+          <Text style={st.kmRotulo}>{i.rotulo}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 function DadosCorrida({ p }) {
   return (
     <>
       <Ganho p={p} />
+      <Km p={p} />
       <InfoLinha rotulo="Coleta" valor={enderecoLoja(p.comercio)} />
       <InfoLinha rotulo="Entrega" valor={p.complemento ? `${p.endereco} · ${p.complemento}` : p.endereco} />
       {p.retorno ? <InfoLinha rotulo="Retorno" valor="Sim — volta à loja depois de entregar" destaque /> : null}
-      <InfoLinha rotulo="Percurso" valor={p.distanciaKm != null ? km(p.distanciaKm) : null} />
       {p.agendadoPara ? <InfoLinha rotulo="Agendada" valor={`para ${hora(p.agendadoPara)}`} /> : null}
       <InfoLinha rotulo="Pronto desde" valor={hora(p.prontoEm || p.updatedAt)} />
     </>
@@ -424,6 +446,11 @@ const st = StyleSheet.create({
   acao: { flexGrow: 1 },
   distancia: { color: cor.aviso, fontSize: 14, fontWeight: "600" },
   externo: { color: "#ea1d2c", fontSize: 14, fontWeight: "800" },
+  km: { flexDirection: "row", gap: 8 },
+  kmItem: { flex: 1, backgroundColor: cor.superficie2, borderRadius: 10, paddingVertical: 8, alignItems: "center", borderWidth: 1, borderColor: cor.borda },
+  kmTotal: { borderColor: cor.primariaClara },
+  kmValor: { color: cor.texto, fontSize: 17, fontWeight: "800" },
+  kmRotulo: { color: cor.texto3, fontSize: 12 },
   ganho: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: "rgba(34,197,94,0.12)", borderColor: "rgba(34,197,94,0.4)", borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },
   ganhoRotulo: { color: cor.texto2, fontSize: 14, fontWeight: "600" },
   ganhoValor: { color: cor.ok, fontSize: 20, fontWeight: "800" },

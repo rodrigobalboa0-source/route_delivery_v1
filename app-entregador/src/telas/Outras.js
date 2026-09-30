@@ -59,12 +59,30 @@ export function Carteira() {
           <Text style={st.periodoTitulo}>Ganhos de hoje</Text>
           <Text style={[st.grande, { fontSize: 30 }]}>{moeda(g.hoje.ganho)}</Text>
           <Text style={st.periodoLinha}>{moeda(g.hoje.porEntregas)} pelas entregas · {moeda(g.hoje.comissoes)} em comissões</Text>
+          <Text style={st.periodoLinha}>{g.hoje.entregas} entrega(s) hoje · {km(g.hoje.distanciaKm || 0)} rodados nas entregas</Text>
         </Cartao>
       )}
       <View style={st.grade}>
         <Periodo titulo="7 dias" g={g?.ultimos7Dias} />
         <Periodo titulo="Este mês" g={g?.mes} />
       </View>
+      {g?.ultimas?.length > 0 && (
+        <>
+          <Text style={st.secao}>Últimas entregas</Text>
+          <Cartao>
+            {g.ultimas.map(u => (
+              <View key={u.id} style={st.entregaLinha}>
+                <View style={{ flex: 1 }}>
+                  <Text style={st.texto} numberOfLines={1}>{u.comercio}</Text>
+                  <Text style={st.textoPequeno}>{dataCurta(u.entregueEm)} · {u.codigo}</Text>
+                </View>
+                <Text style={st.entregaKm}>{u.distanciaKm != null ? km(u.distanciaKm) : "— km"}</Text>
+                <Text style={st.entregaGanho}>{moeda(u.ganho)}</Text>
+              </View>
+            ))}
+          </Cartao>
+        </>
+      )}
       <Text style={st.secao}>Comissões</Text>
       {c && (
         <View style={st.grade}>
@@ -304,6 +322,9 @@ const st = StyleSheet.create({
   premio: { color: cor.ok, fontSize: 15, fontWeight: "700" },
   nome: { color: cor.texto, fontSize: 22, fontWeight: "800" },
   perfilLinha: { gap: 2 },
+  entregaLinha: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: cor.borda },
+  entregaKm: { color: cor.texto2, fontSize: 14, fontWeight: "700", minWidth: 58, textAlign: "right" },
+  entregaGanho: { color: cor.ok, fontSize: 15, fontWeight: "800", minWidth: 72, textAlign: "right" },
   balao: { maxWidth: "82%", borderRadius: 14, paddingHorizontal: 12, paddingVertical: 8, gap: 2 },
   balaoMeu: { alignSelf: "flex-end", backgroundColor: cor.primaria, borderBottomRightRadius: 4 },
   balaoEquipe: { alignSelf: "flex-start", backgroundColor: cor.superficie2, borderBottomLeftRadius: 4 },

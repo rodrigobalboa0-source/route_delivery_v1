@@ -681,7 +681,12 @@ router.get(
       };
     };
 
-    res.json({ hoje: somar(hoje), ultimos7Dias: somar(semana), mes: somar(mes) });
+    // Últimas entregas (mais recentes primeiro) com o km e o ganho de cada uma.
+    const ultimas = comComissao.slice(-30).reverse().map(({ p, valor }) => ({
+      id: p.id, codigo: p.codigo, comercio: p.comercio?.nomeFantasia || "—",
+      entregueEm: p.entregueEm, distanciaKm: p.distanciaKm, ganho: r2(valor),
+    }));
+    res.json({ hoje: somar(hoje), ultimos7Dias: somar(semana), mes: somar(mes), ultimas });
   })
 );
 
