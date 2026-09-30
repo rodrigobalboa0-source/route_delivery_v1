@@ -17,9 +17,12 @@ function Centralizar({ posicao, pedido }) {
     if (!posicao) return;
     if (!feito.current || pedido) {
       feito.current = true;
-      map.setView([posicao.lat, posicao.lng], 14, { animate: true });
+      // Primeira vez sem animação; ao recentralizar, animado.
+      if (map.getPane("mapPane")) map.setView([posicao.lat, posicao.lng], 14, { animate: feito.current && !!pedido });
     }
   }, [posicao?.lat, posicao?.lng, pedido, map]);
+  // Ao sair da tela do mapa no meio de uma animação, para a animação (evita erro do Leaflet com o mapa já removido).
+  useEffect(() => () => { try { map.stop(); } catch { /* mapa já removido */ } }, [map]);
   return null;
 }
 
@@ -33,7 +36,8 @@ export default function Mapa({ posicao, entregador, online, marcadores = [], rec
     // isolation + zIndex 0: as camadas do Leaflet (z-index 400+) ficam contidas no mapa e não cobrem
     // o botão Online/Offline, o cartão de Ganhos e os atalhos de baixo.
     <div style={{ position: "absolute", inset: 0, zIndex: 0, isolation: "isolate" }}>
-      <MapContainer center={[centro.lat, centro.lng]} zoom={posicao ? 14 : 12} zoomControl={false} style={{ height: "100%", width: "100%" }}>
+      {/* zoomAnimation desligado: a animação de zoom terminando depois de trocar de tela quebrava o Leaflet. */}
+      <MapContainer center={[centro.lat, centro.lng]} zoom={posicao ? 14 : 12} zoomControl={false} zoomAnimation={false} style={{ height: "100%", width: "100%" }}>
         <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
         <Centralizar posicao={posicao} pedido={recentralizar} />
         {marcadores.map(m => (

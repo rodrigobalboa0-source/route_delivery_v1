@@ -1,13 +1,13 @@
 // Login e auto-cadastro do entregador (o cadastro entra "em análise" até o ADM aprovar).
 import { useState } from "react";
 import { Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { api, salvarToken } from "../api";
+import { aparelhoAtual, api, salvarToken } from "../api";
 import { Botao, Campo, Cartao, Erro } from "../componentes";
 import BuscaEndereco from "../BuscaEndereco";
 import { VEICULOS, cor } from "../tema";
 
-function Login({ onEntrou, onCadastro }) {
-  const [email, setEmail] = useState("");
+function Login({ onEntrou, onCadastro, onEsqueci, emailInicial = "", aviso }) {
+  const [email, setEmail] = useState(emailInicial);
   const [senha, setSenha] = useState("");
   const [erro, setErro] = useState(null);
   const [carregando, setCarregando] = useState(false);
@@ -16,7 +16,7 @@ function Login({ onEntrou, onCadastro }) {
     setErro(null);
     setCarregando(true);
     try {
-      const r = await api.post("/login", { email: email.trim(), senha });
+      const r = await api.post("/login", { email: email.trim(), senha, ...(await aparelhoAtual()) });
       await salvarToken(r.token);
       onEntrou(r.entregador);
     } catch (e) {
@@ -29,11 +29,78 @@ function Login({ onEntrou, onCadastro }) {
   return (
     <Cartao>
       <Text style={st.titulo}>Entrar</Text>
+      {aviso ? <View style={st.aviso}><Text style={st.avisoTexto}>{aviso}</Text></View> : null}
       <Campo rotulo="E-mail" value={email} onChangeText={setEmail} autoCapitalize="none" autoCorrect={false} keyboardType="email-address" autoComplete="email" textContentType="emailAddress" />
       <Campo rotulo="Senha" value={senha} onChangeText={setSenha} secureTextEntry autoComplete="password" textContentType="password" onSubmitEditing={entrar} />
       <Erro texto={erro} />
       <Botao titulo="Entrar" onPress={entrar} carregando={carregando} desabilitado={!email || !senha} />
+      <Botao titulo="Esqueci minha senha" variante="fantasma" onPress={() => onEsqueci(email.trim())} />
       <Botao titulo="Quero me cadastrar como entregador" variante="fantasma" onPress={onCadastro} />
+    </Cartao>
+  );
+}
+
+// Esqueci minha senha: 1) e-mail -> código de 6 dígitos chega no e-mail; 2) código + nova senha.
+function EsqueciSenha({ emailInicial = "", onVoltar }) {
+  const [etapa, setEtapa] = useState("email");
+  const [email, setEmail] = useState(emailInicial);
+  const [codigo, setCodigo] = useState("");
+  const [senha, setSenha] = useState("");
+  const [senha2, setSenha2] = useState("");
+  const [erro, setErro] = useState(null);
+  const [info, setInfo] = useState(null);
+  const [carregando, setCarregando] = useState(false);
+
+  async function pedirCodigo() {
+    setErro(null); setCarregando(true);
+    try {
+      const r = await api.post("/esqueci-senha", { email: email.trim() });
+      setInfo(r.devCodigo ? `${r.mensagem} (teste: ${r.devCodigo})` : r.mensagem);
+      setEtapa("codigo");
+    } catch (e) {
+      setErro(e.message);
+    } finally {
+      setCarregando(false);
+    }
+  }
+
+  async function redefinir() {
+    setErro(null);
+    if (senha !== senha2) { setErro("As duas senhas não são iguais."); return; }
+    setCarregando(true);
+    try {
+      const r = await api.post("/redefinir-senha", { email: email.trim(), codigo, novaSenha: senha });
+      onVoltar(email.trim(), r.mensagem);
+    } catch (e) {
+      setErro(e.message);
+    } finally {
+      setCarregando(false);
+    }
+  }
+
+  return (
+    <Cartao>
+      <Text style={st.titulo}>Esqueci minha senha</Text>
+      {etapa === "email" ? (
+        <>
+          <Text style={st.texto}>Digite o e-mail do seu cadastro. Vamos enviar um código de 6 dígitos para você criar uma nova senha.</Text>
+          <Campo rotulo="E-mail cadastrado" value={email} onChangeText={setEmail} autoCapitalize="none" autoCorrect={false} keyboardType="email-address" onSubmitEditing={pedirCodigo} />
+          <Erro texto={erro} />
+          <Botao titulo="Enviar código" onPress={pedirCodigo} carregando={carregando} desabilitado={!email.includes("@")} />
+        </>
+      ) : (
+        <>
+          {info ? <View style={st.aviso}><Text style={st.avisoTexto}>{info}</Text></View> : null}
+          <Campo rotulo="Código de 6 dígitos" value={codigo} onChangeText={t => setCodigo(t.replace(/\D/g, "").slice(0, 6))} keyboardType="number-pad" maxLength={6} />
+          <Campo rotulo="Nova senha (mínimo 6)" value={senha} onChangeText={setSenha} secureTextEntry />
+          <Campo rotulo="Repita a nova senha" value={senha2} onChangeText={setSenha2} secureTextEntry onSubmitEditing={redefinir} />
+          <Erro texto={erro} />
+          <Botao titulo="Salvar nova senha" onPress={redefinir} carregando={carregando} desabilitado={codigo.length !== 6 || senha.length < 6 || !senha2} />
+          <Botao titulo="Não recebi — enviar outro código" variante="fantasma" onPress={() => { setEtapa("email"); setCodigo(""); }} />
+          <Text style={st.dica}>Ao criar a nova senha, o celular que estava conectado na sua conta é desconectado.</Text>
+        </>
+      )}
+      <Botao titulo="Voltar para o login" variante="fantasma" onPress={() => onVoltar(email.trim())} />
     </Cartao>
   );
 }
@@ -117,16 +184,21 @@ function Cadastro({ onVoltar }) {
   );
 }
 
-export default function Entrada({ onEntrou }) {
+export default function Entrada({ onEntrou, aviso }) {
   const [modo, setModo] = useState("login");
+  const [email, setEmail] = useState("");
+  const [msg, setMsg] = useState(aviso || null);
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <ScrollView contentContainerStyle={st.tela} keyboardShouldPersistTaps="handled">
         <Image source={require("../../assets/logo-route-delivery.png")} style={st.logo} resizeMode="contain" accessibilityLabel="Route Delivery" />
         <Text style={st.subtitulo}>App do entregador</Text>
-        {modo === "login"
-          ? <Login onEntrou={onEntrou} onCadastro={() => setModo("cadastro")} />
-          : <Cadastro onVoltar={() => setModo("login")} />}
+        {modo === "login" && (
+          <Login key={email} emailInicial={email} aviso={msg} onEntrou={onEntrou} onCadastro={() => setModo("cadastro")}
+            onEsqueci={e => { setEmail(e); setMsg(null); setModo("esqueci"); }} />
+        )}
+        {modo === "esqueci" && <EsqueciSenha emailInicial={email} onVoltar={(e, m) => { setEmail(e || ""); setMsg(m || null); setModo("login"); }} />}
+        {modo === "cadastro" && <Cadastro onVoltar={() => setModo("login")} />}
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -141,6 +213,9 @@ const st = StyleSheet.create({
   rotulo: { color: cor.texto2, fontSize: 13 },
   opcoes: { flexDirection: "row", gap: 8 },
   linha2: { flexDirection: "row", gap: 10 },
+  aviso: { backgroundColor: "rgba(42,120,214,0.15)", borderColor: "rgba(42,120,214,0.45)", borderWidth: 1, borderRadius: 10, padding: 12 },
+  avisoTexto: { color: cor.texto, fontSize: 14, lineHeight: 20 },
+  dica: { color: cor.texto3, fontSize: 13, lineHeight: 18 },
   opcao: { flex: 1, paddingVertical: 11, borderRadius: 10, borderWidth: 1, borderColor: cor.borda, alignItems: "center", backgroundColor: cor.superficie2 },
   opcaoAtiva: { backgroundColor: cor.primaria, borderColor: cor.primaria },
   opcaoTexto: { color: cor.texto2, fontWeight: "700" },

@@ -4,6 +4,7 @@ const bcrypt = require("bcryptjs");
 const prisma = require("../lib/prisma");
 const { asyncHandler } = require("../middleware/errorHandler");
 const { requireAuth, requireTipo, assinarToken, TIPOS } = require("../middleware/auth");
+const { enviarEmail, htmlSimples } = require("../services/email.service");
 
 const router = express.Router();
 
@@ -59,16 +60,21 @@ router.post(
       data: { token, contaId: conta.id, expiraEm },
     });
 
+    const origemPainel = process.env.PAINEL_URL || req.get("origin") || "https://routedelivery.vercel.app";
+    const link = `${origemPainel.replace(/\/$/, "")}/redefinir-senha?token=${token}`;
     const resposta = { ...mensagemPadrao };
+    // Link enviado por e-mail (Configurações › E-mail). Fora de produção, também volta na resposta para testes.
+    await enviarEmail({
+      para: conta.email,
+      assunto: "Redefinir sua senha — Route Delivery",
+      texto: `Olá, ${conta.nome}. Para criar uma nova senha do painel, abra: ${link} (vale por 1 hora).`,
+      html: htmlSimples({ titulo: "Redefinir senha do painel", paragrafos: [`Olá, ${conta.nome}.`, `Para criar uma nova senha, <a href="${link}">clique aqui</a>. O link vale por 1 hora.`] }),
+    }).catch(err => console.error("[esqueci-senha] e-mail não enviado:", err.message));
     if (process.env.NODE_ENV !== "production") {
-      const origem = process.env.CORS_ORIGIN || "http://localhost:5173";
       resposta.devToken = token;
-      resposta.devLink = `${origem}/redefinir-senha?token=${token}`;
-      resposta.devAviso = "Este campo só aparece fora de produção. Em produção, envie o link por e-mail e nunca o retorne na API.";
+      resposta.devLink = link;
+      resposta.devAviso = "Este campo só aparece fora de produção.";
     }
-
-    // TODO produção: enviar `token` por e-mail para `conta.email` usando um provedor real
-    // (nodemailer + SMTP, SendGrid, Resend, Postmark, etc.) em vez de devolvê-lo aqui.
 
     res.json(resposta);
   })

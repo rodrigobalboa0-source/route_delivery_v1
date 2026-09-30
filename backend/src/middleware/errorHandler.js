@@ -18,7 +18,7 @@ function errorHandler(err, req, res, next) {
   }
 
   const status = err.status || 500;
-  res.status(status).json({ erro: err.message || "Erro interno no servidor." });
+  res.status(status).json({ erro: err.message || "Erro interno no servidor.", ...(err.extra || {}) });
 }
 
 function asyncHandler(fn) {

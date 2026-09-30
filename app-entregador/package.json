@@ -10,6 +10,7 @@
     "expo-font": "~57.0.4",
     "expo-location": "~57.0.20",
     "expo-status-bar": "~57.0.1",
+    "expo-updates": "~57.0.24",
     "leaflet": "^1.9.4",
     "react": "19.2.3",
     "react-dom": "19.2.3",
@@ -24,7 +25,8 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "web:build": "expo export --platform web && node scripts/preparar-web.js"
+    "web:build": "expo export --platform web && node scripts/preparar-web.js",
+    "atualizar-celulares": "eas update --channel teste --auto --non-interactive"
   },
   "private": true
 }

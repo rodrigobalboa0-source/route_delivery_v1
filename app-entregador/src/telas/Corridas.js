@@ -167,6 +167,7 @@ export function useOperacao(entregador, setEntregador) {
 
   return {
     ativos, disponiveis, posicao, ganhoHoje, erro, setErro, aviso, online, mudandoStatus, aceitando, alternarOnline, aceitar, recusar, atualizarTudo,
+    raio: entregador?.raioConfirmacaoMetros || 200,
     novaCorrida: novas[0] || null, depois,
   };
 }
@@ -183,19 +184,42 @@ function InfoLinha({ rotulo, valor, destaque }) {
   );
 }
 
-function EntregaAtiva({ p, onAtualizar, onErro }) {
+// Distância em metros entre dois pontos (para mostrar quanto falta até a loja/cliente).
+function metrosEntre(a, b) {
+  if (!a || !b || b.lat == null) return null;
+  const R = 6371000, rad = g => (g * Math.PI) / 180;
+  const h = Math.sin(rad(b.lat - a.lat) / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(rad(b.lng - a.lng) / 2) ** 2;
+  return Math.round(2 * R * Math.asin(Math.sqrt(h)));
+}
+const textoDistancia = m => (m >= 1000 ? `${(m / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} km` : `${m} m`);
+
+// Posição do GPS na hora do toque (a etapa só é aceita perto da loja / do cliente).
+async function posicaoAgora() {
+  const perm = await Location.requestForegroundPermissionsAsync().catch(() => ({ status: "denied" }));
+  if (perm.status !== "granted") throw new Error("Permita o acesso à localização para confirmar a etapa.");
+  const pos = await Promise.race([
+    Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High }),
+    new Promise((_, rej) => setTimeout(() => rej(new Error("O GPS demorou para responder. Vá para um lugar aberto e tente de novo.")), 20000)),
+  ]);
+  return { lat: pos.coords.latitude, lng: pos.coords.longitude, precisao: pos.coords.accuracy };
+}
+
+function EntregaAtiva({ p, posicao, raio = 200, onAtualizar, onErro }) {
   const [ocupado, setOcupado] = useState(false);
-  const [desistir, setDesistir] = useState(false);
-  const [motivo, setMotivo] = useState("");
   const etapa = ETAPA[p.status];
   const loja = p.comercio?.enderecos?.[0];
   const indoParaLoja = ["ATRIBUIDO", "NA_LOJA"].includes(p.status);
+  // Onde a próxima etapa precisa ser confirmada: Na loja / Saí para entrega -> loja; Cheguei no cliente / Finalizar -> cliente.
+  const alvoLoja = ["ATRIBUIDO", "NA_LOJA"].includes(p.status);
+  const alvo = alvoLoja ? (loja?.lat != null ? { lat: loja.lat, lng: loja.lng } : null) : (p.latDestino != null ? { lat: p.latDestino, lng: p.lngDestino } : null);
+  const distancia = metrosEntre(posicao, alvo);
 
   async function avancar() {
     setOcupado(true);
     try {
-      if (etapa.proxima === "ENTREGUE") await api.patch(`/pedidos/${p.id}/finalizar`);
-      else await api.patch(`/pedidos/${p.id}/etapa`, { status: etapa.proxima });
+      const local = await posicaoAgora();
+      if (etapa.proxima === "ENTREGUE") await api.patch(`/pedidos/${p.id}/finalizar`, local);
+      else await api.patch(`/pedidos/${p.id}/etapa`, { status: etapa.proxima, ...local });
       await onAtualizar();
     } catch (e) {
       onErro(e.message);
@@ -204,22 +228,13 @@ function EntregaAtiva({ p, onAtualizar, onErro }) {
     }
   }
 
-  async function confirmarDesistencia() {
-    setDesistir(false);
-    try {
-      await api.patch(`/pedidos/${p.id}/desistir`, { motivo: motivo.trim() || undefined });
-      setMotivo("");
-      await onAtualizar();
-    } catch (e) {
-      onErro(e.message);
-    }
-  }
-
   return (
     <Cartao estilo={{ borderColor: p.status === "ATRASADO" ? cor.critico : cor.primaria }}>
       <View style={st.topoCartao}>
         <Text style={st.codigo}>{p.codigo}</Text>
-        <Selo texto={etapa?.rotulo || p.status} corFundo={p.status === "ATRASADO" ? "rgba(239,68,68,0.18)" : "rgba(42,120,214,0.2)"} corTexto={p.status === "ATRASADO" ? "#fca5a5" : cor.primariaClara} />
+        {p.status !== "ATRIBUIDO" && (
+          <Selo texto={etapa?.rotulo || p.status} corFundo={p.status === "ATRASADO" ? "rgba(239,68,68,0.18)" : "rgba(42,120,214,0.2)"} corTexto={p.status === "ATRASADO" ? "#fca5a5" : cor.primariaClara} />
+        )}
       </View>
       <View style={[st.etapaBloco, indoParaLoja && st.etapaAtual]}>
         <Text style={st.etapaTitulo}>🏪 Coleta · {p.comercio?.nomeFantasia}</Text>
@@ -234,6 +249,12 @@ function EntregaAtiva({ p, onAtualizar, onErro }) {
       <InfoLinha rotulo="Distância" valor={p.distanciaKm != null ? km(p.distanciaKm) : null} />
       <InfoLinha rotulo="Pagamento" valor={p.formaPagamento} />
       <InfoLinha rotulo="Observação" valor={p.observacao} destaque />
+      {distancia != null && (
+        <Text style={[st.distancia, distancia <= raio && { color: cor.ok }]}>
+          📍 Você está a {textoDistancia(distancia)} {alvoLoja ? "da loja" : "do cliente"}
+          {distancia > raio ? ` — chegue ao local para confirmar (até ${raio} m)` : " — pode confirmar"}
+        </Text>
+      )}
       {etapa && <Botao titulo={etapa.botao} variante={etapa.proxima === "ENTREGUE" ? "sucesso" : "primario"} onPress={avancar} carregando={ocupado} />}
       <View style={st.acoes}>
         {indoParaLoja
@@ -242,10 +263,6 @@ function EntregaAtiva({ p, onAtualizar, onErro }) {
         {indoParaLoja && p.comercio?.telefone ? <Botao pequeno variante="secundario" titulo="Ligar p/ loja" onPress={() => ligar(p.comercio.telefone)} estilo={st.acao} /> : null}
         {!indoParaLoja && p.clienteTelefone ? <Botao pequeno variante="secundario" titulo="Ligar p/ cliente" onPress={() => ligar(p.clienteTelefone)} estilo={st.acao} /> : null}
       </View>
-      <Botao pequeno variante="fantasma" titulo="Desistir desta corrida" onPress={() => setDesistir(true)} />
-      <Confirmar visivel={desistir} titulo="Desistir da corrida?" texto="O pedido volta para a fila e outro entregador poderá aceitar." rotuloOk="Desistir" variante="perigo" onOk={confirmarDesistencia} onCancelar={() => setDesistir(false)}>
-        <Campo rotulo="Motivo (opcional)" value={motivo} onChangeText={setMotivo} placeholder="Ex.: pneu furou" />
-      </Confirmar>
     </Cartao>
   );
 }
@@ -352,7 +369,7 @@ export function ListaAndamento({ op }) {
     <ScrollView contentContainerStyle={st.tela} refreshControl={refresh}>
       <Erro texto={op.erro} />
       {op.ativos.length === 0 && <Vazio titulo="Nenhuma entrega em andamento" texto="Aceite uma corrida em Disponíveis para começar." />}
-      {op.ativos.map(p => <EntregaAtiva key={p.id} p={p} onAtualizar={op.atualizarTudo} onErro={op.setErro} />)}
+      {op.ativos.map(p => <EntregaAtiva key={p.id} p={p} posicao={op.posicao} raio={op.raio} onAtualizar={op.atualizarTudo} onErro={op.setErro} />)}
     </ScrollView>
   );
 }
@@ -371,6 +388,7 @@ const st = StyleSheet.create({
   linhaValor: { color: cor.texto2, fontSize: 14, flex: 1 },
   acoes: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   acao: { flexGrow: 1 },
+  distancia: { color: cor.aviso, fontSize: 14, fontWeight: "600" },
   popFundo: { flex: 1, backgroundColor: "rgba(3,8,18,0.75)", justifyContent: "flex-end", padding: 14 },
   pop: { backgroundColor: cor.superficie, borderRadius: 18, borderWidth: 2, borderColor: cor.ok, overflow: "hidden", maxWidth: 520, width: "100%", alignSelf: "center" },
   popFaixa: { backgroundColor: cor.ok, paddingHorizontal: 16, paddingVertical: 10, flexDirection: "row", justifyContent: "space-between", alignItems: "center" },

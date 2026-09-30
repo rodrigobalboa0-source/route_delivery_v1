@@ -2,7 +2,7 @@
 // Home com mapa em tela cheia (online/offline e ganhos por cima), atalhos Home/Disponíveis/Em Andamento
 // embaixo e menu lateral (Entregas, Mensagens, Carteira, Conta, Ajuda). Conecta no mesmo sistema do painel ADM.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Image, Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, AppState, Image, Modal, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
@@ -14,12 +14,44 @@ import Mapa from "./src/mapa/Mapa";
 import Entrada from "./src/telas/Entrada";
 import { ListaAndamento, ListaDisponiveis, PopupCorrida, useOperacao } from "./src/telas/Corridas";
 import { Carteira, Mensagens, Perfil, Promocoes, Treinamento } from "./src/telas/Outras";
+import Ranking from "./src/telas/Ranking";
 
-const VERSAO = "v1.2.0";
+const VERSAO = "v1.3.0";
 const TITULOS = {
   home: "Home", disponiveis: "Disponíveis", andamento: "Em andamento", promocao: "Promoção",
-  mensagens: "Mensagens", carteira: "Carteira", conta: "Conta", treinamento: "Treinamento",
+  mensagens: "Mensagens", carteira: "Carteira", conta: "Conta", treinamento: "Treinamento", ranking: "Ranking",
 };
+
+// Atualização automática (EAS Update): ao abrir o app e ao voltar para ele, baixa a versão nova
+// publicada e reinicia sozinho — o entregador não precisa instalar nada. (No navegador, o Vercel já serve a última versão.)
+function useAtualizacaoAutomatica() {
+  useEffect(() => {
+    if (Platform.OS === "web" || __DEV__) return;
+    let Updates;
+    try { Updates = require("expo-updates"); } catch { return; }
+    if (!Updates?.isEnabled) return;
+    let verificando = false;
+    const verificar = async () => {
+      if (verificando) return;
+      verificando = true;
+      try {
+        const r = await Updates.checkForUpdateAsync();
+        if (r.isAvailable) {
+          await Updates.fetchUpdateAsync();
+          await Updates.reloadAsync();
+        }
+      } catch {
+        // sem internet ou servidor fora: tenta de novo na próxima vez
+      } finally {
+        verificando = false;
+      }
+    };
+    verificar();
+    const sub = AppState.addEventListener("change", s => { if (s === "active") verificar(); });
+    const t = setInterval(verificar, 30 * 60 * 1000);
+    return () => { sub.remove(); clearInterval(t); };
+  }, []);
+}
 
 // ---------- Pop-ups (promoções e comissões) ----------
 
@@ -89,6 +121,7 @@ function MenuLateral({ aberto, tela, ir, onFechar }) {
                 <ItemMenu sub icone="tag" rotulo="Promoção" ativo={tela === "promocao"} onPress={() => ir("promocao")} />
               </View>
             )}
+            <ItemMenu icone="award" rotulo="Ranking" ativo={tela === "ranking"} onPress={() => ir("ranking")} />
             <ItemMenu icone="message-square" rotulo="Mensagens" ativo={tela === "mensagens"} onPress={() => ir("mensagens")} />
             <ItemMenu icone="credit-card" rotulo="Carteira" ativo={tela === "carteira"} onPress={() => ir("carteira")} />
             <ItemMenu icone="users" rotulo="Conta" ativo={tela === "conta"} onPress={() => ir("conta")} />
@@ -143,6 +176,7 @@ function Principal({ entregador, setEntregador, onSair }) {
 
   useEffect(() => {
     const atualizar = () => api.get("/me").then(setEntregador).catch(() => {});
+    atualizar();
     const t = setInterval(atualizar, 60000);
     // Status da conta ao vivo: aprovação, bloqueio, offline automático por falta de sinal...
     const sair = assinarTempoReal(["eu"], atualizar);
@@ -203,6 +237,7 @@ function Principal({ entregador, setEntregador, onSair }) {
             {tela === "carteira" && <Carteira />}
             {tela === "conta" && <Perfil entregador={entregador} setEntregador={setEntregador} onSair={onSair} />}
             {tela === "treinamento" && <Treinamento />}
+            {tela === "ranking" && <Ranking />}
           </View>
         )}
         {tela !== "mensagens" && <Atalhos tela={tela} ir={ir} contagem={{ disponiveis: op.disponiveis.length, andamento: op.ativos.length }} />}
@@ -218,16 +253,20 @@ function Principal({ entregador, setEntregador, onSair }) {
 export default function App() {
   const [carregando, setCarregando] = useState(true);
   const [entregador, setEntregador] = useState(null);
+  const [aviso, setAviso] = useState(null); // motivo de ter voltado ao login (ex.: conta aberta em outro celular)
+  useAtualizacaoAutomatica();
 
+  // Sair: fica offline e libera este celular (a conta pode entrar em outro aparelho).
   const sair = useCallback(async () => {
-    await api.patch("/status", { online: false }).catch(() => {});
+    await api.post("/sair").catch(() => {});
     await salvarToken(null);
     reiniciarTempoReal();
+    setAviso(null);
     setEntregador(null);
   }, []);
 
   useEffect(() => {
-    quandoSessaoExpirar(() => { salvarToken(null); setEntregador(null); });
+    quandoSessaoExpirar(msg => { salvarToken(null); reiniciarTempoReal(); setAviso(msg || null); setEntregador(null); });
     (async () => {
       try {
         if (await carregarToken()) setEntregador(await api.get("/me"));
@@ -247,7 +286,7 @@ export default function App() {
           ? <View style={st.centro}><ActivityIndicator color={cor.primariaClara} size="large" /></View>
           : entregador
             ? <Principal entregador={entregador} setEntregador={setEntregador} onSair={sair} />
-            : <Entrada onEntrou={setEntregador} />}
+            : <Entrada onEntrou={e => { setAviso(null); setEntregador(e); }} aviso={aviso} />}
       </SafeAreaView>
     </SafeAreaProvider>
   );

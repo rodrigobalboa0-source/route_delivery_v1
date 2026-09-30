@@ -1,14 +1,16 @@
 // "Algo mudou?" — consulta leve que o painel e o app fazem a cada ~2 s enquanto a tela está visível.
 // Devolve uma "versão" por assunto; a tela só busca os dados de novo quando a versão daquele assunto muda.
-// Também desliga automaticamente o entregador que ficou sem sinal do app (fechou o app, sem internet...).
+// Também roda as rotinas automáticas: liberar agendados e fechar o ranking semanal.
+// (O entregador só fica offline quando ele mesmo clica no botão — não há mais offline automático.)
 const prisma = require("../lib/prisma");
 const { registrarStatusEntregador, registrarStatusPedido, carimbos } = require("./historico.service");
 
-const SEM_SINAL_MS = 2 * 60 * 1000; // sem posição nem "sinal de vida" por 2 min -> offline
+const SEM_SINAL_MS = 2 * 60 * 1000;
 let ultimaLimpeza = 0;
 
 const v = (...partes) => partes.map(p => (p instanceof Date ? p.getTime() : p == null ? "-" : String(p))).join(".");
 
+// DESATIVADO (a pedido do cliente: offline só pelo botão). Mantido para uso manual/diagnóstico.
 // Entregadores online sem sinal há mais de 2 min viram offline (fica no histórico como "Sistema").
 async function desligarSemSinal() {
   if (Date.now() - ultimaLimpeza < 20000) return; // no máximo a cada 20 s por servidor
@@ -49,8 +51,8 @@ async function liberarAgendados() {
 
 async function rotinas() {
   await Promise.all([
-    desligarSemSinal().catch(err => console.error("[tempo-real] limpeza:", err.message)),
     liberarAgendados().catch(err => console.error("[tempo-real] agendados:", err.message)),
+    require("./ranking.service").fecharSemanaAnterior().catch(err => console.error("[tempo-real] ranking:", err.message)),
   ]);
 }
 
@@ -81,8 +83,10 @@ async function versaoEntregador(entregadorId) {
     (SELECT "updatedAt" FROM "Entregador" WHERE id = ${entregadorId}) AS "eu",
     (SELECT max("createdAt") FROM "PromocaoEvento") AS "promoMax",
     (SELECT max("createdAt") FROM "ComissaoManual" WHERE "entregadorId" = ${entregadorId}) AS "comissaoMax",
-    (SELECT max(m."createdAt") FROM "Mensagem" m JOIN "Conversa" c ON c.id = m."conversaId" WHERE c."entregadorId" = ${entregadorId}) AS "msgMax"`;
+    (SELECT max(m."createdAt") FROM "Mensagem" m JOIN "Conversa" c ON c.id = m."conversaId" WHERE c."entregadorId" = ${entregadorId}) AS "msgMax",
+    (SELECT max("entregueEm") FROM "Pedido" WHERE status = 'ENTREGUE') AS "rankingMax"`;
   return {
+    ranking: v(r.rankingMax),
     disponiveis: v(r.dispMax, r.dispQtd),
     meus: v(r.meusMax),
     eu: v(r.eu),

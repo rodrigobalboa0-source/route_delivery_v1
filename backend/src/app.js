@@ -84,6 +84,7 @@ app.use("/api/configuracoes", configuracoesRoutes);
 app.use("/api/cadastro", cadastroRoutes);
 app.use("/api/integracoes", integracoesRoutes);
 app.use("/api/promocoes-entregador", promocoesEntregadorRoutes);
+app.use("/api/ranking", require("./routes/ranking.routes"));
 
 app.use("/api", (req, res) => res.status(404).json({ erro: "Rota não encontrada." }));
 

@@ -11,8 +11,9 @@ function omitir(obj, campos) {
 function semSenha(registro) {
   if (Array.isArray(registro)) return registro.map(semSenha);
   if (!registro) return registro;
-  const { senhaHash, ...resto } = registro;
-  return { ...resto, temAcessoApp: !!senhaHash };
+  // aparelhoId (identificador do celular logado) também não sai da API — só se há um aparelho conectado.
+  const { senhaHash, aparelhoId, ...resto } = registro;
+  return { ...resto, temAcessoApp: !!senhaHash, ...(aparelhoId !== undefined ? { aparelhoConectado: !!aparelhoId } : {}) };
 }
 
 // Converte campos de formulário (strings) para os tipos esperados pelo schema.

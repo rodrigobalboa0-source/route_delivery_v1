@@ -1,6 +1,9 @@
 // API do APP DO ENTREGADOR — montada em /api/app/entregador
 const express = require("express");
+const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
+const { enviarEmail, htmlSimples } = require("../../services/email.service");
+const { semanaDe, configRanking, classificacao, nomeCurto } = require("../../services/ranking.service");
 const prisma = require("../../lib/prisma");
 const { asyncHandler } = require("../../middleware/errorHandler");
 const { requireAuth, requireTipo, assinarToken, TIPOS } = require("../../middleware/auth");
@@ -64,12 +67,17 @@ router.get(
   })
 );
 
-// POST /api/app/entregador/login  { email, senha }
+// Um celular por conta: o app manda um identificador do aparelho (gerado na instalação).
+const aparelhoValido = id => typeof id === "string" && /^[A-Za-z0-9_-]{8,100}$/.test(id);
+const MSG_OUTRO_APARELHO = "Sua conta já está conectada em outro celular. Saia do app no outro aparelho, use “Esqueci minha senha” para desconectá-lo ou peça à equipe para liberar.";
+
+// POST /api/app/entregador/login  { email, senha, aparelhoId, aparelhoNome? }
 router.post(
   "/login",
   asyncHandler(async (req, res) => {
-    const { email, senha } = req.body;
+    const { email, senha, aparelhoId, aparelhoNome } = req.body;
     if (!email || !senha) return res.status(400).json({ erro: 'Informe "email" e "senha".' });
+    if (!aparelhoValido(aparelhoId)) return res.status(426).json({ erro: "Atualize o app do entregador para a versão mais recente." });
 
     // E-mail sem diferenciar maiúsculas/minúsculas (o celular costuma colocar a 1ª letra maiúscula).
     const entregador = await prisma.entregador.findFirst({ where: { email: { equals: String(email).trim(), mode: "insensitive" } } });
@@ -79,8 +87,78 @@ router.post(
     if (entregador.bloqueado) return res.status(403).json({ erro: "Seu acesso está bloqueado. Fale com o suporte." });
     if (entregador.status === "INATIVO") return res.status(403).json({ erro: "Seu cadastro está inativo. Fale com o suporte." });
 
-    const token = assinarToken({ tipo: TIPOS.ENTREGADOR, id: entregador.id, nome: entregador.nomeCompleto }, "30d");
-    res.json({ token, entregador: semSenha(entregador) });
+    // Outro celular já logado: não deixa entrar (evita conta compartilhada).
+    // Só vale se a troca for feita de propósito: sair no outro aparelho, redefinir a senha ou liberar pelo ADM.
+    if (entregador.aparelhoId && entregador.aparelhoId !== aparelhoId) {
+      return res.status(409).json({ erro: MSG_OUTRO_APARELHO, codigo: "OUTRO_APARELHO" });
+    }
+    const atualizado = await prisma.entregador.update({
+      where: { id: entregador.id },
+      data: { aparelhoId, aparelhoNome: String(aparelhoNome || "").slice(0, 80) || null, aparelhoEm: new Date() },
+    });
+
+    const token = assinarToken({ tipo: TIPOS.ENTREGADOR, id: entregador.id, nome: entregador.nomeCompleto, ap: aparelhoId }, "30d");
+    res.json({ token, entregador: semSenha(atualizado) });
+  })
+);
+
+// ---------- Esqueci minha senha (código de 6 dígitos por e-mail) ----------
+
+const MSG_CODIGO = { ok: true, mensagem: "Se esse e-mail estiver cadastrado, enviamos um código de 6 dígitos. Confira também o spam." };
+
+// POST /api/app/entregador/esqueci-senha { email }
+router.post(
+  "/esqueci-senha",
+  limitarBusca,
+  asyncHandler(async (req, res) => {
+    const email = String(req.body?.email || "").trim();
+    if (!email) throw erroHttp(400, "Informe o e-mail cadastrado.");
+    const e = await prisma.entregador.findFirst({ where: { email: { equals: email, mode: "insensitive" } } });
+    if (!e?.email) return res.json(MSG_CODIGO); // não revela se o e-mail existe
+    // No máximo 1 código por minuto por conta.
+    const recente = await prisma.entregadorCodigoSenha.findFirst({ where: { entregadorId: e.id, createdAt: { gt: new Date(Date.now() - 60000) } } });
+    if (recente) throw erroHttp(429, "Aguarde 1 minuto para pedir um novo código.");
+    const codigo = String(crypto.randomInt(0, 1000000)).padStart(6, "0");
+    await prisma.entregadorCodigoSenha.updateMany({ where: { entregadorId: e.id, usado: false }, data: { usado: true } });
+    await prisma.entregadorCodigoSenha.create({ data: { entregadorId: e.id, codigoHash: await bcrypt.hash(codigo, 8), expiraEm: new Date(Date.now() + 15 * 60000) } });
+    try {
+      await enviarEmail({
+        para: e.email,
+        assunto: `${codigo} é o seu código — Route Delivery`,
+        texto: `Olá, ${e.nomeCompleto.split(" ")[0]}. Seu código para criar uma nova senha no app é ${codigo}. Ele vale por 15 minutos.`,
+        html: htmlSimples({ titulo: "Nova senha do app", paragrafos: [`Olá, ${e.nomeCompleto.split(" ")[0]}.`, "Use o código abaixo no app para criar uma nova senha. Ele vale por 15 minutos."], destaque: codigo }),
+      });
+    } catch (err) {
+      console.error("[esqueci-senha app] e-mail não enviado:", err.message);
+      if (process.env.NODE_ENV === "production") throw erroHttp(503, "Não foi possível enviar o e-mail agora. Fale com a equipe.");
+    }
+    res.json({ ...MSG_CODIGO, ...(process.env.NODE_ENV !== "production" ? { devCodigo: codigo } : {}) });
+  })
+);
+
+// POST /api/app/entregador/redefinir-senha { email, codigo, novaSenha }
+// Também desconecta o celular que estava logado (quem tem acesso ao e-mail pode entrar num aparelho novo).
+router.post(
+  "/redefinir-senha",
+  limitarBusca,
+  asyncHandler(async (req, res) => {
+    const email = String(req.body?.email || "").trim();
+    const codigo = String(req.body?.codigo || "").replace(/\D/g, "");
+    const novaSenha = String(req.body?.novaSenha || "");
+    if (!email || codigo.length !== 6) throw erroHttp(400, "Informe o e-mail e o código de 6 dígitos.");
+    if (novaSenha.length < 6) throw erroHttp(400, "A nova senha precisa ter pelo menos 6 caracteres.");
+    const e = await prisma.entregador.findFirst({ where: { email: { equals: email, mode: "insensitive" } } });
+    const registro = e && await prisma.entregadorCodigoSenha.findFirst({ where: { entregadorId: e.id, usado: false }, orderBy: { createdAt: "desc" } });
+    if (!registro || registro.expiraEm < new Date() || registro.tentativas >= 5) throw erroHttp(400, "Código inválido ou vencido. Peça um novo código.");
+    if (!(await bcrypt.compare(codigo, registro.codigoHash))) {
+      await prisma.entregadorCodigoSenha.update({ where: { id: registro.id }, data: { tentativas: { increment: 1 } } });
+      throw erroHttp(400, `Código incorreto. ${Math.max(0, 4 - registro.tentativas)} tentativa(s) restante(s).`);
+    }
+    await prisma.$transaction([
+      prisma.entregadorCodigoSenha.update({ where: { id: registro.id }, data: { usado: true } }),
+      prisma.entregador.update({ where: { id: e.id }, data: { senhaHash: await bcrypt.hash(novaSenha, 10), aparelhoId: null, aparelhoNome: null, online: false } }),
+    ]);
+    res.json({ ok: true, mensagem: "Senha alterada! Entre com a nova senha." });
   })
 );
 
@@ -126,6 +204,10 @@ router.use(
     if (!entregador) return res.status(401).json({ erro: "Conta não encontrada." });
     if (entregador.bloqueado) return res.status(403).json({ erro: "Seu acesso está bloqueado. Fale com o suporte." });
     if (entregador.status === "INATIVO") return res.status(403).json({ erro: "Seu cadastro está inativo." });
+    // Sessão de outro aparelho (ou liberada pelo ADM / senha redefinida): pede login de novo.
+    if (!req.conta.ap || entregador.aparelhoId !== req.conta.ap) {
+      return res.status(401).json({ erro: "Sua conta foi desconectada deste celular. Entre de novo.", codigo: "SESSAO_ENCERRADA" });
+    }
     req.entregador = entregador;
     next();
   })
@@ -141,8 +223,58 @@ async function pedidoDoEntregador(req) {
   return pedido;
 }
 
-// GET /api/app/entregador/me
-router.get("/me", (req, res) => res.json(semSenha(req.entregador)));
+// GET /api/app/entregador/me (inclui o raio de confirmação de local, para o app mostrar quanto falta)
+router.get(
+  "/me",
+  asyncHandler(async (req, res) => {
+    const cfg = await prisma.configuracao.findFirst({ select: { raioConfirmacaoMetros: true } });
+    res.json({ ...semSenha(req.entregador), raioConfirmacaoMetros: cfg?.raioConfirmacaoMetros ?? 200 });
+  })
+);
+
+// POST /api/app/entregador/sair — fica offline e libera o celular (outro aparelho poderá entrar)
+router.post(
+  "/sair",
+  asyncHandler(async (req, res) => {
+    const e = req.entregador;
+    await prisma.entregador.update({ where: { id: e.id }, data: { online: false, aparelhoId: null, aparelhoNome: null } });
+    if (e.online) {
+      await registrarStatusEntregador({ entregadorId: e.id, tipo: "ONLINE", de: "ONLINE", para: "OFFLINE", autor: autorEntregador(req) }).catch(() => {});
+    }
+    res.json({ ok: true });
+  })
+);
+
+// GET /api/app/entregador/ranking — ranking da semana (segunda a domingo), prêmios e a semana passada
+router.get(
+  "/ranking",
+  asyncHandler(async (req, res) => {
+    const cfg = await configRanking();
+    const semana = semanaDe();
+    const lista = await classificacao(semana, cfg);
+    const eu = lista.find(x => x.entregadorId === req.entregador.id);
+    const minhasEntregas = eu?.entregas ?? await prisma.pedido.count({
+      where: { entregadorId: req.entregador.id, status: "ENTREGUE", entregueEm: { gte: semana.inicio, lt: semana.fim } },
+    });
+    const anterior = await prisma.rankingSemana.findFirst({ orderBy: { inicio: "desc" } });
+    const minhaAnterior = anterior && (anterior.resultado || []).find(x => x.entregadorId === req.entregador.id);
+    const publico = x => ({ posicao: x.posicao, nome: nomeCurto(x.nome), fotoUrl: x.fotoUrl || null, entregas: x.entregas, premio: x.premio, eu: x.entregadorId === req.entregador.id });
+    res.json({
+      ativo: cfg.ativo,
+      inicio: semana.inicio,
+      fim: new Date(semana.fim.getTime() - 1000),
+      premios: cfg.premios,
+      minimo: cfg.minimo,
+      top10: lista.slice(0, 10).map(publico),
+      eu: { posicao: eu?.posicao ?? null, entregas: minhasEntregas, premio: eu?.premio ?? 0, faltamParaTop10: eu && eu.posicao <= 10 ? 0 : Math.max(1, (lista[9]?.entregas ?? cfg.minimo) - minhasEntregas + (lista[9] ? 1 : 0)) },
+      anterior: anterior ? {
+        inicio: anterior.inicio, fim: new Date(anterior.fim.getTime() - 1000),
+        top3: (anterior.resultado || []).slice(0, 3).map(publico),
+        minha: minhaAnterior ? { posicao: minhaAnterior.posicao, entregas: minhaAnterior.entregas, premio: minhaAnterior.premio } : null,
+      } : null,
+    });
+  })
+);
 
 // GET /api/app/entregador/tempo-real — "algo mudou?" (o app consulta a cada ~2 s com a tela aberta)
 router.get(
@@ -317,6 +449,7 @@ router.patch(
     if (ordem < 1) throw erroHttp(400, "Etapa inválida. Use NA_LOJA, EM_ROTA ou NO_CLIENTE.");
     if (!COM_ENTREGADOR.includes(pedido.status)) throw erroHttp(409, "Este pedido não está em andamento com você.");
     if (pedido.status !== "ATRASADO" && ETAPAS_ENTREGADOR.indexOf(pedido.status) >= ordem) throw erroHttp(409, "Essa etapa já foi informada.");
+    await conferirLocal(req, pedido, para === "NO_CLIENTE" ? "cliente" : "loja");
     const { count } = await prisma.pedido.updateMany({
       where: { id: pedido.id, status: pedido.status, entregadorId: req.entregador.id },
       data: { status: para, ...carimbos(pedido, para) },
@@ -334,6 +467,7 @@ router.patch(
   asyncHandler(async (req, res) => {
     const pedido = await pedidoDoEntregador(req);
     if (!COM_ENTREGADOR.includes(pedido.status)) throw erroHttp(409, "Este pedido não está em andamento com você.");
+    await conferirLocal(req, pedido, "cliente");
     const atualizado = await prisma.pedido.update({
       where: { id: pedido.id }, data: { status: "ENTREGUE", ...carimbos(pedido, "ENTREGUE") }, include: INCLUDE_PEDIDO_APP,
     });
@@ -343,24 +477,49 @@ router.patch(
   })
 );
 
-// PATCH /api/app/entregador/pedidos/:id/desistir  { motivo? } — devolve o pedido para a fila
+// PATCH /api/app/entregador/pedidos/:id/desistir — DESATIVADO: depois de aceitar, o entregador não desiste pelo app.
+// Se precisar, a equipe troca o entregador pelo painel (Operação › pedido › Trocar entregador / Buscar outro).
 router.patch(
   "/pedidos/:id/desistir",
-  asyncHandler(async (req, res) => {
-    const pedido = await pedidoDoEntregador(req);
-    if (!COM_ENTREGADOR.includes(pedido.status)) throw erroHttp(409, "Este pedido não está em andamento com você.");
-    const atualizado = await prisma.pedido.update({
-      where: { id: pedido.id }, data: { status: "PENDENTE", entregadorId: null }, include: INCLUDE_PEDIDO_APP,
-    });
-    await registrarStatusPedido({ pedidoId: pedido.id, de: pedido.status, para: "PENDENTE", entregadorId: req.entregador.id, autor: autorEntregador(req) });
-    const motivo = req.body?.motivo ? ` Motivo: ${req.body.motivo}` : "";
-    await registrarLog(pedido.id, `${req.entregador.nomeCompleto} desistiu da corrida.${motivo}`);
-    await prisma.notificacao.create({
-      data: { tipo: "pedido", texto: `${req.entregador.nomeCompleto} desistiu do pedido ${pedido.codigo}.` },
-    });
-    res.json(atualizado);
+  asyncHandler(async () => {
+    throw erroHttp(403, "Depois de aceitar, não é possível desistir pelo app. Fale com a equipe pelo Suporte.");
   })
 );
+
+// ---------- Confirmação de local (Na loja / Saí para entrega na loja; Cheguei no cliente / Finalizar no cliente) ----------
+
+// O app manda { lat, lng, precisao } lidos do GPS na hora do toque. Longe do local, a etapa é recusada.
+async function conferirLocal(req, pedido, alvo) {
+  const lat = Number(req.body?.lat), lng = Number(req.body?.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || req.body?.lat == null) {
+    throw erroHttp(422, "Não foi possível ler sua localização. Ative o GPS (localização) do celular e tente de novo.");
+  }
+  const cfg = await prisma.configuracao.findFirst({ select: { raioConfirmacaoMetros: true } });
+  const raio = cfg?.raioConfirmacaoMetros ?? 200;
+  let ponto = null, nome;
+  if (alvo === "loja") {
+    const loja = await prisma.comercioEndereco.findFirst({ where: { comercioId: pedido.comercioId, principal: true }, select: { lat: true, lng: true } });
+    ponto = loja?.lat != null ? { lat: loja.lat, lng: loja.lng } : null;
+    nome = "da loja";
+  } else {
+    ponto = pedido.latDestino != null ? { lat: pedido.latDestino, lng: pedido.lngDestino } : null;
+    nome = "do cliente";
+  }
+  // Guarda a posição informada (aparece no mapa do painel e da loja).
+  await prisma.entregador.update({ where: { id: req.entregador.id }, data: { lat, lng, localizacaoEm: new Date() } }).catch(() => {});
+  if (!ponto) {
+    await registrarLog(pedido.id, `Local ${nome} sem posição no mapa — etapa confirmada sem conferir a distância.`);
+    return;
+  }
+  const folga = Math.min(Math.max(Number(req.body?.precisao) || 0, 0), 100); // imprecisão do GPS (até 100 m)
+  const metros = Math.round(distanciaLinhaRetaKm({ lat, lng }, ponto) * 1000);
+  if (metros > raio + folga) {
+    const dist = metros >= 1000 ? `${(metros / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} km` : `${metros} m`;
+    const e = erroHttp(422, `Você está a ${dist} ${nome}. Chegue ao local para confirmar (até ${raio} m).`);
+    e.extra = { codigo: "LONGE_DO_LOCAL", distanciaMetros: metros, raioMetros: raio };
+    throw e;
+  }
+}
 
 // ---------- Promoções ----------
 

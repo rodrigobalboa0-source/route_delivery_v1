@@ -15,7 +15,7 @@ import { ModalPagamento, abrirImpressao } from "./Acerto";
 
 const TOM_REGRA = { TABELA: "info", FIXO: "neutro", ACERTADO: "ok", SEM_REGRA: "critico" };
 const TIPO_BENEFICIARIO = { ENTREGADOR: "Entregador", FUNCIONARIO: "Funcionário ADM" };
-const ORIGEM = { MANUAL: "Lançadas à mão", AUTOMATICA: "Automáticas (por entrega)" };
+const ORIGEM = { MANUAL: "Lançadas à mão", AUTOMATICA: "Automáticas (por entrega)", RANKING: "Prêmios do ranking semanal" };
 const paga = c => !!(c.contaPagar?.paga || c.acerto?.pago);
 
 function situacaoComissao(c) {
@@ -168,7 +168,7 @@ function ComissoesLancadas() {
         colunas={[
           { chave: "numero", rotulo: "Nº", num: true },
           { chave: "referencia", rotulo: "Data", valor: l => data(l.referencia), ordenar: l => new Date(l.referencia).getTime(), csv: l => data(l.referencia) },
-          { chave: "beneficiarioNome", rotulo: "Quem recebe", valor: l => <><strong>{l.beneficiarioNome}</strong><div className="celula-sub">{TIPO_BENEFICIARIO[l.beneficiarioTipo]}{l.origem === "AUTOMATICA" && <> · automática{l.pedido && ` (${l.pedido.codigo})`}</>}</div></> },
+          { chave: "beneficiarioNome", rotulo: "Quem recebe", valor: l => <><strong>{l.beneficiarioNome}</strong><div className="celula-sub">{TIPO_BENEFICIARIO[l.beneficiarioTipo]}{l.origem === "AUTOMATICA" && <> · automática{l.pedido && ` (${l.pedido.codigo})`}</>}{l.origem === "RANKING" && <> · 🏆 prêmio do ranking</>}</div></> },
           { chave: "comercioNome", rotulo: "Comércio" },
           { chave: "quantidadeEntregas", rotulo: "Entregas", num: true, valor: l => numero(l.quantidadeEntregas) },
           { chave: "valorPorEntrega", rotulo: "Por entrega", num: true, valor: l => (l.valorPorEntrega != null ? moeda(l.valorPorEntrega) : "—") },

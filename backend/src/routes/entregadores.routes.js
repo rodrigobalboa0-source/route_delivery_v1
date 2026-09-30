@@ -207,6 +207,18 @@ router.put(
 );
 
 // PATCH /api/entregadores/:id/bloquear — "Bloquear Entregador" (também o deixa offline)
+// PATCH /api/entregadores/:id/liberar-aparelho — desconecta o celular logado; o entregador pode entrar em outro aparelho
+router.patch(
+  "/:id/liberar-aparelho",
+  asyncHandler(async (req, res) => {
+    const atual = await prisma.entregador.findUnique({ where: { id: req.params.id } });
+    if (!atual) return res.status(404).json({ erro: "Entregador não encontrado." });
+    const entregador = await prisma.entregador.update({ where: { id: req.params.id }, data: { aparelhoId: null, aparelhoNome: null, online: false } });
+    await registrarStatusEntregador({ entregadorId: entregador.id, tipo: "APARELHO", de: atual.aparelhoNome || "aparelho", para: "LIBERADO", autor: autorDe(req) }).catch(() => {});
+    res.json(semSenha(entregador));
+  })
+);
+
 router.patch(
   "/:id/bloquear",
   asyncHandler(async (req, res) => {

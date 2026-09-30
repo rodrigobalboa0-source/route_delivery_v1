@@ -259,6 +259,20 @@ function DetalheEntregador({ id, onFechar, onAlterado }) {
                   </section>
 
                   <section className="bloco">
+                    <h3>Celular conectado</h3>
+                    <p className="apagado" style={{ marginTop: 0 }}>
+                      {e.aparelhoConectado
+                        ? <>📱 {e.aparelhoNome || "Aparelho"} — conectado desde {e.aparelhoEm ? new Date(e.aparelhoEm).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : "—"}. A conta só entra neste celular.</>
+                        : "Nenhum celular conectado. O próximo aparelho em que o entregador entrar fica vinculado à conta."}
+                    </p>
+                    {e.aparelhoConectado && (
+                      <BotaoConfirmar variante="primario" confirmar="Desconectar este celular?" onConfirm={() => acao(() => api.patch(`/entregadores/${id}/liberar-aparelho`), "Celular liberado — o entregador pode entrar em outro aparelho.")}>
+                        Liberar aparelho
+                      </BotaoConfirmar>
+                    )}
+                  </section>
+
+                  <section className="bloco">
                     <h3>Situação</h3>
                     <div className="botoes">
                       {e.bloqueado ? (

@@ -3,6 +3,7 @@ import { api } from "../api";
 import { useAuth } from "../auth";
 import { useApi } from "../hooks/useApi";
 import { Badge, Botao, BotaoConfirmar, Cabecalho, Campo, Carregando, ErroCaixa, GradeCampos, prepararValores, useAcao } from "../components/ui";
+import { EmailEnvio, RankingSemanal } from "./ConfiguracoesExtras";
 
 // Google Maps: usado SÓ para localizar endereços e medir o km da rota (preço da entrega).
 // Os mapas do painel continuam no OpenStreetMap. Sem chave, o cálculo usa o OpenStreetMap (gratuito).
@@ -88,6 +89,10 @@ const CAMPOS = [
   {
     nome: "retornoPercentual", rotulo: "Acréscimo da entrega com retorno (%)", tipo: "number", obrigatorio: true,
     dica: "Quando a loja marca “Retorno?” (o entregador volta à loja), a taxa calculada fica esta % maior. Padrão: 20%.",
+  },
+  {
+    nome: "raioConfirmacaoMetros", rotulo: "Distância para confirmar etapa no app (metros)", tipo: "number", obrigatorio: true,
+    dica: "O entregador só marca “Cheguei na loja”/“Saí para entrega” perto da loja e “Cheguei no cliente”/“Finalizar” perto do cliente. Padrão: 200 m.",
   },
   { nome: "notificacoesPush", rotulo: "Notificações push", tipo: "checkbox" },
   { nome: "notificacoesEmail", rotulo: "Notificações por e-mail", tipo: "checkbox" },
@@ -262,7 +267,9 @@ export default function Configuracoes() {
           </form>
         )}
       </section>
+      <RankingSemanal dados={dados} setDados={setDados} pode={pode} />
       <RegrasSaque pode={pode} />
+      <EmailEnvio dados={dados} setDados={setDados} pode={pode} />
       <GoogleMaps dados={dados} setDados={setDados} pode={pode} />
       <DadosEmpresa dados={dados} setDados={setDados} pode={pode} />
     </>

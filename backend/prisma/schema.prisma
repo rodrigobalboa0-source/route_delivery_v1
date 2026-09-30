@@ -289,6 +289,11 @@ model Entregador {
   pedidos               Pedido[]
   comerciosPermitidos   EntregadorComercioPermitido[]
   recusas               PedidoRecusa[]
+  codigosSenha          EntregadorCodigoSenha[]
+  // Um celular por conta: o aparelho que está logado (liberado ao sair do app, ao redefinir a senha ou pelo ADM).
+  aparelhoId            String?
+  aparelhoNome          String?
+  aparelhoEm            DateTime?
   historicoStatus       EntregadorStatusHistorico[]
   localizacoes          EntregadorLocalizacao[]
   avisosVistos          PromocaoAvisoVisto[]
@@ -845,4 +850,43 @@ model Configuracao {
   googleMapsChave          String?
   // Entrega com retorno à loja: acréscimo sobre a taxa calculada (%).
   retornoPercentual        Float   @default(20)
+  // O entregador só muda a etapa estando a até X metros da loja (Na loja / Saí para entrega)
+  // ou do cliente (Cheguei no cliente / Finalizar).
+  raioConfirmacaoMetros    Int     @default(200)
+  // Ranking semanal do app (segunda a domingo): prêmio de cada colocação, do 1º ao 10º (R$).
+  rankingAtivo             Boolean @default(true)
+  rankingPremios           Json    @default("[0,0,0,0,0,0,0,0,0,0]")
+  rankingMinimoEntregas    Int     @default(1)
+  // Envio de e-mail (recuperação de senha): SMTP (ex.: Gmail com senha de app) ou Resend.
+  emailProvedor            String? // SMTP | RESEND
+  emailRemetente           String?
+  smtpHost                 String?
+  smtpPorta                Int?
+  smtpUsuario              String?
+  smtpSenha                String? // criptografada
+  resendChave              String? // criptografada
+}
+
+// Semanas do ranking já fechadas (segunda 00:00 a domingo 23:59, horário de Brasília).
+model RankingSemana {
+  id           String   @id @default(cuid())
+  inicio       DateTime @unique
+  fim          DateTime
+  resultado    Json     // [{ posicao, entregadorId, nome, entregas, premio, comissaoId }]
+  premiosTotal Float    @default(0)
+  fechadoEm    DateTime @default(now())
+}
+
+// Código de 6 dígitos para o entregador redefinir a senha (enviado por e-mail).
+model EntregadorCodigoSenha {
+  id           String     @id @default(cuid())
+  entregadorId String
+  entregador   Entregador @relation(fields: [entregadorId], references: [id], onDelete: Cascade)
+  codigoHash   String
+  expiraEm     DateTime
+  tentativas   Int        @default(0)
+  usado        Boolean    @default(false)
+  createdAt    DateTime   @default(now())
+
+  @@index([entregadorId, createdAt])
 }
