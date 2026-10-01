@@ -360,3 +360,11 @@ input[type="datetime-local"], input[type="date"] { color-scheme: dark; }
 .rastreio-rodape { margin: 0; color: var(--texto-3); font-size: 12px; }
 /* Modais do menu ficam dentro da célula da tabela (alinhada à direita): voltam ao alinhamento normal. */
 .menu-acoes .sobreposicao, .menu-acoes-lista { text-align: left; white-space: normal; font-variant-numeric: normal; }
+
+/* iFood: negociação do cliente (pedido de cancelamento) */
+.aviso-negociacoes { display: grid; gap: 8px; margin-bottom: 14px; }
+.aviso-negociacao { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 14px; border-radius: var(--raio); background: var(--aviso-fundo); border: 1px solid var(--aviso); color: var(--texto); }
+.aviso-negociacao > span:first-child { flex: 1; min-width: 220px; }
+.negociacao { display: flex; align-items: center; gap: 12px; padding: 10px 12px; margin-bottom: 12px; border: 1px solid var(--borda); border-radius: var(--raio); }
+.negociacao > div { flex: 1; min-width: 0; }
+.negociacao.pendente { border-color: var(--aviso); background: var(--aviso-fundo); }

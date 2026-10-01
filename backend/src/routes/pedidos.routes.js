@@ -180,10 +180,32 @@ router.get(
   asyncHandler(async (req, res) => {
     const pedido = await prisma.pedido.findUnique({
       where: { id: req.params.id },
-      include: { ...INCLUDE_PADRAO, logs: { orderBy: { createdAt: "asc" } } },
+      include: { ...INCLUDE_PADRAO, logs: { orderBy: { createdAt: "asc" } }, disputasIfood: { orderBy: { createdAt: "desc" } } },
     });
     if (!pedido) return res.status(404).json({ erro: "Pedido não encontrado." });
     res.json(pedido);
+  })
+);
+
+// ---------- iFood: cancelar com motivo e responder negociações do cliente ----------
+
+// GET /api/pedidos/:id/ifood/motivos-cancelamento — motivos aceitos pelo iFood para este pedido
+router.get(
+  "/:id/ifood/motivos-cancelamento",
+  asyncHandler(async (req, res) => {
+    const pedido = await prisma.pedido.findUnique({ where: { id: req.params.id } });
+    if (!pedido) throw erroHttp(404, "Pedido não encontrado.");
+    res.json(await require("../services/ifood.service").motivosCancelamento(pedido));
+  })
+);
+
+// POST /api/pedidos/:id/ifood/disputas/:disputaId  { resposta: aceitar|recusar|alternativa, motivo?, alternativaId?, valor?, minutos? }
+router.post(
+  "/:id/ifood/disputas/:disputaId",
+  asyncHandler(async (req, res) => {
+    const d = await prisma.ifoodDisputa.findUnique({ where: { id: req.params.disputaId } });
+    if (!d || d.pedidoId !== req.params.id) throw erroHttp(404, "Negociação não encontrada.");
+    res.json(await require("../services/ifood.service").responderDisputa(d, req.body || {}, `${req.conta?.nome || "Equipe"} (ADM)`));
   })
 );
 
@@ -283,6 +305,10 @@ router.patch(
     if (atual.status === "ENTREGUE" && (atual.faturaId || atual.acertoId)) {
       throw erroHttp(409, "Este pedido já foi faturado ou acertado com o entregador e não pode sair de “Pedido entregue”.");
     }
+    // Pedido do iFood ainda aberto: cancelar só pelo botão "Cancelar no iFood" (com motivo), para o iFood ficar sabendo.
+    if (para === "CANCELADO" && atual.integracaoSlug === "ifood" && atual.idExterno && ABERTOS.includes(atual.status)) {
+      throw erroHttp(409, "Pedido do iFood: use “Cancelar no iFood” e escolha o motivo — assim o iFood avisa o cliente.");
+    }
     if (COM_ENTREGADOR.includes(para) && !atual.entregadorId) {
       throw erroHttp(400, `Atribua um entregador antes de mudar para “${ROTULOS[para]}”.`);
     }
@@ -313,6 +339,12 @@ router.patch(
 router.patch(
   "/:id/cancelar",
   asyncHandler(async (req, res) => {
+    // Pedido do iFood: o cancelamento é pedido ao iFood com um motivo válido; aqui cancela quando o iFood confirmar.
+    const atual = await prisma.pedido.findUnique({ where: { id: req.params.id } });
+    if (atual?.integracaoSlug === "ifood" && atual.idExterno && ABERTOS.includes(atual.status) && !req.body?.soAqui) {
+      if (!req.body?.motivoIfood) throw erroHttp(400, "Pedido do iFood: escolha o motivo de cancelamento aceito pelo iFood.");
+      return res.json(await require("../services/ifood.service").cancelarNoIfood(atual, req.body.motivoIfood, `${req.conta?.nome || "Equipe"} (ADM)`));
+    }
     const motivo = req.body?.motivo ? ` Motivo: ${req.body.motivo}` : "";
     res.json(await transicionar(req, ABERTOS, { status: "CANCELADO" },
       "Entrega cancelada." + motivo));

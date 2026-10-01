@@ -5,6 +5,7 @@ import { useAuth } from "../auth";
 import { useApi } from "../hooks/useApi";
 import { BadgeMapa, Botao, Carregando, ErroCaixa, Gaveta, useAcao } from "./ui";
 import AcoesPedido from "./AcoesPedido";
+import { CartaoNegociacao } from "./NegociacaoIfood";
 import MapaEntregadores from "./MapaEntregadores";
 import { COM_ENTREGADOR, STATUS_PEDIDO, VEICULOS, dataHora, km, moeda, tempoRelativo } from "../utils/format";
 
@@ -78,6 +79,9 @@ export default function DetalhePedido({ id, onFechar }) {
         <>
           <Etapas pedido={pedido} />
 
+          {pedido.disputasIfood?.map(d => (
+            <CartaoNegociacao key={d.id} disputa={d} pedidoId={pedido.id} onAlterado={() => recarregar({ silencioso: true })} />
+          ))}
           {podeEditar && (
             <div className="acoes-detalhe">
               {pedido.status === "PREPARANDO" && (

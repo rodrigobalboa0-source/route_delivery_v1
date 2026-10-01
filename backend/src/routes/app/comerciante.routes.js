@@ -258,6 +258,7 @@ router.get(
       select: {
         id: true, codigo: true, status: true, clienteNome: true, clienteTelefone: true, endereco: true, complemento: true, retorno: true,
         agendadoPara: true, valor: true, prontoEm: true, comercioId: true, latDestino: true, lngDestino: true, createdAt: true, observacao: true,
+        integracaoSlug: true, codigoExterno: true,
         entregador: { select: { id: true, nomeCompleto: true, fotoUrl: true, veiculoTipo: true, telefone: true, lat: true, lng: true, localizacaoEm: true } },
       },
     });
@@ -269,6 +270,7 @@ router.get(
         id: p.id, codigo: p.codigo, status: p.status, clienteNome: p.clienteNome, clienteTelefone: p.clienteTelefone,
         endereco: p.endereco, complemento: p.complemento, retorno: p.retorno, agendadoPara: p.agendadoPara, valor: p.valor,
         prontoEm: p.prontoEm, createdAt: p.createdAt, observacao: p.observacao, rastreio: tokenRastreio(p.id),
+        integracaoSlug: p.integracaoSlug, codigoExterno: p.codigoExterno,
         destino: p.latDestino != null ? { lat: p.latDestino, lng: p.lngDestino } : null,
         entregador: p.entregador,
       })),
@@ -287,6 +289,7 @@ router.get(
         ...INCLUDE_PADRAO,
         entregador: { select: { id: true, nomeCompleto: true, telefone: true, fotoUrl: true, veiculoTipo: true, veiculoModelo: true, veiculoPlaca: true, veiculoAno: true, lat: true, lng: true, localizacaoEm: true } },
         logs: { orderBy: { createdAt: "asc" } },
+        disputasIfood: { orderBy: { createdAt: "desc" } },
       },
     });
     const bloqueado = p.entregadorId && await prisma.comercioEntregadorBloqueio.count({ where: { comercioId: req.comercio.id, entregadorId: p.entregadorId } });
@@ -405,6 +408,11 @@ router.patch(
   asyncHandler(async (req, res) => {
     const pedido = await pedidoDoComercio(req);
     if (!ABERTOS.includes(pedido.status)) throw erroHttp(409, "Este pedido já foi finalizado ou cancelado.");
+    // Pedido do iFood: pede o cancelamento ao iFood com o motivo escolhido (cancela aqui quando o iFood confirmar).
+    if (pedido.integracaoSlug === "ifood" && pedido.idExterno) {
+      if (!req.body?.motivoIfood) throw erroHttp(400, "Pedido do iFood: escolha o motivo de cancelamento aceito pelo iFood.");
+      return res.json(await require("../../services/ifood.service").cancelarNoIfood(pedido, req.body.motivoIfood, autorComerciante(req).autorNome));
+    }
     const atualizado = await prisma.pedido.update({
       where: { id: pedido.id }, data: { status: "CANCELADO", ...carimbos(pedido, "CANCELADO") }, include: INCLUDE_PADRAO,
     });
@@ -412,6 +420,38 @@ router.patch(
     const motivo = String(req.body?.motivo || "").trim().slice(0, 300);
     await registrarLog(pedido.id, `Pedido cancelado pelo comércio.${motivo ? ` Motivo: ${motivo}` : ""}`);
     res.json(atualizado);
+  })
+);
+
+// GET /api/app/comerciante/pedidos/:id/ifood/motivos-cancelamento — motivos aceitos pelo iFood
+router.get(
+  "/pedidos/:id/ifood/motivos-cancelamento",
+  asyncHandler(async (req, res) => {
+    res.json(await require("../../services/ifood.service").motivosCancelamento(await pedidoDoComercio(req)));
+  })
+);
+
+// GET /api/app/comerciante/ifood/negociacoes — pedidos do cliente no iFood esperando resposta da loja
+router.get(
+  "/ifood/negociacoes",
+  asyncHandler(async (req, res) => {
+    const lista = await prisma.ifoodDisputa.findMany({
+      where: { status: "PENDENTE", pedido: { comercioId: req.comercio.id }, OR: [{ expiraEm: null }, { expiraEm: { gt: new Date() } }] },
+      orderBy: { expiraEm: "asc" },
+      include: { pedido: { select: { id: true, codigo: true, codigoExterno: true, clienteNome: true } } },
+    });
+    res.json(lista);
+  })
+);
+
+// POST /api/app/comerciante/pedidos/:id/ifood/disputas/:disputaId  { resposta, motivo?, alternativaId?, valor?, minutos? }
+router.post(
+  "/pedidos/:id/ifood/disputas/:disputaId",
+  asyncHandler(async (req, res) => {
+    const pedido = await pedidoDoComercio(req);
+    const d = await prisma.ifoodDisputa.findUnique({ where: { id: req.params.disputaId } });
+    if (!d || d.pedidoId !== pedido.id) throw erroHttp(404, "Negociação não encontrada.");
+    res.json(await require("../../services/ifood.service").responderDisputa(d, req.body || {}, autorComerciante(req).autorNome));
   })
 );
 

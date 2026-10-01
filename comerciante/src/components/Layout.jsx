@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../auth";
 import { useApi } from "../hooks/useApi";
+import { AvisoNegociacoes } from "./NegociacaoIfood";
 
 // Quando a loja abriu as mensagens pela última vez (para o aviso de "mensagem nova").
 export const CHAVE_MSG_VISTAS = "rd_loja_msg_vistas";
@@ -149,6 +150,7 @@ export default function Layout() {
         <MenuConta msgNova={msgNova} />
       </header>
       <main className="loja-conteudo">
+        <AvisoNegociacoes />
         <Outlet />
       </main>
     </div>

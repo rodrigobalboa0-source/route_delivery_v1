@@ -1077,3 +1077,8 @@ code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-siz
 .barra-downloads { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 12px; }
 .baixar-grupo { display: inline-flex; align-items: center; gap: 6px; padding: 6px 8px 6px 12px; border: 1px solid var(--borda); border-radius: var(--raio-sm, 6px); background: var(--superficie, #fff); }
 .baixar-grupo > span { font-size: 13px; font-weight: 600; margin-right: 4px; }
+
+/* iFood: negociação do cliente */
+.negociacao { display: flex; align-items: center; gap: 12px; padding: 10px 12px; margin-bottom: 8px; border: 1px solid var(--borda); border-radius: var(--raio-sm, 6px); }
+.negociacao > div { flex: 1; min-width: 0; }
+.negociacao.pendente { border-color: var(--aviso); background: var(--aviso-fundo); }

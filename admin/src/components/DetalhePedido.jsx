@@ -3,7 +3,8 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { useApi } from "../hooks/useApi";
-import { BadgeMapa, Botao, BotaoConfirmar, Campo, Carregando, ErroCaixa, Gaveta, Modal, useAcao } from "./ui";
+import { BadgeMapa, Botao, BotaoConfirmar, Campo, Carregando, ErroCaixa, Gaveta, Modal, useAcao, useToast } from "./ui";
+import { CancelarIfood, CartaoNegociacao } from "./NegociacaoIfood";
 import { ORIGEM_PEDIDO, STATUS_PEDIDO, VEICULOS, dataHora, km, moeda } from "../utils/format";
 import SeletorStatus from "./SeletorStatus";
 // Ações disponíveis por status (espelham as transições validadas pela API).
@@ -95,7 +96,8 @@ export default function DetalhePedido({ id, onFechar, onAlterado }) {
   const { podeEditar } = useAuth();
   const { dados: pedido, setDados, erro, carregando, recarregar } = useApi(`/pedidos/${id}`, { aoVivo: ["pedidos"] });
   const { executar, ocupado } = useAcao();
-  const [modo, setModo] = useState(null); // "atribuir" | "trocar" | "editar" | "observacao"
+  const avisar = useToast();
+  const [modo, setModo] = useState(null); // "atribuir" | "trocar" | "editar" | "observacao" | "cancelarIfood"
   const [obs, setObs] = useState("");
 
   // Só repõe a observação quando muda no servidor (o tempo real recarrega o pedido sem apagar o que se digita).
@@ -151,6 +153,15 @@ export default function DetalhePedido({ id, onFechar, onAlterado }) {
             </dd>
           </dl>
 
+          {pedido.disputasIfood?.length > 0 && (
+            <section className="bloco">
+              <h3>Negociação com o cliente (iFood)</h3>
+              {pedido.disputasIfood.map(d => (
+                <CartaoNegociacao key={d.id} disputa={d} pedidoId={pedido.id} onAlterado={async () => { await recarregar({ silencioso: true }); onAlterado(); }} />
+              ))}
+            </section>
+          )}
+
           {pode && (
             <section className="bloco">
               <h3>Ações</h3>
@@ -197,11 +208,13 @@ export default function DetalhePedido({ id, onFechar, onAlterado }) {
                       Marcar atrasado
                     </Botao>
                   )}
-                  {acoes.includes("cancelar") && (
+                  {acoes.includes("cancelar") && (pedido.integracaoSlug === "ifood" ? (
+                    <Botao variante="perigo-leve" disabled={ocupado} onClick={() => setModo("cancelarIfood")}>Cancelar no iFood</Botao>
+                  ) : (
                     <BotaoConfirmar confirmar="Cancelar este pedido?" disabled={ocupado} onConfirm={() => acao(() => api.patch(`/pedidos/${id}/cancelar`), "Pedido cancelado.")}>
                       Cancelar pedido
                     </BotaoConfirmar>
-                  )}
+                  ))}
                   <Botao variante="fantasma" onClick={() => setModo("editar")}>Editar dados</Botao>
                   <Botao variante="fantasma" disabled={ocupado} onClick={() => acao(() => api.post(`/pedidos/${id}/clonar`), "Pedido clonado.")}>Clonar</Botao>
                 </div>
@@ -231,6 +244,13 @@ export default function DetalhePedido({ id, onFechar, onAlterado }) {
             </ol>
           </section>
 
+          {modo === "cancelarIfood" && (
+            <CancelarIfood pedido={pedido} onFechar={async (mudou, msg) => {
+              setModo(null);
+              if (msg) avisar(msg);
+              if (mudou) { await recarregar({ silencioso: true }); onAlterado(); }
+            }} />
+          )}
           {modo === "editar" && (
             <EditarPedido
               pedido={pedido}

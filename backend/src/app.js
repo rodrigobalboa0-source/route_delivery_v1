@@ -64,6 +64,24 @@ app.use("/api/app/comerciante", appComercianteRoutes);
 app.use("/api/integracoes/webhook", integracoesWebhookRoutes);
 // ---- Webhook do iFood (público; autenticado pela assinatura X-IFood-Signature) ----
 app.use("/api/ifood", require("./routes/ifoodWebhook.routes"));
+// ---- Rotina agendada (Vercel Cron, a cada minuto): busca de eventos do iFood a cada 30 s e agendados ----
+// Roda mesmo sem ninguém com o painel aberto (o webhook continua sendo o caminho principal).
+// Com CRON_SECRET definido, só aceita a chamada da Vercel (Authorization: Bearer <CRON_SECRET>).
+app.get("/api/cron/rotinas", (req, res, next) => {
+  const segredo = process.env.CRON_SECRET;
+  if (segredo && req.headers.authorization !== `Bearer ${segredo}`) return res.status(401).json({ erro: "Não autorizado." });
+  const ifood = require("./services/ifood.service");
+  const { liberarAgendados } = require("./services/tempoReal.service");
+  (async () => {
+    const r1 = await ifood.sincronizar({ forcar: true }).catch(e => ({ erro: e.message }));
+    await liberarAgendados().catch(() => {});
+    await new Promise(ok => setTimeout(ok, 30000));
+    const r2 = await ifood.sincronizar({ forcar: true }).catch(e => ({ erro: e.message }));
+    await liberarAgendados().catch(() => {});
+    res.json({ ok: true, ifood: [r1, r2] });
+  })().catch(next);
+});
+
 // ---- Rastreio público da entrega (link que a loja manda para o cliente; assinado) ----
 app.use("/api/rastreio", require("./routes/rastreio.routes"));
 

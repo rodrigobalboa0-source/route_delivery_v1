@@ -4,7 +4,7 @@
 const prisma = require("../lib/prisma");
 const { decifrar } = require("./cripto");
 
-const BASE = "https://merchant-api.ifood.com.br";
+const BASE = process.env.IFOOD_API_URL || "https://merchant-api.ifood.com.br"; // variável só para testes locais
 const TIMEOUT_MS = 15000;
 let cacheToken = { chave: null, token: null, venceEm: 0 };
 
@@ -14,7 +14,9 @@ function erroIfood(status, mensagem) {
   return e;
 }
 
-async function buscar(url, opcoes = {}) {
+const esperar = ms => new Promise(r => setTimeout(r, ms));
+
+async function buscarUmaVez(url, opcoes) {
   const controle = new AbortController();
   const t = setTimeout(() => controle.abort(), TIMEOUT_MS);
   try {
@@ -23,6 +25,19 @@ async function buscar(url, opcoes = {}) {
     throw erroIfood(502, err.name === "AbortError" ? "O iFood demorou para responder. Tente de novo." : "Não foi possível falar com o iFood agora.");
   } finally {
     clearTimeout(t);
+  }
+}
+
+// Limite de chamadas (HTTP 429): espera o tempo pedido pelo iFood (Retry-After) ou 1 s, 2 s, 4 s e tenta de novo.
+const MAX_ESPERAS_429 = 3;
+async function buscar(url, opcoes = {}) {
+  for (let tentativa = 0; ; tentativa++) {
+    const resp = await buscarUmaVez(url, opcoes);
+    if (resp.status !== 429 || tentativa >= MAX_ESPERAS_429) return resp;
+    const retry = Number(resp.headers.get("retry-after"));
+    const ms = Number.isFinite(retry) && retry > 0 ? Math.min(retry * 1000, 10000) : 1000 * 2 ** tentativa;
+    console.warn(`[ifood] 429 em ${url.replace(BASE, "")}: aguardando ${ms} ms (tentativa ${tentativa + 1})`);
+    await esperar(ms);
   }
 }
 
@@ -98,6 +113,40 @@ async function despacharPedidoIfood(id) {
   return postIfood(`/order/v1.0/orders/${encodeURIComponent(id)}/dispatch`, { deliveredBy: "MERCHANT" });
 }
 const verificarCodigoEntregaIfood = (id, code) => postIfood(`/order/v1.0/orders/${encodeURIComponent(id)}/verifyDeliveryCode`, { code: String(code) });
+// Início do preparo (depois de confirmar).
+const iniciarPreparoIfood = id => postIfood(`/order/v1.0/orders/${encodeURIComponent(id)}/startPreparation`);
+
+// ---------- Cancelamento pela loja ----------
+
+// Motivos que o iFood aceita para ESTE pedido: [{ codigo, descricao }]. A lista muda conforme a etapa do pedido.
+async function motivosCancelamentoIfood(id) {
+  const r = await getIfood(`/order/v1.0/orders/${encodeURIComponent(id)}/cancellationReasons`).catch(e => {
+    if (/204|404/.test(e.message)) return [];
+    throw e;
+  });
+  const lista = Array.isArray(r) ? r : Array.isArray(r?.reasons) ? r.reasons : [];
+  return lista
+    .map(m => ({ codigo: String(m.cancelCodeId ?? m.code ?? m.cancellationCode ?? ""), descricao: m.description || m.reason || "" }))
+    .filter(m => m.codigo);
+}
+
+// Pede o cancelamento. 202 = o iFood recebeu o pedido; o cancelamento vale quando chegar o evento CANCELLED
+// (ou CANCELLATION_REQUEST_FAILED, se o iFood recusar).
+async function solicitarCancelamentoIfood(id, codigo, descricao) {
+  const caminho = `/order/v1.0/orders/${encodeURIComponent(id)}/requestCancellation`;
+  const r = await postIfood(caminho, { reason: descricao || String(codigo), cancellationCode: String(codigo) });
+  if (r.ok || ![400, 422].includes(r.status)) return r;
+  return postIfood(caminho, { reason: String(codigo) }); // formato antigo da API
+}
+
+// ---------- Negociação com o cliente (Plataforma de Negociação / disputas) ----------
+
+const aceitarDisputaIfood = (disputeId, motivo) => postIfood(`/order/v1.0/disputes/${encodeURIComponent(disputeId)}/accept`, motivo ? { reason: motivo } : {});
+const recusarDisputaIfood = (disputeId, motivo) => postIfood(`/order/v1.0/disputes/${encodeURIComponent(disputeId)}/reject`, { reason: motivo });
+// Contraproposta: reembolso parcial ({ type: "REFUND", metadata: { amount: { currency, value } } })
+// ou tempo adicional ({ type: "ADDITIONAL_TIME", metadata: { additionalTimeInMinutes, additionalTimeReason } }).
+const alternativaDisputaIfood = (disputeId, alternativaId, corpo) =>
+  postIfood(`/order/v1.0/disputes/${encodeURIComponent(disputeId)}/alternatives/${encodeURIComponent(alternativaId)}`, corpo);
 
 // ---------- Eventos (polling de reserva) ----------
 
@@ -139,6 +188,8 @@ async function listarLojas() {
 
 module.exports = {
   obterToken, listarLojas, getIfood, postIfood, mensagemIfood, credenciais,
-  obterPedidoIfood, confirmarPedidoIfood, despacharPedidoIfood, verificarCodigoEntregaIfood,
+  obterPedidoIfood, confirmarPedidoIfood, despacharPedidoIfood, verificarCodigoEntregaIfood, iniciarPreparoIfood,
+  motivosCancelamentoIfood, solicitarCancelamentoIfood,
+  aceitarDisputaIfood, recusarDisputaIfood, alternativaDisputaIfood,
   buscarEventosIfood, confirmarRecebimentoEventos,
 };

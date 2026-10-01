@@ -8,6 +8,7 @@ import { useAuth } from "../auth";
 import { Botao, Campo, Carregando, Modal, useAcao, useToast } from "./ui";
 import CampoEndereco from "./CampoEndereco";
 import EditarPedido from "./EditarPedido";
+import { CancelarIfood } from "./NegociacaoIfood";
 import { COM_ENTREGADOR, VEICULOS } from "../utils/format";
 import { reduzirImagem } from "../utils/imagem";
 
@@ -318,7 +319,10 @@ export default function AcoesPedido({ pedido, onDetalhes, onAlterado, rotulo = "
           texto={`${nomeEnt} sai desta corrida e não recebe mais corridas da sua loja (continua trabalhando para outras lojas). A equipe é avisada e pode desfazer.`}
           onConfirmar={motivo => api.post(`/entregadores/${pedido.entregador.id}/bloquear`, { motivo, pedidoId: pedido.id }).then(r => { avisar(r.mensagem); return r; })} />
       )}
-      {modal?.tipo === "cancelar" && (
+      {modal?.tipo === "cancelar" && pedido.integracaoSlug === "ifood" && (
+        <CancelarIfood pedido={pedido} onFechar={(mudou, msg) => { if (msg) avisar(msg); fechar(mudou); }} />
+      )}
+      {modal?.tipo === "cancelar" && pedido.integracaoSlug !== "ifood" && (
         <Confirmar titulo={`Cancelar ${pedido.codigo}?`} botao="Cancelar pedido" variante="perigo" campo="Motivo (opcional)" onFechar={fechar}
           texto={comEntregador ? `${nomeEnt} já aceitou: a corrida some do app dele na hora.` : "Os entregadores deixam de ver esta corrida."}
           onConfirmar={motivo => api.patch(`/pedidos/${pedido.id}/cancelar`, { motivo }).then(r => { avisar("Pedido cancelado."); return r; })} />

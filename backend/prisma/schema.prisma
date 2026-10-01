@@ -564,6 +564,7 @@ model Pedido {
   logs            PedidoLog[]
   historicoStatus PedidoStatusHistorico[]
   recusas         PedidoRecusa[]
+  disputasIfood   IfoodDisputa[]
 
   @@unique([integracaoSlug, idExterno])
   @@index([createdAt])
@@ -656,6 +657,31 @@ model IntegracaoEvento {
   createdAt    DateTime   @default(now())
 
   @@index([integracaoId, createdAt])
+}
+
+// Negociação do iFood (evento HANDSHAKE_DISPUTE): o cliente pede cancelamento (total ou parcial) e a loja/ADM
+// aceita, recusa ou faz contraproposta antes de `expiraEm` (senão o iFood aplica `acaoNoPrazo` sozinho).
+model IfoodDisputa {
+  id           String    @id @default(cuid())
+  disputeId    String    @unique
+  orderId      String
+  pedidoId     String?
+  pedido       Pedido?   @relation(fields: [pedidoId], references: [id], onDelete: SetNull)
+  acao         String?   // CANCELLATION | PARTIAL_CANCELLATION
+  tipo         String?   // handshakeType: AFTER_DELIVERY, PREPARATION_TIME, DELAY...
+  mensagem     String?   // o que o cliente escreveu
+  alternativas Json?     // [{ id, type: REFUND | ADDITIONAL_TIME, metadata }]
+  dados        Json?     // metadata completo do evento
+  expiraEm     DateTime?
+  acaoNoPrazo  String?   // timeoutAction (ex.: REJECT_CANCELLATION)
+  status       String    @default("PENDENTE") // PENDENTE | ACEITA | RECUSADA | ALTERNATIVA | EXPIRADA
+  resposta     String?   // o que foi respondido (texto para a linha do tempo)
+  respondidoPor String?
+  respondidoEm DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([status, expiraEm])
+  @@index([pedidoId])
 }
 
 // Cada mudança de status do pedido, com quem fez (painel, comerciante, entregador, sistema).

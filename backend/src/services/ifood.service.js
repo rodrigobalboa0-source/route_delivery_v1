@@ -118,6 +118,14 @@ async function aoPedidoNovo(integ, evento) {
     const r = await ifood.confirmarPedidoIfood(orderId).catch(e => ({ ok: false, dados: { message: e.message } }));
     msg += r.ok ? " Pedido confirmado no iFood." : ` Não confirmou no iFood: ${ifood.mensagemIfood(r)}.`;
     await prisma.pedidoLog.create({ data: { pedidoId: pedido.id, texto: r.ok ? "Pedido confirmado no iFood." : `Falha ao confirmar no iFood: ${ifood.mensagemIfood(r)}` } });
+    // Confirmado = a loja já está preparando: avisa o início do preparo.
+    if (r.ok) {
+      const prep = await ifood.iniciarPreparoIfood(orderId).catch(e => ({ ok: false, dados: { message: e.message } }));
+      await registrarEvento(integ.id, {
+        direcao: "SAIDA", tipo: "ifood.startPreparation", sucesso: !!prep.ok, pedidoId: pedido.id,
+        mensagem: prep.ok ? "Início do preparo avisado ao iFood." : `Falha ao avisar o início do preparo: ${ifood.mensagemIfood(prep)}`,
+      }).catch(() => {});
+    }
   }
   if (integ.config?.liberarAutomaticamente && pedido.status === "PREPARANDO" && !pedido.agendadoPara) {
     pedido = await prisma.pedido.update({ where: { id: pedido.id }, data: { status: "PENDENTE", ...carimbos(pedido, "PENDENTE") } });
@@ -150,6 +158,192 @@ async function aoCodigoEntregaPedido(evento) {
   return { mensagem: `Entrega ${p.codigo}: código de entrega exigido.`, pedidoId: p.id };
 }
 
+// ---------- Negociação com o cliente (HANDSHAKE_DISPUTE / HANDSHAKE_SETTLEMENT) ----------
+
+const TIPOS_DISPUTA = {
+  AFTER_DELIVERY: "depois da entrega", AFTER_DELIVERY_PARTIALLY: "depois da entrega (parcial)",
+  PREPARATION_TIME: "durante o preparo", DELAY: "por atraso",
+};
+const ACOES_DISPUTA = { CANCELLATION: "cancelamento", PARTIAL_CANCELLATION: "cancelamento parcial" };
+const textoDisputa = d => `O cliente pediu ${ACOES_DISPUTA[d.acao] || "cancelamento"}${TIPOS_DISPUTA[d.tipo] ? ` ${TIPOS_DISPUTA[d.tipo]}` : ""}`;
+// Marca o pedido como alterado (o "tempo real" das telas olha o updatedAt dos pedidos).
+const tocarPedido = id => prisma.pedido.update({ where: { id }, data: { updatedAt: new Date() } }).catch(() => {});
+const horaBR = d => new Date(d).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" });
+
+async function aoDisputa(evento) {
+  const m = evento.metadata || {};
+  if (!m.disputeId) return "Negociação sem disputeId — ignorada.";
+  const p = await pedidoDaEntrega(evento.orderId);
+  const d = await prisma.ifoodDisputa.upsert({
+    where: { disputeId: String(m.disputeId) },
+    update: {},
+    create: {
+      disputeId: String(m.disputeId), orderId: String(evento.orderId), pedidoId: p?.id || null,
+      acao: m.action || null, tipo: m.handshakeType || null, mensagem: m.message || m.customerMessage || null,
+      alternativas: Array.isArray(m.alternatives) ? m.alternatives : [], dados: m,
+      expiraEm: m.expiresAt ? new Date(m.expiresAt) : null, acaoNoPrazo: m.timeoutAction || null,
+    },
+  });
+  const prazo = d.expiraEm ? ` Responda até ${horaBR(d.expiraEm)}.` : "";
+  if (p) await tocarPedido(p.id); // telas da loja e do ADM atualizam na hora
+  if (p) await prisma.pedidoLog.create({ data: { pedidoId: p.id, texto: `iFood: ${textoDisputa(d).toLowerCase()}.${d.mensagem ? ` Mensagem: “${d.mensagem}”.` : ""}${prazo}` } });
+  await prisma.notificacao.create({ data: { tipo: "pedido", texto: `iFood: ${textoDisputa(d)} no pedido ${p?.codigoExterno || p?.codigo || evento.orderId}.${prazo}` } }).catch(() => {});
+  return { mensagem: `${textoDisputa(d)} (negociação ${d.disputeId}).`, pedidoId: p?.id };
+}
+
+const STATUS_ACORDO = { ACCEPTED: "ACEITA", REJECTED: "RECUSADA", ALTERNATIVE_REPLIED: "ALTERNATIVA", EXPIRED: "EXPIRADA" };
+const TEXTO_ACORDO = { ACCEPTED: "aceito", REJECTED: "recusado", ALTERNATIVE_REPLIED: "respondido com contraproposta", EXPIRED: "expirado (o iFood decidiu sozinho)" };
+async function aoAcordo(evento) {
+  const m = evento.metadata || {};
+  const d = m.disputeId && await prisma.ifoodDisputa.findUnique({ where: { disputeId: String(m.disputeId) } });
+  const st = String(m.status || "").toUpperCase();
+  if (d) {
+    await prisma.ifoodDisputa.update({
+      where: { id: d.id },
+      data: { status: STATUS_ACORDO[st] || d.status, ...(d.status === "PENDENTE" && !d.respondidoEm ? { respondidoEm: new Date(), respondidoPor: st === "EXPIRED" ? "iFood (prazo)" : "iFood" } : {}) },
+    });
+  }
+  const p = await pedidoDaEntrega(evento.orderId);
+  const texto = `iFood: negociação com o cliente ${TEXTO_ACORDO[st] || st.toLowerCase() || "atualizada"}${m.reason ? ` — ${m.reason}` : ""}.`;
+  if (p) { await tocarPedido(p.id); await prisma.pedidoLog.create({ data: { pedidoId: p.id, texto } }); }
+  return { mensagem: texto, pedidoId: p?.id };
+}
+
+// O iFood recusou o cancelamento pedido pela loja: o pedido continua valendo.
+async function aoCancelamentoRecusado(evento) {
+  const p = await pedidoDaEntrega(evento.orderId);
+  const motivo = evento.metadata?.reason || evento.metadata?.message || evento.metadata?.CANCELLATION_REQUEST_FAILED_REASON || "";
+  const texto = `iFood recusou o cancelamento${motivo ? `: ${motivo}` : ""}. O pedido continua ativo — fale com o suporte do iFood se precisar cancelar.`;
+  if (p) await prisma.pedidoLog.create({ data: { pedidoId: p.id, texto } });
+  await prisma.notificacao.create({ data: { tipo: "pedido", texto: `Pedido ${p?.codigoExterno || p?.codigo || evento.orderId}: ${texto}` } }).catch(() => {});
+  return { mensagem: texto, pedidoId: p?.id };
+}
+
+// Pedido alterado depois da confirmação (ORDER_PATCHED): relê o pedido no iFood e atualiza o que importa para a
+// entrega (endereço, complemento, pagamento a cobrar, observação). Endereço novo recalcula distância e valor.
+async function aoPedidoAlterado(evento) {
+  const p = await pedidoDaEntrega(evento.orderId);
+  if (!p) return "Pedido alterado no iFood (entrega não existe aqui).";
+  if (["ENTREGUE", "CANCELADO"].includes(p.status)) return `Pedido alterado no iFood, mas a entrega já está ${p.status === "ENTREGUE" ? "entregue" : "cancelada"}.`;
+  const o = await ifood.obterPedidoIfood(evento.orderId);
+  const { cepBusca, ignorar, ...novo } = dadosDaEntrega(o);
+  if (ignorar) return `Pedido alterado no iFood: ${ignorar}`;
+  const data = {};
+  const mudou = [];
+  for (const [campo, rotulo] of [["complemento", "complemento"], ["formaPagamento", "pagamento"], ["observacao", "observação"], ["clienteTelefone", "telefone"]]) {
+    if ((novo[campo] || null) !== (p[campo] || null)) { data[campo] = novo[campo] || null; mudou.push(rotulo); }
+  }
+  if (novo.endereco && novo.endereco !== p.endereco) {
+    data.endereco = novo.endereco;
+    mudou.push("endereço");
+    const { calcularEntrega } = require("./pedidos.service");
+    const destinoAprox = !novo.destino && cepBusca ? await require("../utils/geo").geocodificarEndereco(cepBusca).catch(() => null) : null;
+    const c = await calcularEntrega({ comercioId: p.comercioId, endereco: novo.endereco, destino: novo.destino, destinoAprox, retorno: p.retorno }).catch(() => null);
+    if (c) Object.assign(data, { valor: c.valor, distanciaKm: c.distanciaKm, acrescimoRetorno: p.retorno ? c.acrescimoRetorno : null, latDestino: c.destino.lat, lngDestino: c.destino.lng });
+    else if (novo.destino) Object.assign(data, { latDestino: novo.destino.lat, lngDestino: novo.destino.lng, distanciaKm: null });
+  }
+  const tipos = Array.isArray(evento.metadata?.changes) ? evento.metadata.changes.map(x => x.type || x).join(", ") : "";
+  if (Object.keys(data).length) await prisma.pedido.update({ where: { id: p.id }, data });
+  const texto = mudou.length
+    ? `iFood: pedido alterado pelo cliente/loja — ${mudou.join(", ")} atualizado(s)${data.valor != null ? `; taxa recalculada para ${brl(data.valor)}` : ""}.`
+    : `iFood: pedido alterado${tipos ? ` (${tipos})` : " (itens)"} — nada muda na entrega.`;
+  await prisma.pedidoLog.create({ data: { pedidoId: p.id, texto } });
+  if (mudou.includes("endereço")) await prisma.notificacao.create({ data: { tipo: "pedido", texto: `Pedido ${p.codigoExterno || p.codigo}: endereço de entrega alterado no iFood.` } }).catch(() => {});
+  return { mensagem: texto, pedidoId: p.id };
+}
+
+// ---------- Ações da loja/ADM ----------
+
+function erroHttp(status, mensagem) { return Object.assign(new Error(mensagem), { status }); }
+
+async function pedidoIfoodAtivo(pedido) {
+  if (pedido?.integracaoSlug !== SLUG || !pedido.idExterno) throw erroHttp(400, "Este pedido não é do iFood.");
+  return pedido;
+}
+
+// Motivos de cancelamento aceitos pelo iFood para este pedido.
+async function motivosCancelamento(pedido) {
+  await pedidoIfoodAtivo(pedido);
+  return ifood.motivosCancelamentoIfood(pedido.idExterno);
+}
+
+// Pede o cancelamento ao iFood (com motivo válido). O pedido aqui só é cancelado quando o iFood confirmar (evento CANCELLED).
+async function cancelarNoIfood(pedido, codigo, autorNome) {
+  await pedidoIfoodAtivo(pedido);
+  const motivos = await ifood.motivosCancelamentoIfood(pedido.idExterno);
+  const motivo = motivos.find(m => m.codigo === String(codigo || ""));
+  if (!motivo) throw erroHttp(400, motivos.length ? "Escolha um dos motivos de cancelamento aceitos pelo iFood." : "O iFood não permite cancelar este pedido agora (nenhum motivo disponível). Fale com o suporte do iFood.");
+  const r = await ifood.solicitarCancelamentoIfood(pedido.idExterno, motivo.codigo, motivo.descricao);
+  const integ = await obterOuCriar(SLUG);
+  const msg = r.ok
+    ? `Cancelamento pedido ao iFood por ${autorNome} (motivo: ${motivo.descricao}). Aguardando a confirmação do iFood.`
+    : `iFood recusou o pedido de cancelamento: ${ifood.mensagemIfood(r)}`;
+  await registrarEvento(integ.id, { direcao: "SAIDA", tipo: "ifood.requestCancellation", sucesso: !!r.ok, mensagem: msg, pedidoId: pedido.id }).catch(() => {});
+  await prisma.pedidoLog.create({ data: { pedidoId: pedido.id, texto: msg } });
+  if (!r.ok) throw erroHttp(422, msg);
+  // O CANCELLED costuma chegar em segundos: busca de novo daqui a 2 s e 8 s para não depender só do webhook.
+  require("../utils/segundoPlano").emSegundoPlano(async () => {
+    for (const ms of [2000, 6000]) {
+      await new Promise(ok => setTimeout(ok, ms));
+      await sincronizar({ forcar: true }).catch(() => {});
+      const atual = await prisma.pedido.findUnique({ where: { id: pedido.id }, select: { status: true } });
+      if (atual?.status === "CANCELADO") break;
+    }
+  }, "Confirmação do cancelamento no iFood");
+  return { ok: true, mensagem: "Cancelamento enviado ao iFood. O pedido fica cancelado assim que o iFood confirmar (em instantes)." };
+}
+
+// Responde a negociação: { resposta: "aceitar" | "recusar" | "alternativa", motivo?, alternativaId?, valor?, minutos? }
+async function responderDisputa(disputa, { resposta, motivo, alternativaId, valor, minutos }, autorNome) {
+  if (disputa.status !== "PENDENTE") throw erroHttp(409, "Esta negociação já foi respondida.");
+  if (disputa.expiraEm && disputa.expiraEm < new Date()) throw erroHttp(409, "O prazo para responder acabou. O iFood já aplicou a resposta automática.");
+  let r, texto, status;
+  if (resposta === "aceitar") {
+    r = await ifood.aceitarDisputaIfood(disputa.disputeId, motivo);
+    texto = `aceitou o ${ACOES_DISPUTA[disputa.acao] || "cancelamento"}`;
+    status = "ACEITA";
+  } else if (resposta === "recusar") {
+    if (!String(motivo || "").trim()) throw erroHttp(400, "Escreva o motivo da recusa (o cliente vê).");
+    r = await ifood.recusarDisputaIfood(disputa.disputeId, String(motivo).trim().slice(0, 250));
+    texto = `recusou o pedido do cliente (motivo: ${String(motivo).trim()})`;
+    status = "RECUSADA";
+  } else if (resposta === "alternativa") {
+    const alt = (disputa.alternativas || []).find(a => a.id === alternativaId);
+    if (!alt) throw erroHttp(400, "Escolha uma das contrapropostas permitidas pelo iFood.");
+    let corpo;
+    if (alt.type === "REFUND") {
+      const max = Number(alt.metadata?.maxAmount?.value || 0);
+      const centavos = Math.round(Number(String(valor).replace(",", ".")) * 100);
+      if (!(centavos > 0) || (max && centavos > max)) throw erroHttp(400, `Valor do reembolso inválido${max ? ` (máximo R$ ${(max / 100).toFixed(2).replace(".", ",")})` : ""}.`);
+      corpo = { type: "REFUND", metadata: { amount: { currency: alt.metadata?.maxAmount?.currency || "BRL", value: String(centavos) } } };
+      texto = `ofereceu reembolso de ${brl(centavos / 100)}`;
+    } else if (alt.type === "ADDITIONAL_TIME") {
+      const min = Math.round(Number(minutos));
+      const permitidos = alt.metadata?.allowedsAdditionalTimeInMinutes || alt.metadata?.allowedAdditionalTimeInMinutes;
+      if (!(min > 0) || (Array.isArray(permitidos) && permitidos.length && !permitidos.includes(min))) throw erroHttp(400, `Tempo adicional inválido${Array.isArray(permitidos) ? ` (opções: ${permitidos.join(", ")} min)` : ""}.`);
+      corpo = { type: "ADDITIONAL_TIME", metadata: { additionalTimeInMinutes: min, additionalTimeReason: alt.metadata?.allowedsAdditionalTimeReasons?.[0] || "OPERATIONAL_ISSUES" } };
+      texto = `pediu mais ${min} minutos`;
+    } else throw erroHttp(400, "Tipo de contraproposta não suportado.");
+    r = await ifood.alternativaDisputaIfood(disputa.disputeId, alt.id, corpo);
+    status = "ALTERNATIVA";
+  } else throw erroHttp(400, "Resposta inválida.");
+
+  const integ = await obterOuCriar(SLUG);
+  await registrarEvento(integ.id, {
+    direcao: "SAIDA", tipo: `ifood.dispute.${resposta}`, sucesso: !!r.ok, pedidoId: disputa.pedidoId,
+    mensagem: r.ok ? `${autorNome} ${texto}.` : `iFood recusou a resposta: ${ifood.mensagemIfood(r)}`,
+  }).catch(() => {});
+  if (!r.ok) throw erroHttp(422, `O iFood não aceitou a resposta: ${ifood.mensagemIfood(r)}`);
+  const atualizada = await prisma.ifoodDisputa.update({
+    where: { id: disputa.id }, data: { status, resposta: texto, respondidoPor: autorNome, respondidoEm: new Date() },
+  });
+  if (disputa.pedidoId) {
+    await tocarPedido(disputa.pedidoId);
+    await prisma.pedidoLog.create({ data: { pedidoId: disputa.pedidoId, texto: `Negociação iFood: ${autorNome} ${texto}.` } });
+  }
+  return atualizada;
+}
+
 // Processa uma lista de eventos (webhook ou polling). Devolve um resumo.
 async function processarEventos(eventos, origem = "webhook") {
   const integ = await obterOuCriar(SLUG);
@@ -164,7 +358,16 @@ async function processarEventos(eventos, origem = "webhook") {
       else if (eh(e, "PLC", "PLACED")) r = await aoPedidoNovo(integ, e);
       else if (eh(e, "CAN", "CANCELLED", "CANCELED")) r = await aoCancelado(e);
       else if (codigo.includes("DELIVERY_DROP_CODE_REQUESTED")) r = await aoCodigoEntregaPedido(e);
-      else { resumo.ignorados++; continue; } // demais eventos (confirmado, pronto, concluído...) só servem de informação
+      else if (eh(e, "HSD", "HANDSHAKE_DISPUTE")) r = await aoDisputa(e);
+      else if (eh(e, "HSS", "HANDSHAKE_SETTLEMENT")) r = await aoAcordo(e);
+      else if (eh(e, "CARF", "CANCELLATION_REQUEST_FAILED")) r = await aoCancelamentoRecusado(e);
+      else if (codigo.includes("PATCHED")) r = await aoPedidoAlterado(e);
+      else {
+        // Demais eventos (confirmado, preparo, despachado, concluído...) só servem de informação — ficam registrados.
+        resumo.ignorados++;
+        await registrarEvento(integ.id, { direcao: "ENTRADA", tipo: `ifood.${codigo.toLowerCase()}`, sucesso: true, mensagem: `Evento informativo (${origem}).`, payload: e }).catch(() => {});
+        continue;
+      }
       if (typeof r === "object" && r?.pedidoId) resumo.novos++;
       await registrarEvento(integ.id, {
         direcao: "ENTRADA", tipo: `ifood.${codigo.toLowerCase()}`, sucesso: true,
@@ -235,4 +438,7 @@ async function atualizarAntesDeFinalizar(pedido) {
   return (await prisma.pedido.findUnique({ where: { id: pedido.id } })) || pedido;
 }
 
-module.exports = { processarEventos, sincronizar, aoMudarStatus, validarCodigoEntrega, dadosDaEntrega, atualizarAntesDeFinalizar };
+module.exports = {
+  processarEventos, sincronizar, aoMudarStatus, validarCodigoEntrega, dadosDaEntrega, atualizarAntesDeFinalizar,
+  motivosCancelamento, cancelarNoIfood, responderDisputa, textoDisputa,
+};
