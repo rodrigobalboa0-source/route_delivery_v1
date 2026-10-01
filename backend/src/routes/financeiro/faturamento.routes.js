@@ -20,10 +20,12 @@ router.get(
   "/faturamento/previa",
   asyncHandler(async (req, res) => {
     const { desde, ate } = periodoObrigatorio(req.query);
-    const [pendentes, faturadas, comercios] = await Promise.all([
+    const [pendentes, faturadas, comercios, finalizadas] = await Promise.all([
       naoFaturadas({ desde, ate }),
       prisma.pedido.groupBy({ by: ["comercioId"], where: { status: "ENTREGUE", faturaId: { not: null }, entregueEm: { gte: desde, lte: ate } }, _count: { _all: true } }),
       prisma.comercio.findMany({ select: { id: true, nomeFantasia: true, razaoSocial: true, documento: true, bloqueado: true, metodoPagamento: true } }),
+      // Todas as entregas finalizadas no período (faturadas ou não).
+      prisma.pedido.aggregate({ where: { status: "ENTREGUE", entregueEm: { gte: desde, lte: ate } }, _count: { _all: true }, _sum: { valor: true } }),
     ]);
     const nome = Object.fromEntries(comercios.map(c => [c.id, c]));
     const ja = Object.fromEntries(faturadas.map(f => [f.comercioId, f._count._all]));
@@ -38,7 +40,52 @@ router.get(
       ...g, valor: r2(g.valor), nome: nome[g.comercioId]?.nomeFantasia || "—", razaoSocial: nome[g.comercioId]?.razaoSocial,
       metodoPagamento: nome[g.comercioId]?.metodoPagamento, jaFaturadas: ja[g.comercioId] || 0,
     })).sort((a, b) => b.valor - a.valor);
-    res.json({ desde, ate, linhas, totais: { comercios: linhas.length, entregas: pendentes.length, valor: r2(linhas.reduce((s, l) => s + l.valor, 0)) } });
+    res.json({
+      desde, ate, linhas,
+      totais: {
+        comercios: linhas.length, entregas: pendentes.length, valor: r2(linhas.reduce((s, l) => s + l.valor, 0)),
+        finalizadas: finalizadas._count._all, valorFinalizadas: r2(finalizadas._sum.valor || 0),
+      },
+    });
+  })
+);
+
+// GET /faturamento/relatorio?desde&ate&comercioId&situacao=todas|a_faturar|faturadas
+// Relatório das entregas finalizadas no período, uma linha por entrega (tela e downloads Excel/PDF).
+router.get(
+  "/faturamento/relatorio",
+  asyncHandler(async (req, res) => {
+    const { desde, ate } = periodoObrigatorio(req.query);
+    const where = { status: "ENTREGUE", entregueEm: { gte: desde, lte: ate } };
+    if (req.query.comercioId) where.comercioId = String(req.query.comercioId);
+    if (req.query.situacao === "a_faturar") where.faturaId = null;
+    if (req.query.situacao === "faturadas") where.faturaId = { not: null };
+    const pedidos = await prisma.pedido.findMany({
+      where, orderBy: { entregueEm: "asc" }, take: 10000,
+      select: {
+        id: true, codigo: true, codigoExterno: true, entregueEm: true, clienteNome: true, endereco: true, distanciaKm: true,
+        valor: true, retorno: true, origem: true,
+        comercio: { select: { nomeFantasia: true } },
+        entregador: { select: { nomeCompleto: true } },
+        fatura: { select: { numero: true, paga: true } },
+      },
+    });
+    const linhas = pedidos.map(p => ({
+      id: p.id, codigo: p.codigo, codigoExterno: p.codigoExterno, entregueEm: p.entregueEm,
+      comercio: p.comercio?.nomeFantasia || "—", cliente: p.clienteNome, endereco: p.endereco,
+      km: p.distanciaKm != null ? Number(p.distanciaKm.toFixed(2)) : null, valor: p.valor != null ? r2(p.valor) : null,
+      retorno: p.retorno, entregador: p.entregador?.nomeCompleto || "—",
+      fatura: p.fatura ? { numero: p.fatura.numero, paga: p.fatura.paga } : null,
+    }));
+    const soma = f => r2(linhas.reduce((s, l) => s + (f(l) || 0), 0));
+    res.json({
+      desde, ate, linhas, limite: pedidos.length === 10000,
+      totais: {
+        entregas: linhas.length, valor: soma(l => l.valor), km: soma(l => l.km),
+        faturadas: linhas.filter(l => l.fatura).length, aFaturar: linhas.filter(l => !l.fatura).length,
+        comercios: new Set(linhas.map(l => l.comercio)).size,
+      },
+    });
   })
 );
 

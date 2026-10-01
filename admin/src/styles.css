@@ -1072,3 +1072,8 @@ code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-siz
 .tabela-permissoes .chave-tabela { display: inline-flex; padding: 0; justify-content: center; }
 .tabela-permissoes .linha-todas td { background: var(--fundo, #f4f5f7); font-size: 12px; white-space: nowrap; }
 .tabela-permissoes .linha-todas .btn { margin: 1px; }
+
+/* Financeiro › Faturamento: downloads Excel/PDF */
+.barra-downloads { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 12px; }
+.baixar-grupo { display: inline-flex; align-items: center; gap: 6px; padding: 6px 8px 6px 12px; border: 1px solid var(--borda); border-radius: var(--raio-sm, 6px); background: var(--superficie, #fff); }
+.baixar-grupo > span { font-size: 13px; font-weight: 600; margin-right: 4px; }
