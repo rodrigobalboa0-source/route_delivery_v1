@@ -21,7 +21,13 @@
       "permissions": [
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_LOCATION",
         "android.permission.VIBRATE"
+      ],
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "web": {
@@ -31,7 +37,10 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "O Route Entregador usa sua localização para mostrar corridas perto de você e acompanhar as entregas enquanto você está online."
+          "locationWhenInUsePermission": "O Route Entregador usa sua localização para mostrar corridas perto de você e acompanhar as entregas enquanto você está online.",
+          "locationAlwaysAndWhenInUsePermission": "Com “Permitir o tempo todo”, a loja e a equipe acompanham suas entregas mesmo com o app minimizado ou a tela bloqueada, enquanto você está online.",
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
         }
       ],
       "expo-font",

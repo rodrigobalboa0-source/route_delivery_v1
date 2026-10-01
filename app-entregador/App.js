@@ -8,11 +8,12 @@ import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { api, carregarToken, quandoSessaoExpirar, salvarToken } from "./src/api";
 import { assinarTempoReal, reiniciarTempoReal } from "./src/tempoReal";
-import { PopupAviso } from "./src/componentes";
+import { Confirmar, PopupAviso } from "./src/componentes";
 import { cor, moeda } from "./src/tema";
 import Mapa from "./src/mapa/Mapa";
 import Entrada from "./src/telas/Entrada";
 import { registrarPush, useToqueNotificacao } from "./src/notificacoes";
+import { pararRastreioFundo } from "./src/localizacaoFundo"; // também registra a tarefa de localização em segundo plano
 import { ListaAndamento, ListaDisponiveis, PopupCorrida, useOperacao } from "./src/telas/Corridas";
 import { Carteira, Mensagens, Perfil, Promocoes, Treinamento } from "./src/telas/Outras";
 import Ranking from "./src/telas/Ranking";
@@ -240,7 +241,7 @@ function Principal({ entregador, setEntregador, onSair }) {
             {tela === "promocao" && <Promocoes />}
             {tela === "mensagens" && <Mensagens />}
             {tela === "carteira" && <Carteira />}
-            {tela === "conta" && <Perfil entregador={entregador} setEntregador={setEntregador} onSair={onSair} />}
+            {tela === "conta" && <Perfil entregador={entregador} setEntregador={setEntregador} onSair={onSair} localizacao={op.localizacao} onPermitirTempoTodo={op.permitirTempoTodo} />}
             {tela === "treinamento" && <Treinamento />}
             {tela === "ranking" && <Ranking />}
           </View>
@@ -250,6 +251,14 @@ function Principal({ entregador, setEntregador, onSair }) {
 
       <MenuLateral aberto={menu} tela={tela} ir={ir} onFechar={() => setMenu(false)} />
       <PopupAviso aviso={atual} onFechar={fechar} />
+      <Confirmar
+        visivel={!atual && op.pedirTempoTodo}
+        titulo="Permitir localização o tempo todo"
+        texto={"Para a loja e a equipe acompanharem suas entregas mesmo com o app minimizado ou a tela bloqueada, o Route Entregador usa sua localização em segundo plano enquanto você está online.\n\nNa próxima tela, toque em Localização › “Permitir o tempo todo”. Ao ficar offline, o envio para."}
+        rotuloOk="Permitir o tempo todo"
+        onOk={op.permitirTempoTodo}
+        onCancelar={op.agoraNaoTempoTodo}
+      />
       {!atual && !menu && <PopupCorrida op={op} onAceitou={() => setTela("andamento")} />}
     </View>
   );
@@ -263,6 +272,7 @@ export default function App() {
 
   // Sair: fica offline e libera este celular (a conta pode entrar em outro aparelho).
   const sair = useCallback(async () => {
+    await pararRastreioFundo();
     await api.post("/sair").catch(() => {});
     await salvarToken(null);
     reiniciarTempoReal();
@@ -271,7 +281,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    quandoSessaoExpirar(msg => { salvarToken(null); reiniciarTempoReal(); setAviso(msg || null); setEntregador(null); });
+    quandoSessaoExpirar(msg => { pararRastreioFundo(); salvarToken(null); reiniciarTempoReal(); setAviso(msg || null); setEntregador(null); });
     (async () => {
       try {
         if (await carregarToken()) setEntregador(await api.get("/me"));

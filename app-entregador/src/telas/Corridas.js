@@ -1,8 +1,9 @@
 // Corridas: o "motor" da operação (online/offline, GPS, listas) e as telas Disponíveis e Em andamento.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Image, Linking, Modal, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { AppState, Image, Linking, Modal, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { pararAlarme, tocarAlarme } from "../alarme";
 import * as Location from "expo-location";
+import { iniciarRastreioFundo, pararRastreioFundo, pedirLocalizacaoTempoTodo, situacaoLocalizacao } from "../localizacaoFundo";
 import { api } from "../api";
 import { assinarTempoReal } from "../tempoReal";
 import { Botao, Campo, Cartao, Confirmar, Erro, Selo, Vazio } from "../componentes";
@@ -84,6 +85,30 @@ export function useOperacao(entregador, setEntregador) {
     return () => clearInterval(t);
   }, [online]);
 
+  // Localização o tempo todo: online + "Permitir o tempo todo" = envio em segundo plano (app minimizado ou fechado).
+  // Ao voltar das configurações do celular, confere de novo a permissão.
+  const [localizacao, setLocalizacao] = useState(null); // "granted" | "foreground" | "denied"
+  const [pedirTempoTodo, setPedirTempoTodo] = useState(false);
+  const fundoAtivo = useRef(false);
+  const conferirFundo = useCallback(async () => {
+    const s = await situacaoLocalizacao();
+    setLocalizacao(s);
+    if (online) fundoAtivo.current = await iniciarRastreioFundo();
+    else { await pararRastreioFundo(); fundoAtivo.current = false; }
+    return s;
+  }, [online]);
+  useEffect(() => {
+    conferirFundo();
+    const sub = AppState.addEventListener("change", e => { if (e === "active") conferirFundo(); });
+    return () => sub.remove();
+  }, [conferirFundo]);
+
+  async function permitirTempoTodo() {
+    setPedirTempoTodo(false);
+    await pedirLocalizacaoTempoTodo();
+    await conferirFundo();
+  }
+
   // Posição no mapa: se a permissão já existe, mostra mesmo offline. Online, envia ao sistema (a cada 15 s).
   useEffect(() => {
     let vigia = null;
@@ -96,7 +121,8 @@ export function useOperacao(entregador, setEntregador) {
         pos => {
           const p = { lat: pos.coords.latitude, lng: pos.coords.longitude };
           setPosicao(p);
-          if (!online || Date.now() - ultimoEnvio.current < INTERVALO_POSICAO_MS) return;
+          // Com o envio em segundo plano ligado, ele já manda a posição (não duplica).
+          if (!online || fundoAtivo.current || Date.now() - ultimoEnvio.current < INTERVALO_POSICAO_MS) return;
           ultimoEnvio.current = Date.now();
           api.post("/localizacao", p).catch(() => {});
         }
@@ -126,6 +152,8 @@ export function useOperacao(entregador, setEntregador) {
         }
       }
       setEntregador(await api.patch("/status", corpo));
+      // Ficou online só com "durante o uso": explica e oferece "Permitir o tempo todo".
+      if (!online && (await situacaoLocalizacao()) === "foreground") setPedirTempoTodo(true);
     } catch (e) {
       setErro(e.message);
     } finally {
@@ -170,6 +198,7 @@ export function useOperacao(entregador, setEntregador) {
     ativos, disponiveis, posicao, ganhoHoje, erro, setErro, aviso, online, mudandoStatus, aceitando, alternarOnline, aceitar, recusar, atualizarTudo,
     raio: entregador?.raioConfirmacaoMetros || 200,
     novaCorrida: novas[0] || null, depois,
+    localizacao, pedirTempoTodo, permitirTempoTodo, agoraNaoTempoTodo: () => setPedirTempoTodo(false),
   };
 }
 

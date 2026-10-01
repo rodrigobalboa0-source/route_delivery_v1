@@ -283,7 +283,30 @@ function MeuEndereco({ entregador, setEntregador }) {
   );
 }
 
-export function Perfil({ entregador, setEntregador, onSair }) {
+// Permissão de localização: "o tempo todo" deixa a equipe acompanhar mesmo com o app minimizado.
+function PermissaoLocalizacao({ localizacao, onPermitir }) {
+  if (!localizacao || localizacao === "web") return null;
+  const tempoTodo = localizacao === "granted";
+  return (
+    <Cartao>
+      <Text style={st.secao}>Permissões</Text>
+      <View style={st.perfilLinha}>
+        <Text style={st.perfilRotulo}>Localização</Text>
+        <Text style={[st.texto, { color: tempoTodo ? cor.ok : cor.aviso, fontWeight: "700" }]}>
+          {tempoTodo ? "✓ Permitida o tempo todo" : localizacao === "foreground" ? "Só durante o uso do app" : "Não permitida"}
+        </Text>
+      </View>
+      <Text style={st.textoPequeno}>
+        {tempoTodo
+          ? "Enquanto você está online, sua posição é enviada mesmo com o app minimizado ou a tela bloqueada. Ao ficar offline, o envio para."
+          : "Com “Permitir o tempo todo”, a loja e a equipe acompanham sua entrega mesmo com o app minimizado ou a tela bloqueada (só enquanto você está online)."}
+      </Text>
+      {!tempoTodo && <Botao titulo="Permitir o tempo todo" onPress={onPermitir} />}
+    </Cartao>
+  );
+}
+
+export function Perfil({ entregador, setEntregador, onSair, localizacao, onPermitirTempoTodo }) {
   const [rotulo, c] = STATUS[entregador?.status] || [entregador?.status, cor.texto2];
   const linhas = [
     ["E-mail", entregador?.email], ["Telefone", entregador?.telefone], ["Veículo", [VEICULOS[entregador?.veiculoTipo], entregador?.veiculoModelo, entregador?.veiculoPlaca].filter(Boolean).join(" · ")],
@@ -298,6 +321,7 @@ export function Perfil({ entregador, setEntregador, onSair }) {
         ))}
       </Cartao>
       <MeuEndereco entregador={entregador} setEntregador={setEntregador} />
+      <PermissaoLocalizacao localizacao={localizacao} onPermitir={onPermitirTempoTodo} />
       <Text style={st.textoPequeno}>Para alterar seus dados, fale com a equipe da operação.</Text>
       <Botao titulo="Sair da conta" variante="perigo" onPress={onSair} />
     </ScrollView>
