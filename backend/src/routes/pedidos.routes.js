@@ -199,6 +199,17 @@ router.get(
   })
 );
 
+// GET /api/pedidos/:id/ifood/detalhes — o pedido como o iFood devolve (diagnóstico/suporte; só ADM)
+router.get(
+  "/:id/ifood/detalhes",
+  asyncHandler(async (req, res) => {
+    const pedido = await prisma.pedido.findUnique({ where: { id: req.params.id } });
+    if (!pedido) throw erroHttp(404, "Pedido não encontrado.");
+    if (pedido.integracaoSlug !== "ifood" || !pedido.idExterno) throw erroHttp(400, "Este pedido não é do iFood.");
+    res.json(await require("../integracoes/ifood").obterPedidoIfood(pedido.idExterno));
+  })
+);
+
 // POST /api/pedidos/:id/ifood/disputas/:disputaId  { resposta: aceitar|recusar|alternativa, motivo?, alternativaId?, valor?, minutos? }
 router.post(
   "/:id/ifood/disputas/:disputaId",
