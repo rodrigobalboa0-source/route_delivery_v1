@@ -361,7 +361,8 @@ async function processarEventos(eventos, origem = "webhook") {
       else if (eh(e, "HSD", "HANDSHAKE_DISPUTE")) r = await aoDisputa(e);
       else if (eh(e, "HSS", "HANDSHAKE_SETTLEMENT")) r = await aoAcordo(e);
       else if (eh(e, "CARF", "CANCELLATION_REQUEST_FAILED")) r = await aoCancelamentoRecusado(e);
-      else if (codigo.includes("PATCHED")) r = await aoPedidoAlterado(e);
+      // Só ORDER_PATCHED (cuidado: "DISPATCHED" também contém "PATCHED").
+      else if (codigo === "ORDER_PATCHED" || String(e.code || "").toUpperCase() === "ORDER_PATCHED") r = await aoPedidoAlterado(e);
       else {
         // Demais eventos (confirmado, preparo, despachado, concluído...) só servem de informação — ficam registrados.
         resumo.ignorados++;
