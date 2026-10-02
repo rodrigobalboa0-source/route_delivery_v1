@@ -409,9 +409,22 @@ async function sincronizar({ forcar = false } = {}) {
 const SAIU_OU_DEPOIS = ["EM_ROTA", "NO_CLIENTE", "ENTREGUE"];
 
 async function aoMudarStatus(pedidoId, de, para) {
+  // Chegou ao cliente: avisa o iFood (antes do código de entrega).
+  if (para === "NO_CLIENTE") {
+    const p = await prisma.pedido.findUnique({ where: { id: pedidoId }, select: { id: true, integracaoSlug: true, idExterno: true, exigeCodigoEntrega: true } });
+    if (p?.integracaoSlug === SLUG && p.idExterno) {
+      if (!SAIU_OU_DEPOIS.includes(de)) await despachar(p); // pulou a etapa "Em rota": avisa a saída antes
+      await avisarChegada(p);
+    }
+    return;
+  }
   if (!SAIU_OU_DEPOIS.includes(para) || SAIU_OU_DEPOIS.includes(de)) return;
   const p = await prisma.pedido.findUnique({ where: { id: pedidoId }, select: { id: true, integracaoSlug: true, idExterno: true } });
   if (p?.integracaoSlug !== SLUG || !p.idExterno) return;
+  await despachar(p);
+}
+
+async function despachar(p) {
   const integ = await obterOuCriar(SLUG);
   const jaAvisado = await prisma.integracaoEvento.findFirst({ where: { integracaoId: integ.id, pedidoId: p.id, tipo: "ifood.dispatch", sucesso: true } });
   if (jaAvisado) return;
@@ -422,13 +435,36 @@ async function aoMudarStatus(pedidoId, de, para) {
 }
 
 // Finalizar pelo app com o código que o cliente informou. Lança erro 422 se o iFood recusar.
+// Avisa o iFood que o entregador chegou ao cliente (uma vez por pedido). Exigido antes de conferir o código.
+async function avisarChegada(pedido) {
+  const integ = await obterOuCriar(SLUG);
+  const ja = await prisma.integracaoEvento.findFirst({ where: { integracaoId: integ.id, pedidoId: pedido.id, tipo: "ifood.arrivedAtDestination", sucesso: true } });
+  if (ja) return true;
+  const r = await ifood.avisarChegadaIfood(pedido.idExterno).catch(err => ({ ok: false, dados: { message: err.message } }));
+  await registrarEvento(integ.id, {
+    direcao: "SAIDA", tipo: "ifood.arrivedAtDestination", sucesso: !!r.ok, pedidoId: pedido.id,
+    mensagem: r.ok ? `iFood avisado: entregador chegou ao cliente (${ifood.detalheIfood(r)}).` : `Falha ao avisar a chegada: ${ifood.detalheIfood(r)}`,
+  }).catch(() => {});
+  if (r.ok) await prisma.pedidoLog.create({ data: { pedidoId: pedido.id, texto: "iFood avisado: entregador chegou ao cliente." } }).catch(() => {});
+  return !!r.ok;
+}
+
 async function validarCodigoEntrega(pedido, codigo) {
   const c = String(codigo || "").replace(/\s/g, "");
   if (!c) throw Object.assign(new Error("Peça ao cliente o código de entrega do iFood e digite para finalizar."), { status: 422, extra: { codigo: "CODIGO_ENTREGA" } });
+  await avisarChegada(pedido); // o iFood só confere o código depois da chegada
   const r = await ifood.verificarCodigoEntregaIfood(pedido.idExterno, c);
   const integ = await obterOuCriar(SLUG);
-  await registrarEvento(integ.id, { direcao: "SAIDA", tipo: "ifood.verifyDeliveryCode", sucesso: !!r.ok, mensagem: r.ok ? "Código de entrega aceito." : ifood.mensagemIfood(r), pedidoId: pedido.id }).catch(() => {});
-  if (!r.ok) throw Object.assign(new Error(r.status >= 500 ? "O iFood não respondeu. Tente de novo em instantes." : "Código de entrega incorreto. Confira com o cliente."), { status: 422, extra: { codigo: "CODIGO_ENTREGA" } });
+  await registrarEvento(integ.id, {
+    direcao: "SAIDA", tipo: "ifood.verifyDeliveryCode", sucesso: !!r.ok, pedidoId: pedido.id,
+    mensagem: `${r.ok ? "Código de entrega aceito" : "Código recusado"} (código ${c.length} dígitos · ${ifood.detalheIfood(r)})`,
+  }).catch(() => {});
+  if (!r.ok) {
+    const msg = r.status >= 500 ? "O iFood não respondeu. Tente de novo em instantes."
+      : r.status === 412 ? "O iFood ainda não liberou a conferência do código para este pedido. Tente de novo em instantes."
+        : "Código de entrega incorreto. Confira com o cliente.";
+    throw Object.assign(new Error(msg), { status: 422, extra: { codigo: "CODIGO_ENTREGA" } });
+  }
 }
 
 // Antes de finalizar: o aviso "exige código" chega pouco depois do dispatch. Se ainda não chegou pelo webhook,

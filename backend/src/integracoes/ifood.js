@@ -100,7 +100,9 @@ async function postIfood(caminho, corpo) {
   return { ok: false, status: 401, dados: null };
 }
 
-const mensagemIfood = r => r?.dados?.error?.message || r?.dados?.message || (typeof r?.dados === "string" ? r.dados.slice(0, 200) : "") || `HTTP ${r?.status}`;
+const mensagemIfood = r => r?.dados?.error?.message || r?.dados?.message || (typeof r?.dados === "string" && r.dados ? r.dados.slice(0, 200) : "") || `HTTP ${r?.status}`;
+// Resposta completa para o registro de eventos (status, caminho usado e corpo).
+const detalheIfood = r => `HTTP ${r?.status}${r?.caminho ? ` via ${r.caminho}` : ""}${r?.dados ? ` · ${typeof r.dados === "string" ? r.dados.slice(0, 300) : JSON.stringify(r.dados).slice(0, 300)}` : " · sem corpo"}`;
 
 // ---------- Pedidos ----------
 
@@ -112,7 +114,23 @@ async function despacharPedidoIfood(id) {
   if (r.ok || ![400, 422].includes(r.status)) return r;
   return postIfood(`/order/v1.0/orders/${encodeURIComponent(id)}/dispatch`, { deliveredBy: "MERCHANT" });
 }
-const verificarCodigoEntregaIfood = (id, code) => postIfood(`/order/v1.0/orders/${encodeURIComponent(id)}/verifyDeliveryCode`, { code: String(code) });
+// Entrega própria com código: 1) avisar a chegada ao destino; 2) conferir o código.
+// Os dois ficam no módulo de Logística (/logistics/v1.0). Se o app não tiver esse módulo (403/404/405),
+// tenta o caminho do módulo de Pedidos. Código errado = 422; pedido fora da etapa = 412.
+const SEM_ROTA = [403, 404, 405];
+async function avisarChegadaIfood(id) {
+  const r = await postIfood(`/logistics/v1.0/orders/${encodeURIComponent(id)}/arrivedAtDestination`);
+  if (!SEM_ROTA.includes(r.status)) return { ...r, caminho: "logistics" };
+  return { ...(await postIfood(`/order/v1.0/orders/${encodeURIComponent(id)}/arrivedAtDestination`)), caminho: "order" };
+}
+async function verificarCodigoEntregaIfood(id, code) {
+  const corpo = { code: String(code) };
+  const r = await postIfood(`/logistics/v1.0/orders/${encodeURIComponent(id)}/verifyDeliveryCode`, corpo);
+  const final = SEM_ROTA.includes(r.status) ? { ...(await postIfood(`/order/v1.0/orders/${encodeURIComponent(id)}/verifyDeliveryCode`, corpo)), caminho: "order" } : { ...r, caminho: "logistics" };
+  // Algumas versões respondem 200 com { valid: false } para código errado.
+  if (final.ok && final.dados && typeof final.dados === "object" && final.dados.valid === false) return { ...final, ok: false, status: 422 };
+  return final;
+}
 // Início do preparo (depois de confirmar).
 const iniciarPreparoIfood = id => postIfood(`/order/v1.0/orders/${encodeURIComponent(id)}/startPreparation`);
 
@@ -187,8 +205,8 @@ async function listarLojas() {
 }
 
 module.exports = {
-  obterToken, listarLojas, getIfood, postIfood, mensagemIfood, credenciais,
-  obterPedidoIfood, confirmarPedidoIfood, despacharPedidoIfood, verificarCodigoEntregaIfood, iniciarPreparoIfood,
+  obterToken, listarLojas, getIfood, postIfood, mensagemIfood, detalheIfood, credenciais,
+  obterPedidoIfood, confirmarPedidoIfood, despacharPedidoIfood, verificarCodigoEntregaIfood, avisarChegadaIfood, iniciarPreparoIfood,
   motivosCancelamentoIfood, solicitarCancelamentoIfood,
   aceitarDisputaIfood, recusarDisputaIfood, alternativaDisputaIfood,
   buscarEventosIfood, confirmarRecebimentoEventos,
