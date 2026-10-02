@@ -209,6 +209,21 @@ async function aoAcordo(evento) {
   return { mensagem: texto, pedidoId: p?.id };
 }
 
+// O iFood concluiu o pedido (ex.: cliente confirmou ou o prazo passou): o código de entrega não vale mais —
+// o entregador finaliza aqui sem código.
+async function aoConcluido(evento) {
+  const p = await pedidoDaEntrega(evento.orderId);
+  if (!p) return "Pedido concluído no iFood (entrega não existe aqui).";
+  if (["ENTREGUE", "CANCELADO"].includes(p.status)) return `Pedido concluído no iFood; entrega já estava ${p.status === "ENTREGUE" ? "entregue" : "cancelada"}.`;
+  if (p.exigeCodigoEntrega && !p.codigoConfirmacao) {
+    await prisma.pedido.update({ where: { id: p.id }, data: { exigeCodigoEntrega: false } });
+    await prisma.pedidoLog.create({ data: { pedidoId: p.id, texto: "iFood concluiu o pedido: o código de entrega não é mais necessário — o entregador pode finalizar." } });
+  } else {
+    await prisma.pedidoLog.create({ data: { pedidoId: p.id, texto: "iFood concluiu o pedido." } });
+  }
+  return { mensagem: `Pedido ${p.codigo} concluído no iFood.`, pedidoId: p.id };
+}
+
 // O iFood recusou o cancelamento pedido pela loja: o pedido continua valendo.
 async function aoCancelamentoRecusado(evento) {
   const p = await pedidoDaEntrega(evento.orderId);
@@ -361,6 +376,7 @@ async function processarEventos(eventos, origem = "webhook") {
       else if (eh(e, "HSD", "HANDSHAKE_DISPUTE")) r = await aoDisputa(e);
       else if (eh(e, "HSS", "HANDSHAKE_SETTLEMENT")) r = await aoAcordo(e);
       else if (eh(e, "CARF", "CANCELLATION_REQUEST_FAILED")) r = await aoCancelamentoRecusado(e);
+      else if (eh(e, "CON", "CONCLUDED")) r = await aoConcluido(e);
       // Só ORDER_PATCHED (cuidado: "DISPATCHED" também contém "PATCHED").
       else if (codigo === "ORDER_PATCHED" || String(e.code || "").toUpperCase() === "ORDER_PATCHED") r = await aoPedidoAlterado(e);
       else {
