@@ -123,13 +123,17 @@ async function avisarChegadaIfood(id) {
   if (!SEM_ROTA.includes(r.status)) return { ...r, caminho: "logistics" };
   return { ...(await postIfood(`/order/v1.0/orders/${encodeURIComponent(id)}/arrivedAtDestination`)), caminho: "order" };
 }
+const valido = r => (r.ok && r.dados && typeof r.dados === "object" && r.dados.valid === false ? { ...r, ok: false, status: 422 } : r);
 async function verificarCodigoEntregaIfood(id, code) {
   const corpo = { code: String(code) };
-  const r = await postIfood(`/logistics/v1.0/orders/${encodeURIComponent(id)}/verifyDeliveryCode`, corpo);
-  const final = SEM_ROTA.includes(r.status) ? { ...(await postIfood(`/order/v1.0/orders/${encodeURIComponent(id)}/verifyDeliveryCode`, corpo)), caminho: "order" } : { ...r, caminho: "logistics" };
-  // Algumas versões respondem 200 com { valid: false } para código errado.
-  if (final.ok && final.dados && typeof final.dados === "object" && final.dados.valid === false) return { ...final, ok: false, status: 422 };
-  return final;
+  const r = valido({ ...(await postIfood(`/logistics/v1.0/orders/${encodeURIComponent(id)}/verifyDeliveryCode`, corpo)), caminho: "logistics" });
+  if (r.ok) return r;
+  // Logística sem rota (403/404/405) ou sem código para este pedido (errorType NOT_FOUND): o pedido é do
+  // módulo de Pedidos — confere por lá. Devolve a resposta de Pedidos (aceita ou com o motivo da recusa).
+  const naoAchou = SEM_ROTA.includes(r.status) || (r.dados && typeof r.dados === "object" && r.dados.errorType === "NOT_FOUND");
+  if (!naoAchou) return r;
+  const o = valido({ ...(await postIfood(`/order/v1.0/orders/${encodeURIComponent(id)}/verifyDeliveryCode`, corpo)), caminho: "order" });
+  return o.ok || o.dados ? o : { ...r, caminho: `logistics (order: HTTP ${o.status} sem corpo)` };
 }
 // Início do preparo (depois de confirmar).
 const iniciarPreparoIfood = id => postIfood(`/order/v1.0/orders/${encodeURIComponent(id)}/startPreparation`);
