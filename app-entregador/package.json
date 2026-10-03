@@ -32,7 +32,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "web:build": "expo export --platform web && node scripts/preparar-web.js",
-    "atualizar-celulares": "eas update --channel teste --auto --non-interactive"
+    "atualizar-celulares": "eas update --channel teste --environment preview --auto --non-interactive"
   },
   "private": true
 }
