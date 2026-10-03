@@ -3,10 +3,10 @@
 // - lojas com pedidos em aberto (ponto de coleta);
 // - entregadores online (posição enviada pelo app), ligados por uma linha ao pedido que levam.
 import { useEffect, useMemo, useRef } from "react";
-import { MapContainer, TileLayer, Marker, Tooltip, Polyline, useMap } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Tooltip, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { COM_ENTREGADOR, VEICULOS, tempoRelativo } from "../utils/format";
+import { VEICULOS, tempoRelativo } from "../utils/format";
 
 const CENTRO_PADRAO = [-23.5614, -46.6559]; // São Paulo
 const NOVO_MS = 2 * 60 * 1000; // pedido lançado há menos de 2 min pisca no mapa
@@ -136,10 +136,6 @@ export default function MapaEntregadores({ entregadores = [], pedidos = [], altu
     return [...m.values()];
   }, [entregadores, pedidos]);
 
-  const linhas = pedidosNoMapa
-    .filter(p => p.entregador && COM_ENTREGADOR.includes(p.status))
-    .map(p => ({ p, de: motoboys.find(e => e.id === p.entregador.id) }))
-    .filter(l => l.de);
 
   const pontos = useMemo(
     () => [...motoboys.map(e => [e.lat, e.lng]), ...pedidosNoMapa.map(p => p.pos), ...lojas.map(l => [l.lat, l.lng])],
@@ -165,10 +161,6 @@ export default function MapaEntregadores({ entregadores = [], pedidos = [], altu
           carregado={carregado}
           novos={pedidosNoMapa.filter(p => agora - new Date(p.createdAt).getTime() < NOVO_MS).map(p => p.pos)}
         />
-
-        {linhas.map(({ p, de }) => (
-          <Polyline key={`l-${p.id}`} positions={[[de.lat, de.lng], p.pos]} pathOptions={{ color: p.status === "ATRASADO" ? "#d03b3b" : "#2a78d6", weight: 2, dashArray: "6 6", opacity: 0.8 }} />
-        ))}
 
         {lojas.map(l => (
           <Marker key={`loja-${l.id}`} position={[l.lat, l.lng]} icon={ICONE_LOJA}>
