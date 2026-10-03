@@ -22,35 +22,11 @@ function useCarregar(fn) {
 
 // ---------- Ganhos ----------
 
-const buscarGanhos = () => Promise.all([api.get("/ganhos"), api.get("/comissoes")]);
-const buscarRegras = () => api.get("/saque/regras");
+const buscarGanhos = () => api.get("/ganhos");
 
-function Periodo({ titulo, g }) {
-  return (
-    <Cartao estilo={st.periodo}>
-      <Text style={st.periodoTitulo}>{titulo}</Text>
-      <Text style={st.grande}>{moeda(g?.ganho || 0)}</Text>
-      <Text style={st.periodoLinha}>{g?.entregas ?? 0} entrega(s) · {km(g?.distanciaKm || 0)}</Text>
-      {g?.comissoes > 0 && <Text style={[st.periodoLinha, { color: cor.ok }]}>inclui {moeda(g.comissoes)} em comissões</Text>}
-    </Cartao>
-  );
-}
-
-const DIAS = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
-function textoRegra(r) {
-  if (!r) return "—";
-  const partes = [
-    r.limitePorSolicitacao ? `até ${moeda(r.limitePorSolicitacao)} por pedido` : "sem limite de valor",
-    `${r.maxSolicitacoesDia} por dia`,
-    r.datasEspecificas?.length ? `nas datas: ${r.datasEspecificas.join(", ")}` : r.diasPermitidos?.length ? `dias: ${r.diasPermitidos.map(d => DIAS[d]).join(", ")}` : "todos os dias",
-  ];
-  return partes.join(" · ");
-}
-
+// Carteira: só os ganhos de hoje (7 dias, mês, últimas entregas, comissões e regras de saque foram retirados a pedido do cliente).
 export function Carteira() {
-  const { dados, erro, refresh } = useCarregar(buscarGanhos);
-  const { dados: regras } = useCarregar(buscarRegras);
-  const [g, c] = dados || [];
+  const { dados: g, erro, refresh } = useCarregar(buscarGanhos);
   return (
     <ScrollView contentContainerStyle={st.tela} refreshControl={refresh}>
       <Erro texto={erro} />
@@ -61,59 +37,6 @@ export function Carteira() {
           <Text style={st.periodoLinha}>{moeda(g.hoje.porEntregas)} pelas entregas · {moeda(g.hoje.comissoes)} em comissões</Text>
           <Text style={st.periodoLinha}>{g.hoje.entregas} entrega(s) hoje · {km(g.hoje.distanciaKm || 0)} rodados nas entregas</Text>
         </Cartao>
-      )}
-      <View style={st.grade}>
-        <Periodo titulo="7 dias" g={g?.ultimos7Dias} />
-        <Periodo titulo="Este mês" g={g?.mes} />
-      </View>
-      {g?.ultimas?.length > 0 && (
-        <>
-          <Text style={st.secao}>Últimas entregas</Text>
-          <Cartao>
-            {g.ultimas.map(u => (
-              <View key={u.id} style={st.entregaLinha}>
-                <View style={{ flex: 1 }}>
-                  <Text style={st.texto} numberOfLines={1}>{u.comercio}</Text>
-                  <Text style={st.textoPequeno}>{dataCurta(u.entregueEm)} · {u.codigo}</Text>
-                </View>
-                <Text style={st.entregaKm}>{u.distanciaKm != null ? km(u.distanciaKm) : "— km"}</Text>
-                <Text style={st.entregaGanho}>{moeda(u.ganho)}</Text>
-              </View>
-            ))}
-          </Cartao>
-        </>
-      )}
-      <Text style={st.secao}>Comissões</Text>
-      {c && (
-        <View style={st.grade}>
-          <Cartao estilo={st.periodo}><Text style={st.periodoTitulo}>No mês</Text><Text style={st.grande}>{moeda(c.totais.mes)}</Text></Cartao>
-          <Cartao estilo={st.periodo}><Text style={st.periodoTitulo}>A receber</Text><Text style={[st.grande, { color: cor.aviso }]}>{moeda(c.totais.aReceber)}</Text></Cartao>
-        </View>
-      )}
-      {c && c.comissoes.length === 0 && <Vazio titulo="Nenhuma comissão ainda" texto="Comissões lançadas pela equipe e comissões automáticas por entrega aparecem aqui." />}
-      {c?.comissoes.map(x => (
-        <Cartao key={x.id}>
-          <View style={st.linhaTopo}>
-            <Text style={st.valor}>{moeda(x.valor)}</Text>
-            <Selo texto={x.situacao === "PAGA" ? "Paga" : "A receber"} corFundo={x.situacao === "PAGA" ? "rgba(34,197,94,0.18)" : "rgba(245,165,36,0.18)"} corTexto={x.situacao === "PAGA" ? cor.ok : cor.aviso} />
-          </View>
-          <Text style={st.texto}>
-            {x.origem === "AUTOMATICA" ? `Entrega ${x.pedidoCodigo || ""} · ${x.comercio}` : `${x.quantidadeEntregas} entrega(s) · ${x.comercio}`}
-          </Text>
-          <Text style={st.textoPequeno}>{dataCurta(x.referencia)}{x.descricao ? ` · ${x.descricao}` : ""}</Text>
-        </Cartao>
-      ))}
-      {regras && (
-        <>
-          <Text style={st.secao}>Regras de saque</Text>
-          <Cartao>
-            <Text style={st.valor}>Saque normal</Text>
-            <Text style={st.texto}>{textoRegra(regras.normal)}</Text>
-            <Text style={[st.valor, { marginTop: 6 }]}>Saque rápido</Text>
-            <Text style={st.texto}>{textoRegra(regras.rapido)}</Text>
-            <Text style={st.textoPequeno}>Os pagamentos são feitos pela equipe no acerto. Dúvidas? Fale em Mensagens.</Text>
-          </Cartao>
-        </>
       )}
     </ScrollView>
   );
@@ -330,14 +253,11 @@ export function Perfil({ entregador, setEntregador, onSair, localizacao, onPermi
 
 const st = StyleSheet.create({
   tela: { padding: 16, gap: 12, paddingBottom: 32, maxWidth: 560, width: "100%", alignSelf: "center" },
-  grade: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
-  periodo: { flexGrow: 1, flexBasis: 150, gap: 4 },
   periodoTitulo: { color: cor.texto3, fontSize: 13, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.5 },
   grande: { color: cor.texto, fontSize: 24, fontWeight: "800" },
   grandeUnidade: { fontSize: 14, color: cor.texto2, fontWeight: "600" },
   periodoLinha: { color: cor.texto2, fontSize: 14 },
   secao: { color: cor.texto2, fontSize: 13, fontWeight: "800", letterSpacing: 1, textTransform: "uppercase", marginTop: 6 },
-  linhaTopo: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   valor: { color: cor.texto, fontSize: 20, fontWeight: "800" },
   texto: { color: cor.texto2, fontSize: 15 },
   textoPequeno: { color: cor.texto3, fontSize: 13 },
@@ -346,9 +266,6 @@ const st = StyleSheet.create({
   premio: { color: cor.ok, fontSize: 15, fontWeight: "700" },
   nome: { color: cor.texto, fontSize: 22, fontWeight: "800" },
   perfilLinha: { gap: 2 },
-  entregaLinha: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: cor.borda },
-  entregaKm: { color: cor.texto2, fontSize: 14, fontWeight: "700", minWidth: 58, textAlign: "right" },
-  entregaGanho: { color: cor.ok, fontSize: 15, fontWeight: "800", minWidth: 72, textAlign: "right" },
   balao: { maxWidth: "82%", borderRadius: 14, paddingHorizontal: 12, paddingVertical: 8, gap: 2 },
   balaoMeu: { alignSelf: "flex-end", backgroundColor: cor.primaria, borderBottomRightRadius: 4 },
   balaoEquipe: { alignSelf: "flex-start", backgroundColor: cor.superficie2, borderBottomLeftRadius: 4 },
