@@ -54,6 +54,8 @@ async function rotinas() {
     liberarAgendados().catch(err => console.error("[tempo-real] agendados:", err.message)),
     // Roteirização automática: espera vencida que ninguém processou (reserva do agendamento de 15 s).
     require("./rotas.service").roteirizarSeVencido().catch(err => console.error("[tempo-real] rotas:", err.message)),
+    // Chamada por proximidade: leva vencida sem aceite que ninguém avançou (reserva do agendamento).
+    require("./despacho.service").avancarVencidos().catch(err => console.error("[tempo-real] despacho:", err.message)),
     require("./ranking.service").fecharSemanaAnterior().catch(err => console.error("[tempo-real] ranking:", err.message)),
     // iFood: busca de reserva dos pedidos (o principal é o webhook), no máximo a cada 30 s.
     require("./ifood.service").sincronizar().catch(err => console.error("[tempo-real] ifood:", err.message)),

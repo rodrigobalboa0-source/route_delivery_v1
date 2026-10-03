@@ -45,9 +45,11 @@ const INCLUDE_AVISO = {
 
 // Entregadores online que podem pegar TODOS estes pedidos (permissão de coleta, recusa, bloqueio da loja e raio
 // até a primeira coleta) — as mesmas regras da lista "Disponíveis".
-async function entregadoresAptos(pedidos) {
+// comToken: false = também quem está sem push (a chamada por proximidade ordena todos que podem ver a corrida).
+async function entregadoresAptos(pedidos, { comToken = true } = {}) {
+  const where = comToken ? ativosComToken({ online: true }) : { status: "ATIVO", bloqueado: false, online: true };
   const [entregadores, config] = await Promise.all([
-    prisma.entregador.findMany({ where: ativosComToken({ online: true }), include: { comerciosPermitidos: { select: { comercioId: true } } } }),
+    prisma.entregador.findMany({ where, include: { comerciosPermitidos: { select: { comercioId: true } } } }),
     prisma.configuracao.findFirst({ select: { raioMaximoKm: true } }),
   ]);
   const recusaram = new Set(pedidos.flatMap(p => [...p.recusas, ...p.comercio.entregadoresBloqueados]).map(r => r.entregadorId));
@@ -61,11 +63,14 @@ async function entregadoresAptos(pedidos) {
   });
 }
 
-async function avisarNovaCorrida(pedidoId) {
+// somente = ids dos entregadores desta leva da chamada por proximidade (sem = todos que podem pegar).
+const filtrar = (lista, somente) => (somente ? lista.filter(e => somente.includes(e.id)) : lista);
+
+async function avisarNovaCorrida(pedidoId, somente) {
   const pedido = await prisma.pedido.findUnique({ where: { id: pedidoId }, include: INCLUDE_AVISO });
   // Em rota ou ainda esperando a roteirização: o aviso sai pela rota (ou quando a espera acabar).
   if (!pedido || pedido.status !== "PENDENTE" || pedido.entregadorId || pedido.rotaId || pedido.aguardandoRotaAte || pedido.comercio?.bloqueado) return 0;
-  const alvo = await entregadoresAptos([pedido]);
+  const alvo = filtrar(await entregadoresAptos([pedido]), somente);
   if (!alvo.length) return 0;
 
   const { ganhoParaApp } = require("./financeiro.service");
@@ -92,10 +97,10 @@ async function avisarNovaCorrida(pedidoId) {
 }
 
 // Rota nova (várias entregas juntas): um aviso só, com o total de entregas, km e ganho.
-async function avisarNovaRota(rotaId) {
+async function avisarNovaRota(rotaId, somente) {
   const pedidos = await prisma.pedido.findMany({ where: { rotaId }, orderBy: { ordemRota: "asc" }, include: INCLUDE_AVISO });
   if (pedidos.length < 2 || pedidos.some(p => p.status !== "PENDENTE" || p.entregadorId || p.comercio?.bloqueado)) return 0;
-  const alvo = await entregadoresAptos(pedidos);
+  const alvo = filtrar(await entregadoresAptos(pedidos), somente);
   if (!alvo.length) return 0;
   const rota = await prisma.rota.findUnique({ where: { id: rotaId }, select: { codigo: true } });
   const lojas = [...new Set(pedidos.map(p => p.comercio.nomeFantasia))];
@@ -172,4 +177,4 @@ async function avisarTaxaDinamica(regra, tipo) {
   })));
 }
 
-module.exports = { enviar, avisarNovaCorrida, avisarNovaRota, avisarAtribuicao, avisarPromocao, avisarTaxaDinamica, tokenValido };
+module.exports = { enviar, avisarNovaCorrida, avisarNovaRota, avisarAtribuicao, avisarPromocao, avisarTaxaDinamica, tokenValido, entregadoresAptos, INCLUDE_AVISO };

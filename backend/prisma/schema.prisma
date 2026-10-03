@@ -561,6 +561,11 @@ model Pedido {
   aguardandoRotaAte  DateTime?
   // Última vez que a loja usou "Reprocurar" (o app abre o aviso de novo para todos).
   reprocuradoEm      DateTime?
+  // Chamada por proximidade: a quem a corrida já foi oferecida (mais perto da loja primeiro), quando foi a última
+  // leva e se já está aberta para todos (true também para pedidos antigos e com a chamada por proximidade desligada).
+  despachoPara       String[]  @default([])
+  despachoOndaEm     DateTime?
+  despachoAberto     Boolean   @default(true)
   // Financeiro: fatura em que o pedido foi cobrado do comércio e acerto em que foi pago ao entregador.
   faturaId           String?
   fatura             Fatura?           @relation(fields: [faturaId], references: [id], onDelete: SetNull)
@@ -940,6 +945,10 @@ model Configuracao {
   rotaMaxPedidos           Int     @default(3)   // máximo de entregas numa rota
   rotaDistanciaMaxKm       Float   @default(3)   // distância máxima entre as entregas de uma rota
   rotaRaioColetaKm         Float   @default(2)   // lojas diferentes só se juntam se estiverem até esta distância
+  // Chamada por proximidade: a corrida toca primeiro para os mais perto da loja; sem aceite, passa para os próximos.
+  despachoProximidade      Boolean @default(true)
+  despachoPorVez           Int     @default(1)   // quantos entregadores são chamados em cada leva
+  despachoTempoSegundos    Int     @default(30)  // tempo de cada leva antes de chamar os próximos
 }
 
 // Rota: várias entregas oferecidas juntas a um entregador (aceita tudo de uma vez).

@@ -16,6 +16,7 @@ const { comissaoDoPedido, entregasDoPeriodo, ganhoParaApp } = require("../../ser
 const { versaoEntregador, liberarAgendados } = require("../../services/tempoReal.service");
 const { vigentesPara, avisosPara, marcarVisto, publico: publicoPromocao } = require("../../services/promocoes.service");
 const { carimbos, registrarStatusPedido, registrarStatusEntregador, registrarLocalizacao } = require("../../services/historico.service");
+const { emSegundoPlano } = require("../../utils/segundoPlano");
 
 const autorEntregador = req => ({ autorTipo: "ENTREGADOR", autorNome: req.entregador.nomeCompleto });
 
@@ -434,12 +435,15 @@ router.get(
     if (!req.entregador.online) return res.json([]);
     await liberarAgendados().catch(() => {}); // agendados cuja hora chegou entram na lista agora
     await require("../../services/rotas.service").roteirizarSeVencido().catch(() => {}); // espera da rota vencida
+    await require("../../services/despacho.service").avancarVencidos().catch(() => {}); // leva da chamada vencida
 
     // Recusadas por este entregador não voltam para ele (continuam para os outros).
     // Lojas que bloquearam este entregador também não aparecem.
     // Pedidos ainda na espera da roteirização automática não aparecem (viram rota ou saem sozinhos em segundos).
     const where = {
       status: "PENDENTE", entregadorId: null, aguardandoRotaAte: null, recusas: { none: { entregadorId: req.entregador.id } },
+      // Chamada por proximidade: só aparece para quem já foi chamado (ou quando abriu para todos).
+      ...require("../../services/despacho.service").filtroLiberado(req.entregador.id),
       comercio: { bloqueado: false, entregadoresBloqueados: { none: { entregadorId: req.entregador.id } } },
     };
     if (req.entregador.permissaoColeta === "SOMENTE_SELECIONADOS") {
@@ -510,8 +514,9 @@ router.patch(
   asyncHandler(async (req, res) => {
     exigirAtivo(req);
     if (!req.entregador.online) throw erroHttp(403, "Fique online para aceitar corridas.");
-    const emRota = await prisma.pedido.findUnique({ where: { id: req.params.id }, select: { rotaId: true } });
+    const emRota = await prisma.pedido.findUnique({ where: { id: req.params.id }, select: { rotaId: true, despachoAberto: true, despachoPara: true, despachoOndaEm: true } });
     if (emRota?.rotaId) throw erroHttp(409, "Esta corrida faz parte de uma rota: aceite a rota inteira (atualize o app se não aparecer).");
+    if (emRota && !require("../../services/despacho.service").liberadoPara(emRota, req.entregador.id)) throw erroHttp(409, "Esta corrida está sendo oferecida primeiro a entregadores mais perto da loja.");
     res.json(pedidoParaApp(await aceitarPedido(req.params.id, req.entregador.id)));
   })
 );
@@ -533,6 +538,8 @@ router.post(
   asyncHandler(async (req, res) => {
     exigirAtivo(req);
     res.json(await require("../../services/rotas.service").recusarRota(req.params.id, req.entregador));
+    // Se ninguém da leva atual ainda pode aceitar, chama os próximos mais perto.
+    emSegundoPlano(() => require("../../services/despacho.service").aoRecusar({ rotaId: req.params.id }), "Chamada após recusa");
   })
 );
 
@@ -553,6 +560,7 @@ router.post(
       await registrarLog(pedido.id, `${req.entregador.nomeCompleto} recusou a corrida.`);
     }
     res.json({ ok: true });
+    emSegundoPlano(() => require("../../services/despacho.service").aoRecusar({ pedidoId: pedido.id }), "Chamada após recusa");
   })
 );
 

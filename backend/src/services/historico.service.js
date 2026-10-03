@@ -41,8 +41,10 @@ async function registrarStatusPedido({ pedidoId, de = null, para, entregadorId =
   // Pedido liberado para os entregadores: se a loja usa roteirização automática, espera alguns segundos para
   // juntar outros pedidos; senão, notificação no celular na hora (toca o alarme), depois da resposta.
   if (para === "PENDENTE") {
+    // Nenhum entregador vê o pedido até a chamada (por proximidade) começar de novo.
+    await prisma.pedido.update({ where: { id: pedidoId }, data: { despachoOndaEm: null, despachoPara: [] } }).catch(() => {});
     require("../utils/segundoPlano").emSegundoPlano(async () => {
-      if (!(await rotas.aoFicarPronto(pedidoId))) await require("./push.service").avisarNovaCorrida(pedidoId);
+      if (!(await rotas.aoFicarPronto(pedidoId))) await require("./despacho.service").iniciar({ pedidoId });
     }, "Push nova corrida");
   }
   await require("./comissaoAutomatica.service").aoMudarStatus(pedidoId, de, para);

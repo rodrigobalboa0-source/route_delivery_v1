@@ -75,6 +75,10 @@ function validarGerais(b) {
   faixa("rotaMaxPedidos", 2, 10, true, "O máximo de entregas por rota");
   faixa("rotaDistanciaMaxKm", 0.3, 30, false, "A distância máxima entre as entregas (km)");
   faixa("rotaRaioColetaKm", 0.1, 20, false, "A distância máxima entre lojas (km)");
+  // Chamada por proximidade.
+  if (b.despachoProximidade !== undefined) b.despachoProximidade = !!b.despachoProximidade;
+  faixa("despachoPorVez", 1, 20, true, "Entregadores chamados por vez");
+  faixa("despachoTempoSegundos", 10, 300, true, "O tempo para aceitar antes de chamar os próximos (segundos)");
   return b;
 }
 

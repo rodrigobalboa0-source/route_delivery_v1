@@ -231,6 +231,60 @@ function PermissoesLoja({ pode }) {
   );
 }
 
+// Chamada por proximidade: quem está mais perto da loja é chamado primeiro.
+function ChamadaEntregadores({ dados, setDados, pode }) {
+  const [v, setV] = useState(null);
+  const { executar, ocupado } = useAcao();
+  const valores = v || (dados && { despachoProximidade: dados.despachoProximidade ?? true, despachoPorVez: dados.despachoPorVez ?? 1, despachoTempoSegundos: dados.despachoTempoSegundos ?? 30 });
+
+  async function salvar(e) {
+    e.preventDefault();
+    const r = await executar(() => api.put("/configuracoes", valores), "Chamada dos entregadores salva.");
+    if (r) { setDados(r); setV(null); }
+  }
+
+  return (
+    <section className="cartao">
+      <div className="cartao-topo"><h2>Chamada dos entregadores</h2></div>
+      <p className="apagado" style={{ marginTop: 0 }}>
+        Com a chamada por proximidade ligada, o pedido lançado toca primeiro para o entregador mais perto da loja.
+        Se ele não aceitar no tempo abaixo (ou recusar), toca para o próximo mais perto, e assim por diante.
+        Quando todos já foram chamados, a corrida fica aberta para todos. Desligada, toca para todos ao mesmo tempo.
+      </p>
+      {valores && (
+        <form onSubmit={salvar}>
+          <label className="campo-switch" style={{ marginBottom: 12 }}>
+            <input type="checkbox" role="switch" checked={!!valores.despachoProximidade} disabled={!pode}
+              onChange={e => setV({ ...valores, despachoProximidade: e.target.checked })} aria-label="Chamada por proximidade" />
+            <span className="interruptor" aria-hidden="true" />
+            <span>Chamar primeiro os mais perto da loja</span>
+          </label>
+          <div className="grade-campos">
+            <label className="campo">
+              <span className="campo-rotulo">Entregadores chamados por vez</span>
+              <input type="number" min="1" max="20" step="1" value={valores.despachoPorVez} disabled={!pode || !valores.despachoProximidade} required
+                onChange={e => setV({ ...valores, despachoPorVez: e.target.value })} />
+              <span className="campo-dica">Padrão: 1 (só o mais perto). Com 2, chama os 2 mais perto juntos, e assim por diante.</span>
+            </label>
+            <label className="campo">
+              <span className="campo-rotulo">Tempo para aceitar (segundos)</span>
+              <input type="number" min="10" max="300" step="1" value={valores.despachoTempoSegundos} disabled={!pode || !valores.despachoProximidade} required
+                onChange={e => setV({ ...valores, despachoTempoSegundos: e.target.value })} />
+              <span className="campo-dica">Sem aceite nesse tempo, chama os próximos mais perto. Padrão: 30 s.</span>
+            </label>
+          </div>
+          {pode && v && (
+            <div className="form-rodape">
+              <Botao variante="fantasma" onClick={() => setV(null)}>Descartar</Botao>
+              <button type="submit" className="btn btn-primario" disabled={ocupado}>Salvar chamada</button>
+            </div>
+          )}
+        </form>
+      )}
+    </section>
+  );
+}
+
 const PARAMETROS_ROTA = [
   { nome: "rotaEsperaSegundos", rotulo: "Espera para roteirizar (segundos)", min: 5, max: 120, step: 1, dica: "Tempo que o pedido pronto aguarda outros pedidos antes de ser oferecido. Padrão: 15 s." },
   { nome: "rotaMaxPedidos", rotulo: "Máximo de entregas por rota", min: 2, max: 10, step: 1, dica: "Padrão: 3." },
@@ -478,6 +532,7 @@ export default function Configuracoes() {
         )}
       </section>
       <PermissoesLoja pode={pode} />
+      <ChamadaEntregadores dados={dados} setDados={setDados} pode={pode} />
       <Roteirizacao dados={dados} setDados={setDados} pode={pode} />
       <RankingSemanal dados={dados} setDados={setDados} pode={pode} />
       <RegrasSaque pode={pode} />

@@ -493,8 +493,8 @@ router.patch(
       prisma.pedido.updateMany({ where: { id: { in: ids } }, data: { reprocuradoEm: new Date() } }),
     ]);
     await registrarLog(pedido.id, "Loja reprocurou: entregadores chamados de novo (inclusive quem tinha recusado).");
-    const push = require("../../services/push.service");
-    emSegundoPlano(() => (pedido.rotaId ? push.avisarNovaRota(pedido.rotaId) : push.avisarNovaCorrida(pedido.id)), "Push reprocurar");
+    // Recomeça a chamada pelo mais perto da loja.
+    emSegundoPlano(() => require("../../services/despacho.service").iniciar(pedido.rotaId ? { rotaId: pedido.rotaId } : { pedidoId: pedido.id }), "Chamada reprocurar");
     res.json(await prisma.pedido.findUnique({ where: { id: pedido.id }, include: INCLUDE_PADRAO }));
   })
 );

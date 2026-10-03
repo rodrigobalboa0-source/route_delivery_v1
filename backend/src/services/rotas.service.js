@@ -26,10 +26,11 @@ async function parametros() {
   };
 }
 
-async function novoCodigo() {
+// Dentro de transação, usa a própria transação (com a trava, outra conexão do pool pode não estar livre).
+async function novoCodigo(db = prisma) {
   for (;;) {
     const codigo = `R-${Math.floor(10000 + Math.random() * 90000)}`;
-    if (!(await prisma.rota.findUnique({ where: { codigo } }))) return codigo;
+    if (!(await db.rota.findUnique({ where: { codigo } }))) return codigo;
   }
 }
 
@@ -92,32 +93,34 @@ async function registrarCriacao(rota, pedidos, texto) {
   }
 }
 
-// Avisa os entregadores: rota nova (um aviso por rota) e pedidos que saíram sozinhos.
+// Chama os entregadores (mais perto da loja primeiro): rota nova (um aviso por rota) e pedidos que saíram sozinhos.
 function avisar(rotas, sozinhos) {
-  const push = require("./push.service");
-  for (const r of rotas) emSegundoPlano(() => push.avisarNovaRota(r.id), "Push rota");
-  for (const p of sozinhos) emSegundoPlano(() => push.avisarNovaCorrida(p.id), "Push nova corrida");
+  const despacho = require("./despacho.service");
+  for (const r of rotas) emSegundoPlano(() => despacho.iniciar({ rotaId: r.id }), "Chamada rota");
+  for (const p of sozinhos) emSegundoPlano(() => despacho.iniciar({ pedidoId: p.id }), "Chamada nova corrida");
 }
 
 // Roteiriza os pedidos que estão esperando. Só age se algum já venceu a espera.
-// Em transação com trava: duas execuções ao mesmo tempo não montam a mesma rota duas vezes.
+// Em transação com trava: duas execuções ao mesmo tempo não montam a mesma rota duas vezes
+// (quem não pega a trava sai na hora; a reserva `roteirizarSeVencido` roda a cada consulta de tempo real).
 async function roteirizar() {
   const prm = await parametros();
   const agora = new Date();
   const resultado = await prisma.$transaction(async tx => {
-    await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(${TRAVA_ROTEIRIZACAO})`);
+    // Outra roteirização em andamento: não fica esperando (segurando conexão); a próxima consulta pega o que sobrar.
+    const [{ ok }] = await tx.$queryRawUnsafe(`SELECT pg_try_advisory_xact_lock(${TRAVA_ROTEIRIZACAO}) AS ok`);
+    if (!ok) return { rotas: [], sozinhos: [] };
     const candidatos = await tx.pedido.findMany({
       where: { aguardandoRotaAte: { not: null }, status: "PENDENTE", entregadorId: null, rotaId: null },
       select: SELECT_CANDIDATO,
     });
     if (!candidatos.some(p => p.aguardandoRotaAte <= agora)) return { rotas: [], sozinhos: [] };
-    const { grupos, sozinhos } = agrupar(candidatos, prm);
-    const rotas = [];
+    const { grupos, sozinhos } = agrupar(candidatos, prm);    const rotas = [];
     for (const g of grupos) {
       const ordem = ordenar(g);
-      const rota = await tx.rota.create({ data: { codigo: await novoCodigo(), origem: "AUTOMATICA", criadoPor: "Roteirização automática" } });
+      const rota = await tx.rota.create({ data: { codigo: await novoCodigo(tx), origem: "AUTOMATICA", criadoPor: "Roteirização automática" } });
       for (const [i, p] of ordem.entries()) {
-        await tx.pedido.update({ where: { id: p.id }, data: { rotaId: rota.id, ordemRota: i + 1, aguardandoRotaAte: null } });
+        await tx.pedido.update({ where: { id: p.id }, data: { rotaId: rota.id, ordemRota: i + 1, aguardandoRotaAte: null, despachoOndaEm: null, despachoPara: [] } });
       }
       rotas.push({ rota, pedidos: ordem });
     }
@@ -138,7 +141,16 @@ async function aoFicarPronto(pedidoId) {
   const { espera } = await parametros();
   await prisma.pedido.update({ where: { id: p.id }, data: { aguardandoRotaAte: new Date(Date.now() + espera * 1000) } });
   // Roteiriza quando a espera acabar (no Vercel, waitUntil mantém a função viva até lá).
-  emSegundoPlano(async () => { await esperar(espera * 1000 + 300); await roteirizar(); }, "Roteirização automática");
+  emSegundoPlano(async () => {
+    await esperar(espera * 1000 + 300);
+    // Se outra roteirização estava rodando (trava ocupada), tenta de novo até o pedido sair da espera.
+    for (let i = 0; i < 10; i++) {
+      await roteirizar();
+      const ainda = await prisma.pedido.findUnique({ where: { id: p.id }, select: { aguardandoRotaAte: true } });
+      if (!ainda?.aguardandoRotaAte) return;
+      await esperar(1000);
+    }
+  }, "Roteirização automática");
   return true;
 }
 
@@ -165,11 +177,11 @@ async function criarRotaManual(pedidoIds, autorNome) {
   }
   const ordem = ordenar(pedidos);
   const rota = await prisma.$transaction(async tx => {
-    const r = await tx.rota.create({ data: { codigo: await novoCodigo(), origem: "MANUAL", criadoPor: autorNome } });
+    const r = await tx.rota.create({ data: { codigo: await novoCodigo(tx), origem: "MANUAL", criadoPor: autorNome } });
     for (const [i, p] of ordem.entries()) {
       const { count } = await tx.pedido.updateMany({
         where: { id: p.id, status: "PENDENTE", entregadorId: null, rotaId: null },
-        data: { rotaId: r.id, ordemRota: i + 1, aguardandoRotaAte: null },
+        data: { rotaId: r.id, ordemRota: i + 1, aguardandoRotaAte: null, despachoOndaEm: null, despachoPara: [] },
       });
       if (!count) throw erroHttp(409, `O pedido ${p.codigo} acabou de mudar. Atualize a tela.`);
     }
@@ -199,7 +211,7 @@ async function retirarDaRota(pedidoId, motivo) {
 async function desfazer(rotaId, motivo) {
   const pedidos = await prisma.pedido.findMany({ where: { rotaId }, select: { id: true, status: true, entregadorId: true } });
   const rota = await prisma.rota.findUnique({ where: { id: rotaId } });
-  await prisma.pedido.updateMany({ where: { rotaId }, data: { rotaId: null, ordemRota: null } });
+  await prisma.pedido.updateMany({ where: { rotaId }, data: { rotaId: null, ordemRota: null, despachoOndaEm: null, despachoPara: [] } });
   for (const p of pedidos) await prisma.pedidoLog.create({ data: { pedidoId: p.id, texto: `Rota ${rota?.codigo || ""} desfeita${motivo ? ` (${motivo})` : ""}.` } });
   // Os que continuam esperando entregador voltam a ser oferecidos um a um.
   avisar([], pedidos.filter(p => p.status === "PENDENTE" && !p.entregadorId));
@@ -219,8 +231,9 @@ async function desfazerRota(rotaId, autorNome) {
 async function aceitarRota(rotaId, entregador, autor) {
   if (entregador.bloqueado) throw erroHttp(403, "Este entregador está bloqueado.");
   if (entregador.status !== "ATIVO") throw erroHttp(403, "Entregador ainda não está ativo.");
-  const pedidos = await prisma.pedido.findMany({ where: { rotaId }, select: { id: true, comercioId: true } });
+  const pedidos = await prisma.pedido.findMany({ where: { rotaId }, select: { id: true, comercioId: true, despachoAberto: true, despachoPara: true, despachoOndaEm: true } });
   if (pedidos.length < 2) throw erroHttp(409, "Esta rota não está mais disponível.");
+  if (!require("./despacho.service").liberadoPara(pedidos[0], entregador.id)) throw erroHttp(409, "Esta rota está sendo oferecida primeiro a entregadores mais perto da loja.");
   const bloqueios = await prisma.comercioEntregadorBloqueio.count({ where: { entregadorId: entregador.id, comercioId: { in: pedidos.map(p => p.comercioId) } } });
   if (bloqueios) throw erroHttp(409, "Esta rota não está mais disponível.");
   const agora = new Date();
