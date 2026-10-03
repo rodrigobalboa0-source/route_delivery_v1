@@ -2,7 +2,7 @@
 // Home com mapa em tela cheia (online/offline e ganhos por cima), atalhos Home/Disponíveis/Em Andamento
 // embaixo e menu lateral (Entregas, Mensagens, Carteira, Conta, Ajuda). Conecta no mesmo sistema do painel ADM.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, AppState, Image, Modal, Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, AppState, Image, Modal, Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
@@ -150,13 +150,16 @@ const ATALHOS = [
   { tela: "andamento", rotulo: "Em Andamento", icone: "truck", fundo: "#dcfce7", corIcone: "#16a34a", borda: "#4ade80" },
 ];
 
+// Celular deitado: barra baixa (ícone ao lado do texto) para não cobrir as corridas.
 function Atalhos({ tela, ir, contagem }) {
+  const { width, height } = useWindowDimensions();
+  const deitado = width > height;
   return (
-    <View style={[st.atalhos, { pointerEvents: "box-none" }]}>
+    <View style={[st.atalhos, deitado && st.atalhosDeitado, { pointerEvents: "box-none" }]}>
       {ATALHOS.map(a => (
-        <Pressable key={a.tela} onPress={() => ir(a.tela)} style={[st.atalho, tela === a.tela && { borderColor: a.borda, borderWidth: 2 }]} accessibilityRole="button" accessibilityState={{ selected: tela === a.tela }}>
-          <View style={[st.atalhoIcone, { backgroundColor: a.fundo }]}>
-            <Feather name={a.icone} size={20} color={a.corIcone} />
+        <Pressable key={a.tela} onPress={() => ir(a.tela)} style={[st.atalho, deitado && st.atalhoDeitado, tela === a.tela && { borderColor: a.borda, borderWidth: 2 }]} accessibilityRole="button" accessibilityState={{ selected: tela === a.tela }}>
+          <View style={[st.atalhoIcone, deitado && st.atalhoIconeDeitado, { backgroundColor: a.fundo }]}>
+            <Feather name={a.icone} size={deitado ? 16 : 20} color={a.corIcone} />
             {contagem[a.tela] > 0 && <View style={st.contador}><Text style={st.contadorTexto}>{contagem[a.tela]}</Text></View>}
           </View>
           <Text style={st.atalhoTexto}>{a.rotulo}</Text>
@@ -332,6 +335,9 @@ const st = StyleSheet.create({
   atalho: { flex: 1, backgroundColor: "#fff", borderRadius: 14, paddingVertical: 10, alignItems: "center", gap: 6, borderWidth: 1, borderColor: "#e2e8f0", shadowColor: "#000", shadowOpacity: 0.18, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 5 },
   atalhoIcone: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
   atalhoTexto: { color: "#0f172a", fontSize: 13, fontWeight: "700" },
+  atalhosDeitado: { bottom: 8, gap: 8 },
+  atalhoDeitado: { flexDirection: "row", justifyContent: "center", paddingVertical: 6, gap: 8, borderRadius: 12 },
+  atalhoIconeDeitado: { width: 30, height: 30, borderRadius: 15 },
   contador: { position: "absolute", top: -4, right: -8, minWidth: 20, height: 20, borderRadius: 10, backgroundColor: "#ef4444", alignItems: "center", justifyContent: "center", paddingHorizontal: 5, borderWidth: 2, borderColor: "#fff" },
   contadorTexto: { color: "#fff", fontSize: 11, fontWeight: "800" },
   // menu lateral

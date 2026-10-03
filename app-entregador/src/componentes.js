@@ -60,9 +60,10 @@ export function Vazio({ titulo, texto }) {
 // Janela de confirmação que funciona igual no celular e no navegador (Alert não funciona na web).
 export function Confirmar({ visivel, titulo, texto, rotuloOk = "Confirmar", variante = "primario", onOk, onCancelar, children }) {
   return (
-    <Modal visible={visivel} transparent animationType="fade" onRequestClose={onCancelar}>
+    <Modal visible={visivel} transparent animationType="fade" supportedOrientations={["portrait", "landscape"]} onRequestClose={onCancelar}>
       <View style={s.fundoModal}>
-        <View style={s.modal}>
+        {/* Com rolagem: com o celular deitado o texto pode não caber na altura. */}
+        <ScrollView style={[s.modal, { padding: 0, flexGrow: 0, maxHeight: "100%" }]} contentContainerStyle={{ padding: 20, gap: 12 }} keyboardShouldPersistTaps="handled">
           <Text style={s.modalTitulo}>{titulo}</Text>
           {texto && <Text style={s.modalTexto}>{texto}</Text>}
           {children}
@@ -70,7 +71,7 @@ export function Confirmar({ visivel, titulo, texto, rotuloOk = "Confirmar", vari
             <Botao titulo="Voltar" variante="secundario" onPress={onCancelar} estilo={{ flex: 1 }} />
             <Botao titulo={rotuloOk} variante={variante} onPress={onOk} estilo={{ flex: 1 }} />
           </View>
-        </View>
+        </ScrollView>
       </View>
     </Modal>
   );

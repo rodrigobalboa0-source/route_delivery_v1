@@ -1,6 +1,6 @@
 // Corridas: o "motor" da operação (online/offline, GPS, listas) e as telas Disponíveis e Em andamento.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AppState, Image, Linking, Modal, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { AppState, Image, Linking, Modal, RefreshControl, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { pararAlarme, tocarAlarme } from "../alarme";
 import * as Location from "expo-location";
 import { iniciarRastreioFundo, pararRastreioFundo, pedirLocalizacaoTempoTodo, situacaoLocalizacao } from "../localizacaoFundo";
@@ -389,6 +389,8 @@ function Disponivel({ p, onAceitar, onRecusar, ocupado }) {
 export function PopupCorrida({ op, onAceitou }) {
   const p = op.novaCorrida;
   const [resta, setResta] = useState(45);
+  const { width, height } = useWindowDimensions();
+  const deitado = width > height;
   // Alarme tocando enquanto o aviso estiver aberto (para ao aceitar, recusar, "decidir depois" ou em 45 s).
   useEffect(() => {
     if (!p) return;
@@ -406,11 +408,12 @@ export function PopupCorrida({ op, onAceitou }) {
   }, [p?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!p) return null;
   return (
-    <Modal visible transparent animationType="slide" onRequestClose={() => op.depois(p)}>
-      <View style={st.popFundo}>
-        <View style={st.pop}>
+    <Modal visible transparent animationType="slide" supportedOrientations={["portrait", "landscape"]} onRequestClose={() => op.depois(p)}>
+      <View style={[st.popFundo, deitado && { justifyContent: "center", padding: 8 }]}>
+        <View style={[st.pop, { maxHeight: "100%" }]}>
           <View style={st.popFaixa}><Text style={st.popFaixaTexto}>🔔 Nova corrida{p.agendadoPara ? " (agendada)" : ""}</Text><Text style={st.popTempo}>{resta}s</Text></View>
-          <View style={{ padding: 18, gap: 10 }}>
+          {/* Com rolagem: deitado, a tela é baixa e os botões não podem sumir. */}
+          <ScrollView style={{ flexGrow: 0 }} contentContainerStyle={{ padding: deitado ? 12 : 18, gap: 10 }}>
             <TopoLoja p={p} />
             <DadosCorrida p={p} />
             <View style={st.acoes}>
@@ -419,7 +422,7 @@ export function PopupCorrida({ op, onAceitou }) {
                 onPress={async () => { const ok = await op.aceitar(p); op.depois(p); if (ok) onAceitou?.(); }} />
             </View>
             <Botao pequeno variante="fantasma" titulo="Decidir depois" onPress={() => op.depois(p)} />
-          </View>
+          </ScrollView>
         </View>
       </View>
     </Modal>

@@ -3,7 +3,7 @@
     "name": "Route Entregador",
     "slug": "route-entregador",
     "version": "1.5.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
     "backgroundColor": "#0b1628",
@@ -13,7 +13,7 @@
     },
     "android": {
       "package": "com.routedelivery.entregador",
-      "versionCode": 5,
+      "versionCode": 6,
       "adaptiveIcon": {
         "backgroundColor": "#0b1628",
         "foregroundImage": "./assets/android-icon-foreground.png"
