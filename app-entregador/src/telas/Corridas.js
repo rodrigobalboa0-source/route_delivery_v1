@@ -443,13 +443,8 @@ export function ListaDisponiveis({ op, entregador, onAceitou }) {
     <ScrollView contentContainerStyle={st.tela} refreshControl={refresh}>
       <Erro texto={op.erro} />
       {emAnalise && <Vazio titulo="Cadastro em análise" texto="Assim que a equipe aprovar, você poderá ficar online e aceitar corridas." />}
-      {!emAnalise && !op.online && (
-        <Cartao>
-          <Text style={st.codigo}>Você está offline</Text>
-          <Text style={st.ajuda}>Fique online para ver as corridas disponíveis perto de você.</Text>
-          <Botao titulo="Ficar online" variante="sucesso" onPress={op.alternarOnline} carregando={op.mudandoStatus} />
-        </Cartao>
-      )}
+      {/* Ficar online só pelo botão da tela inicial (Home) — aqui fica apenas o aviso. */}
+      {!emAnalise && !op.online && <Vazio titulo="Você está offline" texto="Para ver as corridas, fique online pelo botão na tela inicial (Home)." />}
       {op.online && op.disponiveis.length === 0 && <Vazio titulo="Nenhuma corrida no momento" texto="A lista atualiza sozinha a cada 10 segundos." />}
       {op.online && op.disponiveis.map(p => (
         <Disponivel key={p.id} p={p} ocupado={op.aceitando === p.id} onRecusar={op.recusar} onAceitar={async x => { if (await op.aceitar(x)) onAceitou?.(); }} />
@@ -471,7 +466,6 @@ export function ListaAndamento({ op }) {
 
 const st = StyleSheet.create({
   tela: { padding: 16, gap: 12, paddingBottom: 120, maxWidth: 560, width: "100%", alignSelf: "center" },
-  ajuda: { color: cor.texto2, fontSize: 14, lineHeight: 20 },
   topoCartao: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8 },
   codigo: { color: cor.texto, fontSize: 17, fontWeight: "800", flexShrink: 1 },
   etapaBloco: { borderLeftWidth: 3, borderLeftColor: cor.borda, paddingLeft: 10, gap: 2, opacity: 0.7 },
