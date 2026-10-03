@@ -139,6 +139,22 @@ export default function DetalhePedido({ id, onFechar, onAlterado }) {
             {pedido.agendadoPara && <><dt>Agendado</dt><dd>Chamar entregador em {dataHora(pedido.agendadoPara)}</dd></>}
             <dt>Entregador</dt>
             <dd>{pedido.entregador ? `${pedido.entregador.nomeCompleto} · ${VEICULOS[pedido.entregador.veiculoTipo] || ""}` : <span className="apagado">Nenhum</span>}</dd>
+            {pedido.rota && <>
+              <dt>Rota</dt>
+              <dd>
+                <strong>{pedido.rota.codigo}</strong> · entrega {pedido.ordemRota} de {pedido.rota._count?.pedidos}
+                <span className="apagado"> · {pedido.rota.origem === "MANUAL" ? "montada no ADM" : "automática"}{pedido.rota.aceitaEm ? " · aceita" : " · aguardando entregador"}</span>
+                {pode && !pedido.rota.aceitaEm && (
+                  <div style={{ marginTop: 6 }}>
+                    <BotaoConfirmar pequeno disabled={ocupado} confirmar="Desfazer a rota? Cada pedido volta a ser oferecido sozinho."
+                      onConfirm={() => acao(() => api.delete(`/rotas/${pedido.rota.id}`), "Rota desfeita: os pedidos voltaram a ser oferecidos um a um.")}>
+                      Desfazer rota
+                    </BotaoConfirmar>
+                  </div>
+                )}
+              </dd>
+            </>}
+            {pedido.aguardandoRotaAte && <><dt>Rota</dt><dd><span className="apagado">⏳ Roteirização automática: esperando outros pedidos (até {dataHora(pedido.aguardandoRotaAte)})</span></dd></>}
             <dt>Valor</dt><dd>{moeda(pedido.valor)}</dd>
             <dt>Distância</dt><dd>{km(pedido.distanciaKm)}</dd>
             <dt>Pagamento</dt><dd>{pedido.formaPagamento || "—"}</dd>

@@ -38,30 +38,34 @@ const ativosComToken = extra => ({ status: "ATIVO", bloqueado: false, pushToken:
 
 // Pedido ficou pronto (PENDENTE, sem entregador): chama quem está online e pode pegá-lo
 // (mesmas regras da lista "Disponíveis": permissão de coleta, recusa e raio máximo).
-async function avisarNovaCorrida(pedidoId) {
-  const pedido = await prisma.pedido.findUnique({
-    where: { id: pedidoId },
-    include: {
-      comercio: { select: { id: true, nomeFantasia: true, bloqueado: true, enderecos: { where: { principal: true } }, entregadoresBloqueados: { select: { entregadorId: true } } } },
-      recusas: { select: { entregadorId: true } },
-    },
-  });
-  if (!pedido || pedido.status !== "PENDENTE" || pedido.entregadorId || pedido.comercio?.bloqueado) return 0;
+const INCLUDE_AVISO = {
+  comercio: { select: { id: true, nomeFantasia: true, bloqueado: true, enderecos: { where: { principal: true } }, entregadoresBloqueados: { select: { entregadorId: true } } } },
+  recusas: { select: { entregadorId: true } },
+};
 
+// Entregadores online que podem pegar TODOS estes pedidos (permissão de coleta, recusa, bloqueio da loja e raio
+// até a primeira coleta) — as mesmas regras da lista "Disponíveis".
+async function entregadoresAptos(pedidos) {
   const [entregadores, config] = await Promise.all([
     prisma.entregador.findMany({ where: ativosComToken({ online: true }), include: { comerciosPermitidos: { select: { comercioId: true } } } }),
     prisma.configuracao.findFirst({ select: { raioMaximoKm: true } }),
   ]);
-  // Quem recusou esta corrida ou foi bloqueado pela loja não é chamado.
-  const recusaram = new Set([...pedido.recusas, ...pedido.comercio.entregadoresBloqueados].map(r => r.entregadorId));
-  const loja = pedido.comercio.enderecos[0];
+  const recusaram = new Set(pedidos.flatMap(p => [...p.recusas, ...p.comercio.entregadoresBloqueados]).map(r => r.entregadorId));
+  const loja = pedidos[0].comercio.enderecos[0];
   const raio = config?.raioMaximoKm;
-  const alvo = entregadores.filter(e => {
+  return entregadores.filter(e => {
     if (recusaram.has(e.id)) return false;
-    if (e.permissaoColeta === "SOMENTE_SELECIONADOS" && !e.comerciosPermitidos.some(c => c.comercioId === pedido.comercioId)) return false;
+    if (e.permissaoColeta === "SOMENTE_SELECIONADOS" && !pedidos.every(p => e.comerciosPermitidos.some(c => c.comercioId === p.comercioId))) return false;
     if (raio && e.lat != null && loja?.lat != null && distanciaLinhaRetaKm({ lat: e.lat, lng: e.lng }, { lat: loja.lat, lng: loja.lng }) > raio) return false;
     return true;
   });
+}
+
+async function avisarNovaCorrida(pedidoId) {
+  const pedido = await prisma.pedido.findUnique({ where: { id: pedidoId }, include: INCLUDE_AVISO });
+  // Em rota ou ainda esperando a roteirização: o aviso sai pela rota (ou quando a espera acabar).
+  if (!pedido || pedido.status !== "PENDENTE" || pedido.entregadorId || pedido.rotaId || pedido.aguardandoRotaAte || pedido.comercio?.bloqueado) return 0;
+  const alvo = await entregadoresAptos([pedido]);
   if (!alvo.length) return 0;
 
   const { ganhoParaApp } = require("./financeiro.service");
@@ -82,6 +86,34 @@ async function avisarNovaCorrida(pedidoId) {
       sound: "corrida.wav",
       priority: "high",
       ttl: 300, // corrida velha não serve: descarta se o celular ficar 5 min sem conexão
+    });
+  }
+  return enviar(mensagens);
+}
+
+// Rota nova (várias entregas juntas): um aviso só, com o total de entregas, km e ganho.
+async function avisarNovaRota(rotaId) {
+  const pedidos = await prisma.pedido.findMany({ where: { rotaId }, orderBy: { ordemRota: "asc" }, include: INCLUDE_AVISO });
+  if (pedidos.length < 2 || pedidos.some(p => p.status !== "PENDENTE" || p.entregadorId || p.comercio?.bloqueado)) return 0;
+  const alvo = await entregadoresAptos(pedidos);
+  if (!alvo.length) return 0;
+  const rota = await prisma.rota.findUnique({ where: { id: rotaId }, select: { codigo: true } });
+  const lojas = [...new Set(pedidos.map(p => p.comercio.nomeFantasia))];
+  const { ganhoParaApp } = require("./financeiro.service");
+  const mensagens = [];
+  for (const e of alvo) {
+    const comGanho = await ganhoParaApp(pedidos, e).catch(() => pedidos);
+    const ganho = comGanho.reduce((s, p) => s + (p.ganhoEntregador || 0), 0);
+    const kmTotal = comGanho.reduce((s, p) => s + (p.kmEntrega || 0), 0);
+    mensagens.push({
+      to: e.pushToken,
+      title: `🧭 Rota com ${pedidos.length} entregas — ${lojas.join(" + ")}`,
+      body: [kmTotal ? `≈ ${String(Number(kmTotal.toFixed(1))).replace(".", ",")} km de entregas` : null, ganho ? `Você ganha ${brl(ganho)}` : null].filter(Boolean).join(" · ") || "Toque para ver e aceitar.",
+      data: { tipo: "corrida", tela: "disponiveis", rotaId, rota: rota?.codigo },
+      channelId: "corridas",
+      sound: "corrida.wav",
+      priority: "high",
+      ttl: 300,
     });
   }
   return enviar(mensagens);
@@ -140,4 +172,4 @@ async function avisarTaxaDinamica(regra, tipo) {
   })));
 }
 
-module.exports = { enviar, avisarNovaCorrida, avisarAtribuicao, avisarPromocao, avisarTaxaDinamica, tokenValido };
+module.exports = { enviar, avisarNovaCorrida, avisarNovaRota, avisarAtribuicao, avisarPromocao, avisarTaxaDinamica, tokenValido };

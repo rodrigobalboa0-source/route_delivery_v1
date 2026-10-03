@@ -52,6 +52,8 @@ async function liberarAgendados() {
 async function rotinas() {
   await Promise.all([
     liberarAgendados().catch(err => console.error("[tempo-real] agendados:", err.message)),
+    // Roteirização automática: espera vencida que ninguém processou (reserva do agendamento de 15 s).
+    require("./rotas.service").roteirizarSeVencido().catch(err => console.error("[tempo-real] rotas:", err.message)),
     require("./ranking.service").fecharSemanaAnterior().catch(err => console.error("[tempo-real] ranking:", err.message)),
     // iFood: busca de reserva dos pedidos (o principal é o webhook), no máximo a cada 30 s.
     require("./ifood.service").sincronizar().catch(err => console.error("[tempo-real] ifood:", err.message)),

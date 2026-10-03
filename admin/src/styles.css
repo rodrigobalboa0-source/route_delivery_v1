@@ -573,7 +573,7 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--primaria
 }
 .mapa-botao:hover { background: #f4f5f7; }
 
-.op-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1.35fr)) repeat(2, minmax(0, 0.7fr)); gap: 17.5px; }
+.op-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1.35fr)) repeat(3, minmax(0, 0.7fr)); gap: 17.5px; }
 .op-card {
   display: flex; align-items: center; gap: 14px; text-align: left;
   background: var(--superficie); border: 1px solid var(--borda); border-radius: 10.5px;
@@ -602,6 +602,9 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--primaria
 .op-acao:disabled { opacity: 0.5; cursor: not-allowed; }
 .op-acao-atribuir { background: #ea580c; }
 .op-acao-atribuir:hover:not(:disabled) { background: #c2410c; }
+.op-acao-rota { background: #7c3aed; }
+.op-acao-rota:hover:not(:disabled) { background: #6d28d9; }
+.selo-rota { display: inline-block; margin-top: 3px; padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 600; background: #ede9fe; color: #5b21b6; white-space: nowrap; }
 .op-acao-nova { background: #0284c7; }
 .op-acao-nova:hover:not(:disabled) { background: #0369a1; }
 

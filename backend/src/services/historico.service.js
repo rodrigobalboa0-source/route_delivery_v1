@@ -35,9 +35,15 @@ async function registrarStatusPedido({ pedidoId, de = null, para, entregadorId =
   });
   // Import tardio: integracoes.service também importa este módulo.
   require("./integracoes.service").agendarNotificacao(pedidoId, de, para);
-  // Pedido liberado para os entregadores: notificação no celular (toca o alarme), depois da resposta.
+  // Roteirização: pedido de rota que foi cancelado, atribuído sozinho ou devolvido à fila sai da rota.
+  const rotas = require("./rotas.service");
+  await rotas.aoMudarStatus(pedidoId, de, para).catch(err => console.error("[rotas]", err.message));
+  // Pedido liberado para os entregadores: se a loja usa roteirização automática, espera alguns segundos para
+  // juntar outros pedidos; senão, notificação no celular na hora (toca o alarme), depois da resposta.
   if (para === "PENDENTE") {
-    require("../utils/segundoPlano").emSegundoPlano(() => require("./push.service").avisarNovaCorrida(pedidoId), "Push nova corrida");
+    require("../utils/segundoPlano").emSegundoPlano(async () => {
+      if (!(await rotas.aoFicarPronto(pedidoId))) await require("./push.service").avisarNovaCorrida(pedidoId);
+    }, "Push nova corrida");
   }
   await require("./comissaoAutomatica.service").aoMudarStatus(pedidoId, de, para);
   return registro;

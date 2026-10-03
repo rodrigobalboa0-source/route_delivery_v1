@@ -18,7 +18,9 @@ const INCLUDE_PADRAO = {
 const CAMPOS_PROTEGIDOS = ["id", "createdAt", "enderecos", "precificacoesModal", "usuariosAdicionais", "tabelaComissao",
   "pedidos", "faturas", "entregadoresPermitidos", "_count", "estatisticas", "acesso",
   // Permissões da loja: só pela tela Configurações › Permissões da loja (rotas /permissoes abaixo).
-  "lojaPodeFinalizar", "lojaPodeEditarComercio", "lojaPodeEditarEntregador", "lojaPodeBloquearEntregador", "exigirCodigoTelefone"];
+  "lojaPodeFinalizar", "lojaPodeEditarComercio", "lojaPodeEditarEntregador", "lojaPodeBloquearEntregador", "exigirCodigoTelefone",
+  // Roteirização automática: só pela tela Configurações › Roteirização automática.
+  "roteirizacaoAutomatica", "roteirizacaoEscopo"];
 const TIPOS_CAMPOS = { datas: ["dataInicio", "dataNascimento"] };
 const VEICULOS = ["MOTO", "BIKE", "CARRO"];
 
@@ -124,6 +126,47 @@ router.get(
     }));
   })
 );
+
+// ---------- Roteirização automática por comércio ----------
+const SELECT_ROTEIRIZACAO = { id: true, nomeFantasia: true, bloqueado: true, roteirizacaoAutomatica: true, roteirizacaoEscopo: true };
+const ESCOPOS = ["LOJA", "TODOS"];
+
+// GET /api/comercios/roteirizacao — todas as lojas com liga/desliga e escopo
+router.get(
+  "/roteirizacao",
+  asyncHandler(async (req, res) => {
+    res.json(await prisma.comercio.findMany({ orderBy: { nomeFantasia: "asc" }, select: SELECT_ROTEIRIZACAO }));
+  })
+);
+
+// PUT /api/comercios/roteirizacao/todas { roteirizacaoAutomatica? , roteirizacaoEscopo? } — aplica a todas as lojas
+router.put(
+  "/roteirizacao/todas",
+  asyncHandler(async (req, res) => {
+    const data = dadosRoteirizacao(req.body);
+    const { count } = await prisma.comercio.updateMany({ data });
+    res.json({ ok: true, lojas: count });
+  })
+);
+
+// PUT /api/comercios/:id/roteirizacao { roteirizacaoAutomatica?, roteirizacaoEscopo? }
+router.put(
+  "/:id/roteirizacao",
+  asyncHandler(async (req, res) => {
+    res.json(await prisma.comercio.update({ where: { id: req.params.id }, data: dadosRoteirizacao(req.body), select: SELECT_ROTEIRIZACAO }));
+  })
+);
+
+function dadosRoteirizacao(b = {}) {
+  const data = {};
+  if (b.roteirizacaoAutomatica !== undefined) data.roteirizacaoAutomatica = !!b.roteirizacaoAutomatica;
+  if (b.roteirizacaoEscopo !== undefined) {
+    if (!ESCOPOS.includes(b.roteirizacaoEscopo)) throw Object.assign(new Error("Escolha 'Só desta loja' ou 'Todos os comércios'."), { status: 400 });
+    data.roteirizacaoEscopo = b.roteirizacaoEscopo;
+  }
+  if (!Object.keys(data).length) throw Object.assign(new Error("Nada para alterar."), { status: 400 });
+  return data;
+}
 
 // PUT /api/comercios/permissoes/todas { campo, valor } — liga/desliga uma função para todas as lojas
 router.put(

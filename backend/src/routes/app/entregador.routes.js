@@ -433,11 +433,13 @@ router.get(
     exigirAtivo(req);
     if (!req.entregador.online) return res.json([]);
     await liberarAgendados().catch(() => {}); // agendados cuja hora chegou entram na lista agora
+    await require("../../services/rotas.service").roteirizarSeVencido().catch(() => {}); // espera da rota vencida
 
     // Recusadas por este entregador não voltam para ele (continuam para os outros).
     // Lojas que bloquearam este entregador também não aparecem.
+    // Pedidos ainda na espera da roteirização automática não aparecem (viram rota ou saem sozinhos em segundos).
     const where = {
-      status: "PENDENTE", entregadorId: null, recusas: { none: { entregadorId: req.entregador.id } },
+      status: "PENDENTE", entregadorId: null, aguardandoRotaAte: null, recusas: { none: { entregadorId: req.entregador.id } },
       comercio: { bloqueado: false, entregadoresBloqueados: { none: { entregadorId: req.entregador.id } } },
     };
     if (req.entregador.permissaoColeta === "SOMENTE_SELECIONADOS") {
@@ -462,11 +464,14 @@ router.get(
       return { ...p, distanciaAteColetaKm };
     });
 
+    // Rota só aparece inteira: se este entregador não pode pegar alguma das entregas (raio, loja, recusa), some toda.
+    const visiveis = comDistancia.filter(p => !raio || p.distanciaAteColetaKm == null || p.distanciaAteColetaKm <= raio);
+    const porRota = visiveis.reduce((m, p) => (p.rotaId ? m.set(p.rotaId, (m.get(p.rotaId) || 0) + 1) : m), new Map());
+    const completos = visiveis.filter(p => !p.rotaId || porRota.get(p.rotaId) === p.rota?._count?.pedidos);
+
     // Com o ganho do entregador em cada corrida (tabela de comissão do comércio, padrão do veículo ou repasse fixo).
     res.json(await ganhoApp(
-      comDistancia
-        .filter(p => !raio || p.distanciaAteColetaKm == null || p.distanciaAteColetaKm <= raio)
-        .sort((a, b) => (a.distanciaAteColetaKm ?? Infinity) - (b.distanciaAteColetaKm ?? Infinity)),
+      completos.sort((a, b) => (a.distanciaAteColetaKm ?? Infinity) - (b.distanciaAteColetaKm ?? Infinity) || (a.ordemRota || 0) - (b.ordemRota || 0)),
       req.entregador
     ));
   })
@@ -505,7 +510,29 @@ router.patch(
   asyncHandler(async (req, res) => {
     exigirAtivo(req);
     if (!req.entregador.online) throw erroHttp(403, "Fique online para aceitar corridas.");
+    const emRota = await prisma.pedido.findUnique({ where: { id: req.params.id }, select: { rotaId: true } });
+    if (emRota?.rotaId) throw erroHttp(409, "Esta corrida faz parte de uma rota: aceite a rota inteira (atualize o app se não aparecer).");
     res.json(pedidoParaApp(await aceitarPedido(req.params.id, req.entregador.id)));
+  })
+);
+
+// PATCH /api/app/entregador/rotas/:id/aceitar — pega todas as entregas da rota de uma vez
+router.patch(
+  "/rotas/:id/aceitar",
+  asyncHandler(async (req, res) => {
+    exigirAtivo(req);
+    if (!req.entregador.online) throw erroHttp(403, "Fique online para aceitar corridas.");
+    const r = await require("../../services/rotas.service").aceitarRota(req.params.id, req.entregador, autorEntregador(req));
+    res.json(r);
+  })
+);
+
+// POST /api/app/entregador/rotas/:id/recusar — a rota some da lista deste entregador; segue para os outros
+router.post(
+  "/rotas/:id/recusar",
+  asyncHandler(async (req, res) => {
+    exigirAtivo(req);
+    res.json(await require("../../services/rotas.service").recusarRota(req.params.id, req.entregador));
   })
 );
 

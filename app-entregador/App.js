@@ -249,7 +249,7 @@ function Principal({ entregador, setEntregador, onSair }) {
             {tela === "ranking" && <Ranking />}
           </View>
         )}
-        {tela !== "mensagens" && <Atalhos tela={tela} ir={ir} contagem={{ disponiveis: op.disponiveis.length, andamento: op.ativos.length }} />}
+        {tela !== "mensagens" && <Atalhos tela={tela} ir={ir} contagem={{ disponiveis: op.ofertas.length, andamento: op.ativos.length }} />}
       </View>
 
       <MenuLateral aberto={menu} tela={tela} ir={ir} onFechar={() => setMenu(false)} />

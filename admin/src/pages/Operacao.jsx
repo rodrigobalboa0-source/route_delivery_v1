@@ -36,7 +36,22 @@ const Icone = {
   caminhao: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h11v10H3zM14 10h4l3 3v3h-7" /><circle cx="7" cy="17.5" r="1.8" /><circle cx="17" cy="17.5" r="1.8" /></svg>,
   mais: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>,
   lupa: <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5" /><path d="m16 16 4 4" /></svg>,
+  rota: <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="19" r="2" /><circle cx="18" cy="5" r="2" /><path d="M8 19h8a3 3 0 0 0 0-6H8a3 3 0 0 1 0-6h8" /></svg>,
 };
+
+// Pode entrar numa rota manual: pronto, sem entregador e fora de outra rota.
+const podeRoteirizar = p => p.status === "PENDENTE" && !p.entregador && !p.rota;
+
+// Selo "R-12345 · 2/3" no pedido que está numa rota.
+export function SeloRota({ p }) {
+  if (!p.rota) return null;
+  const total = p.rota._count?.pedidos;
+  return (
+    <span className="selo-rota" title={`Rota ${p.rota.origem === "MANUAL" ? "manual" : "automática"}${p.rota.aceitaEm ? " · aceita" : " · aguardando entregador"}`}>
+      🧭 {p.rota.codigo}{p.ordemRota ? ` · ${p.ordemRota}/${total}` : ""}
+    </span>
+  );
+}
 
 function CardInfo({ icone, titulo, subtitulo, tom, onClick }) {
   return (
@@ -230,6 +245,15 @@ export default function Operacao() {
     setAtribuir({ pedidos: pedidos.filter(p => p.status === "PENDENTE" && !p.entregador), ignorados: 0 });
   }
 
+  // Roteirização manual: os pedidos prontos selecionados viram uma rota oferecida aos entregadores.
+  async function roteirizar() {
+    const aptos = selecionadosVisiveis.filter(podeRoteirizar);
+    const ignorados = selecionadosVisiveis.length - aptos.length;
+    const r = await executar(() => api.post("/rotas", { pedidoIds: aptos.map(p => p.id) }),
+      aptos.length >= 2 ? `Rota montada com ${aptos.length} entregas${ignorados ? ` (${ignorados} pedido(s) não entraram: precisam estar prontos, sem entregador e fora de outra rota)` : ""}. Os entregadores já foram chamados.` : undefined);
+    if (r) { setSelecionados(new Set()); atualizar(); }
+  }
+
   async function acaoRapida(p, rota, msg) {
     if (await executar(() => api.patch(`/pedidos/${p.id}/${rota}`), msg)) atualizar();
   }
@@ -273,6 +297,11 @@ export default function Operacao() {
         <button type="button" className="op-acao op-acao-atribuir" disabled={!pode} onClick={() => abrirAtribuir()}>
           {Icone.pessoa}
           <span>Atribuir{selecionadosVisiveis.length > 0 && <small>{selecionadosVisiveis.length} selecionado(s)</small>}</span>
+        </button>
+        <button type="button" className="op-acao op-acao-rota" disabled={!pode || ocupado || selecionadosVisiveis.filter(podeRoteirizar).length < 2} onClick={roteirizar}
+          title="Selecione 2 ou mais pedidos prontos sem entregador para montar uma rota">
+          {Icone.rota}
+          <span>Roteirizar{selecionadosVisiveis.length > 0 ? <small>{selecionadosVisiveis.filter(podeRoteirizar).length} pronto(s) selecionado(s)</small> : <small>selecione 2+ prontos</small>}</span>
         </button>
         <button type="button" className="op-acao op-acao-nova" disabled={!pode} onClick={() => navegar("/nova-entrega")}>
           {Icone.mais}
@@ -359,6 +388,8 @@ export default function Operacao() {
                     <td>
                       <strong>{p.codigo}</strong>
                       <div className="celula-sub">{tempoRelativo(p.createdAt)}</div>
+                      <SeloRota p={p} />
+                      {p.aguardandoRotaAte && <div className="selo-rota" title="Roteirização automática: esperando outros pedidos para montar rota">⏳ roteirizando…</div>}
                     </td>
                     <td>{p.comercio?.nomeFantasia}</td>
                     <td>

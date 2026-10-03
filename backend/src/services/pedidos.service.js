@@ -15,6 +15,7 @@ const INCLUDE_PADRAO = {
     },
   },
   entregador: { select: { id: true, nomeCompleto: true, telefone: true, veiculoTipo: true, fotoUrl: true } },
+  rota: { select: { id: true, codigo: true, origem: true, aceitaEm: true, _count: { select: { pedidos: true } } } },
 };
 
 const ORIGENS = {

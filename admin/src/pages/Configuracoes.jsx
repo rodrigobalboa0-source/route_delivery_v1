@@ -231,6 +231,122 @@ function PermissoesLoja({ pode }) {
   );
 }
 
+const PARAMETROS_ROTA = [
+  { nome: "rotaEsperaSegundos", rotulo: "Espera para roteirizar (segundos)", min: 5, max: 120, step: 1, dica: "Tempo que o pedido pronto aguarda outros pedidos antes de ser oferecido. Padrão: 15 s." },
+  { nome: "rotaMaxPedidos", rotulo: "Máximo de entregas por rota", min: 2, max: 10, step: 1, dica: "Padrão: 3." },
+  { nome: "rotaDistanciaMaxKm", rotulo: "Distância máx. entre entregas (km)", min: 0.3, max: 30, step: 0.1, dica: "Só agrupa clientes próximos entre si. Padrão: 3 km." },
+  { nome: "rotaRaioColetaKm", rotulo: "Distância máx. entre lojas (km)", min: 0.1, max: 20, step: 0.1, dica: "Para “Todos os comércios”: só junta lojas próximas. Padrão: 2 km." },
+];
+
+// Roteirização automática: valores gerais + liga/desliga e escopo loja a loja.
+function Roteirizacao({ dados, setDados, pode }) {
+  const { dados: lojas, erro, setDados: setLojas, recarregar } = useApi("/comercios/roteirizacao");
+  const [v, setV] = useState(null);
+  const [busca, setBusca] = useState("");
+  const { executar, ocupado } = useAcao();
+  const q = busca.trim().toLowerCase();
+  const lista = (lojas || []).filter(l => !q || l.nomeFantasia.toLowerCase().includes(q));
+  const valores = v || (dados && Object.fromEntries(PARAMETROS_ROTA.map(p => [p.nome, dados[p.nome] ?? ""])));
+
+  async function salvar(e) {
+    e.preventDefault();
+    const r = await executar(() => api.put("/configuracoes", valores), "Parâmetros da roteirização salvos.");
+    if (r) { setDados(r); setV(null); }
+  }
+
+  async function mudar(loja, campo, valor, msg) {
+    setLojas(ls => ls.map(l => (l.id === loja.id ? { ...l, [campo]: valor } : l)));
+    const r = await executar(() => api.put(`/comercios/${loja.id}/roteirizacao`, { [campo]: valor }), `${msg} — ${loja.nomeFantasia}.`);
+    if (!r) recarregar({ silencioso: true });
+  }
+
+  async function todas(corpo, msg) {
+    const r = await executar(() => api.put("/comercios/roteirizacao/todas", corpo), `${msg} para todas as lojas.`);
+    if (r) recarregar({ silencioso: true });
+  }
+
+  return (
+    <section className="cartao">
+      <div className="cartao-topo"><h2>Roteirização automática</h2></div>
+      <p className="apagado" style={{ marginTop: 0 }}>
+        Com a roteirização ligada, o pedido pronto espera alguns segundos: se sair outro pedido para perto, os dois (ou mais)
+        viram uma rota, oferecida a um só entregador com o valor somado. O que não tiver par segue sozinho, como hoje.
+        A roteirização manual (botão <strong>Roteirizar</strong> na Operação) funciona sempre, em qualquer loja.
+      </p>
+      {valores && (
+        <form onSubmit={salvar}>
+          <div className="grade-campos">
+            {PARAMETROS_ROTA.map(p => (
+              <label key={p.nome} className="campo">
+                <span className="campo-rotulo">{p.rotulo}</span>
+                <input type="number" min={p.min} max={p.max} step={p.step} value={valores[p.nome]} disabled={!pode} required
+                  onChange={e => setV({ ...valores, [p.nome]: e.target.value })} />
+                <span className="campo-dica">{p.dica}</span>
+              </label>
+            ))}
+          </div>
+          {pode && v && (
+            <div className="form-rodape">
+              <Botao variante="fantasma" onClick={() => setV(null)}>Descartar</Botao>
+              <button type="submit" className="btn btn-primario" disabled={ocupado}>Salvar parâmetros</button>
+            </div>
+          )}
+        </form>
+      )}
+      <dl className="legenda-permissoes">
+        <div><dt>Só desta loja</dt><dd>Junta apenas pedidos da mesma loja.</dd></div>
+        <div><dt>Todos os comércios</dt><dd>Também junta com pedidos de outras lojas que estejam em “Todos os comércios” e próximas entre si.</dd></div>
+      </dl>
+      <ErroCaixa erro={erro} />
+      {!lojas ? <Carregando /> : (
+        <>
+          <input type="search" className="busca-permissoes" placeholder="Buscar loja…" value={busca} onChange={e => setBusca(e.target.value)} aria-label="Buscar loja" />
+          <div className="tabela-rolagem">
+            <table className="tabela tabela-compacta tabela-permissoes">
+              <thead>
+                <tr><th>Loja</th><th className="centro">Automática</th><th>Agrupar com</th></tr>
+                {pode && lojas.length > 1 && (
+                  <tr className="linha-todas">
+                    <td className="apagado">Todas as lojas</td>
+                    <td className="centro">
+                      <BotaoConfirmar pequeno variante="primario" confirmar="Ligar para todas?" disabled={ocupado} onConfirm={() => todas({ roteirizacaoAutomatica: true }, "Roteirização automática ligada")}>Ligar</BotaoConfirmar>
+                      <BotaoConfirmar pequeno confirmar="Desligar para todas?" disabled={ocupado} onConfirm={() => todas({ roteirizacaoAutomatica: false }, "Roteirização automática desligada")}>Desligar</BotaoConfirmar>
+                    </td>
+                    <td>
+                      <BotaoConfirmar pequeno variante="secundario" confirmar="Só da loja, para todas?" disabled={ocupado} onConfirm={() => todas({ roteirizacaoEscopo: "LOJA" }, "Agrupar só da própria loja")}>Só da loja</BotaoConfirmar>
+                      <BotaoConfirmar pequeno variante="secundario" confirmar="Todos os comércios, para todas?" disabled={ocupado} onConfirm={() => todas({ roteirizacaoEscopo: "TODOS" }, "Agrupar com todos os comércios")}>Todos</BotaoConfirmar>
+                    </td>
+                  </tr>
+                )}
+              </thead>
+              <tbody>
+                {lista.length === 0 ? (
+                  <tr><td colSpan={3} className="apagado">Nenhuma loja encontrada.</td></tr>
+                ) : lista.map(l => (
+                  <tr key={l.id}>
+                    <td>{l.nomeFantasia}{l.bloqueado && <> <Badge tom="critico">Bloqueada</Badge></>}</td>
+                    <td className="centro">
+                      <Chave ligado={l.roteirizacaoAutomatica} desabilitado={!pode} rotulo={`Roteirização automática — ${l.nomeFantasia}`}
+                        onChange={val => mudar(l, "roteirizacaoAutomatica", val, `Roteirização automática ${val ? "ligada" : "desligada"}`)} />
+                    </td>
+                    <td>
+                      <select value={l.roteirizacaoEscopo} disabled={!pode} aria-label={`Agrupar com — ${l.nomeFantasia}`}
+                        onChange={e => mudar(l, "roteirizacaoEscopo", e.target.value, e.target.value === "TODOS" ? "Agrupa com todos os comércios" : "Agrupa só pedidos da própria loja")}>
+                        <option value="LOJA">Só desta loja</option>
+                        <option value="TODOS">Todos os comércios</option>
+                      </select>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
 const DIAS_SEMANA =["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 const TIPOS_SAQUE = [
   { tipo: "NORMAL", titulo: "Saque normal" },
@@ -362,6 +478,7 @@ export default function Configuracoes() {
         )}
       </section>
       <PermissoesLoja pode={pode} />
+      <Roteirizacao dados={dados} setDados={setDados} pode={pode} />
       <RankingSemanal dados={dados} setDados={setDados} pode={pode} />
       <RegrasSaque pode={pode} />
       <EmailEnvio dados={dados} setDados={setDados} pode={pode} />

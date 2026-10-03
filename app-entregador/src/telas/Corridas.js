@@ -19,6 +19,23 @@ function abrirRota(lat, lng, endereco) {
 }
 const ligar = tel => Linking.openURL(`tel:${String(tel).replace(/[^\d+]/g, "")}`);
 
+// Corridas da mesma rota viram uma oferta só (aceita ou recusada inteira); as outras seguem uma a uma.
+function agruparOfertas(lista) {
+  const ofertas = [];
+  const porRota = new Map();
+  for (const p of lista) {
+    if (p.rotaId && p.rota) {
+      let o = porRota.get(p.rotaId);
+      if (!o) { o = { id: `rota-${p.rotaId}`, rota: p.rota, pedidos: [] }; porRota.set(p.rotaId, o); ofertas.push(o); }
+      o.pedidos.push(p);
+    } else ofertas.push({ id: p.id, rota: null, pedidos: [p] });
+  }
+  for (const o of porRota.values()) o.pedidos.sort((a, b) => (a.ordemRota || 0) - (b.ordemRota || 0));
+  return ofertas;
+}
+
+const somar = (lista, f) => lista.reduce((s, p) => (s == null || f(p) == null ? null : s + Number(f(p))), 0);
+
 // ---------- Motor da operação (usado pelo mapa, pelos atalhos e pelas listas) ----------
 
 export function useOperacao(entregador, setEntregador) {
@@ -30,10 +47,11 @@ export function useOperacao(entregador, setEntregador) {
   const [aviso, setAviso] = useState(null);
   const [mudandoStatus, setMudandoStatus] = useState(false);
   const [aceitando, setAceitando] = useState(null);
-  const [novas, setNovas] = useState([]); // corridas que acabaram de aparecer (pop-up Aceitar/Recusar)
+  const [novas, setNovas] = useState([]); // ofertas (corrida ou rota) que acabaram de aparecer (pop-up Aceitar/Recusar)
   const online = !!entregador?.online;
   const ultimoEnvio = useRef(0);
-  const vistas = useRef(null); // ids já mostrados (null = primeira carga: não avisa as que já estavam lá)
+  const vistas = useRef(null); // ofertas já mostradas (null = primeira carga: não avisa as que já estavam lá)
+  const ofertas = agruparOfertas(disponiveis);
 
   const carregar = useCallback(async () => {
     try {
@@ -43,18 +61,19 @@ export function useOperacao(entregador, setEntregador) {
       ]);
       setAtivos(meus);
       setDisponiveis(lista);
-      // Corrida nova (inclusive agendada que chegou no horário): entra na fila do pop-up.
+      const ofs = agruparOfertas(lista);
+      // Corrida ou rota nova (inclusive agendada que chegou no horário): entra na fila do pop-up.
       if (online) {
         if (vistas.current) {
-          const chegaram = lista.filter(p => !vistas.current.has(p.id));
-          if (chegaram.length) setNovas(f => [...f, ...chegaram.filter(p => !f.some(x => x.id === p.id))]);
+          const chegaram = ofs.filter(o => !vistas.current.has(o.id));
+          if (chegaram.length) setNovas(f => [...f, ...chegaram.filter(o => !f.some(x => x.id === o.id))]);
         }
-        vistas.current = new Set([...(vistas.current || []), ...lista.map(p => p.id)]);
+        vistas.current = new Set([...(vistas.current || []), ...ofs.map(o => o.id)]);
       } else {
         vistas.current = null;
       }
-      // Some do pop-up o que já não está disponível (outro entregador aceitou, loja cancelou...).
-      setNovas(f => f.filter(p => lista.some(x => x.id === p.id)));
+      // Some do pop-up o que já não está disponível (outro entregador aceitou, loja cancelou, rota desfeita...).
+      setNovas(f => f.map(o => ofs.find(x => x.id === o.id)).filter(Boolean));
       setErro(null);
     } catch (e) {
       setErro(e.message);
@@ -161,10 +180,11 @@ export function useOperacao(entregador, setEntregador) {
     }
   }
 
-  async function aceitar(p) {
-    setAceitando(p.id);
+  // o = oferta: uma corrida ou uma rota inteira.
+  async function aceitar(o) {
+    setAceitando(o.id);
     try {
-      await api.patch(`/pedidos/${p.id}/aceitar`);
+      await api.patch(o.rota ? `/rotas/${o.rota.id}/aceitar` : `/pedidos/${o.pedidos[0].id}/aceitar`);
       await carregar();
       return true;
     } catch (e) {
@@ -176,11 +196,11 @@ export function useOperacao(entregador, setEntregador) {
     }
   }
 
-  async function recusar(p) {
-    setNovas(f => f.filter(x => x.id !== p.id));
-    setDisponiveis(l => l.filter(x => x.id !== p.id));
+  async function recusar(o) {
+    setNovas(f => f.filter(x => x.id !== o.id));
+    setDisponiveis(l => l.filter(x => !o.pedidos.some(p => p.id === x.id)));
     try {
-      await api.post(`/pedidos/${p.id}/recusar`);
+      await api.post(o.rota ? `/rotas/${o.rota.id}/recusar` : `/pedidos/${o.pedidos[0].id}/recusar`);
     } catch (e) {
       setErro(e.message);
     }
@@ -188,14 +208,14 @@ export function useOperacao(entregador, setEntregador) {
   }
 
   // Fecha o pop-up sem decidir (a corrida continua em Disponíveis).
-  const depois = p => setNovas(f => f.filter(x => x.id !== p.id));
+  const depois = o => setNovas(f => f.filter(x => x.id !== o.id));
 
   async function atualizarTudo() {
     await Promise.all([carregar(), carregarGanho()]);
   }
 
   return {
-    ativos, disponiveis, posicao, ganhoHoje, erro, setErro, aviso, online, mudandoStatus, aceitando, alternarOnline, aceitar, recusar, atualizarTudo,
+    ativos, disponiveis, ofertas, posicao, ganhoHoje, erro, setErro, aviso, online, mudandoStatus, aceitando, alternarOnline, aceitar, recusar, atualizarTudo,
     raio: entregador?.raioConfirmacaoMetros || 200,
     novaCorrida: novas[0] || null, depois,
     localizacao, pedirTempoTodo, permitirTempoTodo, agoraNaoTempoTodo: () => setPedirTempoTodo(false),
@@ -263,6 +283,7 @@ function EntregaAtiva({ p, onAtualizar, onErro }) {
           <Selo texto={etapa?.rotulo || p.status} corFundo={p.status === "ATRASADO" ? "rgba(239,68,68,0.18)" : "rgba(42,120,214,0.2)"} corTexto={p.status === "ATRASADO" ? "#fca5a5" : cor.primariaClara} />
         )}
       </View>
+      {p.rota ? <Text style={st.rotaInfo}>🧭 Rota {p.rota.codigo} · entrega {p.ordemRota} de {p.rota._count?.pedidos}</Text> : null}
       <View style={[st.etapaBloco, indoParaLoja && st.etapaAtual]}>
         <Text style={st.etapaTitulo}>🏪 Coleta · {p.comercio?.nomeFantasia}</Text>
         <Text style={st.etapaTexto}>{enderecoLoja(p.comercio) || "Endereço da loja não informado"}</Text>
@@ -372,14 +393,56 @@ function DadosCorrida({ p }) {
   );
 }
 
-function Disponivel({ p, onAceitar, onRecusar, ocupado }) {
+// Rota: várias entregas para um só entregador, com o ganho somado e as paradas na ordem.
+function DadosRota({ o }) {
+  const lojas = [...new Map(o.pedidos.map(p => [p.comercio?.id, p.comercio])).values()];
+  const ganho = somar(o.pedidos, p => p.ganhoEntregador);
+  const kmTotal = somar(o.pedidos, p => p.kmEntrega ?? p.distanciaKm);
   return (
-    <Cartao>
-      <TopoLoja p={p} />
-      <DadosCorrida p={p} />
+    <>
+      <View style={st.topoLoja}>
+        <FotoLoja comercio={lojas[0]} />
+        <View style={{ flex: 1 }}>
+          <Text style={st.codigo}>🧭 Rota com {o.pedidos.length} entregas</Text>
+          <Text style={st.etapaTexto} numberOfLines={2}>{lojas.map(l => l?.nomeFantasia).join(" + ")}</Text>
+        </View>
+      </View>
+      {ganho != null && <Ganho p={{ ganhoEntregador: ganho }} />}
+      {kmTotal != null && (
+        <View style={st.kmItem}>
+          <Text style={st.kmValor}>≈ {km(kmTotal)}</Text>
+          <Text style={st.kmRotulo}>somando as {o.pedidos.length} entregas</Text>
+        </View>
+      )}
+      {lojas.map(l => <InfoLinha key={l?.id} rotulo="Coleta" valor={lojas.length > 1 ? `${l?.nomeFantasia} · ${enderecoLoja(l)}` : enderecoLoja(l)} />)}
+      {o.pedidos.map((p, i) => (
+        <View key={p.id} style={st.parada}>
+          <Text style={st.paradaNum}>{i + 1}</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={st.linhaValor}>{p.complemento ? `${p.endereco} · ${p.complemento}` : p.endereco}</Text>
+            <Text style={st.kmRotulo}>
+              {[lojas.length > 1 && p.comercio?.nomeFantasia, (p.kmEntrega ?? p.distanciaKm) != null && km(p.kmEntrega ?? p.distanciaKm), p.ganhoEntregador != null && moeda(p.ganhoEntregador), p.retorno && "com retorno"].filter(Boolean).join(" · ")}
+            </Text>
+          </View>
+        </View>
+      ))}
+    </>
+  );
+}
+
+// Conteúdo de uma oferta: corrida única ou rota.
+function ConteudoOferta({ o }) {
+  if (o.rota) return <DadosRota o={o} />;
+  return <><TopoLoja p={o.pedidos[0]} /><DadosCorrida p={o.pedidos[0]} /></>;
+}
+
+function Disponivel({ o, onAceitar, onRecusar, ocupado }) {
+  return (
+    <Cartao estilo={o.rota ? { borderColor: cor.primariaClara } : undefined}>
+      <ConteudoOferta o={o} />
       <View style={st.acoes}>
-        <Botao titulo="Recusar" variante="perigo" onPress={() => onRecusar(p)} estilo={{ flex: 1 }} />
-        <Botao titulo="Aceitar corrida" variante="sucesso" onPress={() => onAceitar(p)} carregando={ocupado} estilo={{ flex: 2 }} />
+        <Botao titulo="Recusar" variante="perigo" onPress={() => onRecusar(o)} estilo={{ flex: 1 }} />
+        <Botao titulo={o.rota ? "Aceitar rota" : "Aceitar corrida"} variante="sucesso" onPress={() => onAceitar(o)} carregando={ocupado} estilo={{ flex: 2 }} />
       </View>
     </Cartao>
   );
@@ -411,14 +474,16 @@ export function PopupCorrida({ op, onAceitou }) {
     <Modal visible transparent animationType="slide" supportedOrientations={["portrait", "landscape"]} onRequestClose={() => op.depois(p)}>
       <View style={[st.popFundo, deitado && { justifyContent: "center", padding: 8 }]}>
         <View style={[st.pop, { maxHeight: "100%" }]}>
-          <View style={st.popFaixa}><Text style={st.popFaixaTexto}>🔔 Nova corrida{p.agendadoPara ? " (agendada)" : ""}</Text><Text style={st.popTempo}>{resta}s</Text></View>
+          <View style={st.popFaixa}>
+            <Text style={st.popFaixaTexto}>{p.rota ? `🔔 Nova rota · ${p.pedidos.length} entregas` : `🔔 Nova corrida${p.pedidos[0].agendadoPara ? " (agendada)" : ""}`}</Text>
+            <Text style={st.popTempo}>{resta}s</Text>
+          </View>
           {/* Com rolagem: deitado, a tela é baixa e os botões não podem sumir. */}
           <ScrollView style={{ flexGrow: 0 }} contentContainerStyle={{ padding: deitado ? 12 : 18, gap: 10 }}>
-            <TopoLoja p={p} />
-            <DadosCorrida p={p} />
+            <ConteudoOferta o={p} />
             <View style={st.acoes}>
               <Botao titulo="Recusar" variante="perigo" onPress={() => op.recusar(p)} estilo={{ flex: 1 }} />
-              <Botao titulo="Aceitar" variante="sucesso" carregando={op.aceitando === p.id} estilo={{ flex: 2 }}
+              <Botao titulo={p.rota ? "Aceitar rota" : "Aceitar"} variante="sucesso" carregando={op.aceitando === p.id} estilo={{ flex: 2 }}
                 onPress={async () => { const ok = await op.aceitar(p); op.depois(p); if (ok) onAceitou?.(); }} />
             </View>
             <Botao pequeno variante="fantasma" titulo="Decidir depois" onPress={() => op.depois(p)} />
@@ -445,21 +510,33 @@ export function ListaDisponiveis({ op, entregador, onAceitou }) {
       {emAnalise && <Vazio titulo="Cadastro em análise" texto="Assim que a equipe aprovar, você poderá ficar online e aceitar corridas." />}
       {/* Ficar online só pelo botão da tela inicial (Home) — aqui fica apenas o aviso. */}
       {!emAnalise && !op.online && <Vazio titulo="Você está offline" texto="Para ver as corridas, fique online pelo botão na tela inicial (Home)." />}
-      {op.online && op.disponiveis.length === 0 && <Vazio titulo="Nenhuma corrida no momento" texto="A lista atualiza sozinha a cada 10 segundos." />}
-      {op.online && op.disponiveis.map(p => (
-        <Disponivel key={p.id} p={p} ocupado={op.aceitando === p.id} onRecusar={op.recusar} onAceitar={async x => { if (await op.aceitar(x)) onAceitou?.(); }} />
+      {op.online && op.ofertas.length === 0 && <Vazio titulo="Nenhuma corrida no momento" texto="A lista atualiza sozinha a cada 10 segundos." />}
+      {op.online && op.ofertas.map(o => (
+        <Disponivel key={o.id} o={o} ocupado={op.aceitando === o.id} onRecusar={op.recusar} onAceitar={async x => { if (await op.aceitar(x)) onAceitou?.(); }} />
       ))}
     </ScrollView>
   );
 }
 
+// Em andamento: entregas da mesma rota juntas e na ordem da rota.
+function ordenarAndamento(lista) {
+  const grupos = new Map();
+  for (const p of lista) {
+    const k = p.rotaId || p.id;
+    if (!grupos.has(k)) grupos.set(k, []);
+    grupos.get(k).push(p);
+  }
+  return [...grupos.values()].flatMap(g => g.sort((a, b) => (a.ordemRota || 0) - (b.ordemRota || 0)));
+}
+
 export function ListaAndamento({ op }) {
   const refresh = useRecarregar(op.atualizarTudo);
+  const ativos = ordenarAndamento(op.ativos);
   return (
     <ScrollView contentContainerStyle={st.tela} refreshControl={refresh}>
       <Erro texto={op.erro} />
       {op.ativos.length === 0 && <Vazio titulo="Nenhuma entrega em andamento" texto="Aceite uma corrida em Disponíveis para começar." />}
-      {op.ativos.map(p => <EntregaAtiva key={p.id} p={p} onAtualizar={op.atualizarTudo} onErro={op.setErro} />)}
+      {ativos.map(p => <EntregaAtiva key={p.id} p={p} onAtualizar={op.atualizarTudo} onErro={op.setErro} />)}
     </ScrollView>
   );
 }
@@ -493,6 +570,9 @@ const st = StyleSheet.create({
   ganho: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: "rgba(34,197,94,0.12)", borderColor: "rgba(34,197,94,0.4)", borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },
   ganhoRotulo: { color: cor.texto2, fontSize: 14, fontWeight: "600" },
   ganhoValor: { color: cor.ok, fontSize: 20, fontWeight: "800" },
+  parada: { flexDirection: "row", gap: 10, alignItems: "flex-start" },
+  paradaNum: { color: "#fff", backgroundColor: cor.primaria, width: 24, height: 24, borderRadius: 12, textAlign: "center", lineHeight: 24, fontSize: 13, fontWeight: "800", overflow: "hidden" },
+  rotaInfo: { color: cor.primariaClara, fontSize: 14, fontWeight: "700" },
   popFundo: { flex: 1, backgroundColor: "rgba(3,8,18,0.75)", justifyContent: "flex-end", padding: 14 },
   pop: { backgroundColor: cor.superficie, borderRadius: 18, borderWidth: 2, borderColor: cor.ok, overflow: "hidden", maxWidth: 520, width: "100%", alignSelf: "center" },
   popFaixa: { backgroundColor: cor.ok, paddingHorizontal: 16, paddingVertical: 10, flexDirection: "row", justifyContent: "space-between", alignItems: "center" },

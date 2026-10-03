@@ -64,6 +64,17 @@ function validarGerais(b) {
     b.rankingPremios = premios;
   }
   if (b.rankingAtivo !== undefined) b.rankingAtivo = !!b.rankingAtivo;
+  // Roteirização automática (valores gerais).
+  const faixa = (campo, min, max, inteiro, rotulo) => {
+    if (b[campo] === undefined) return;
+    const v = Number(String(b[campo]).replace(",", "."));
+    if (!Number.isFinite(v) || v < min || v > max || (inteiro && !Number.isInteger(v))) erro(`${rotulo} deve ficar entre ${min} e ${max}.`);
+    b[campo] = v;
+  };
+  faixa("rotaEsperaSegundos", 5, 120, true, "O tempo de espera da roteirização (segundos)");
+  faixa("rotaMaxPedidos", 2, 10, true, "O máximo de entregas por rota");
+  faixa("rotaDistanciaMaxKm", 0.3, 30, false, "A distância máxima entre as entregas (km)");
+  faixa("rotaRaioColetaKm", 0.1, 20, false, "A distância máxima entre lojas (km)");
   return b;
 }
 

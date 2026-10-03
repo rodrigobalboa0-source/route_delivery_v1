@@ -194,6 +194,9 @@ model Comercio {
   lojaPodeBloquearEntregador Boolean @default(false) // bloquear entregador só nesta loja
   // Pedidos lançados pela loja: o entregador só finaliza com os 4 últimos números do telefone do cliente.
   exigirCodigoTelefone       Boolean @default(false)
+  // Roteirização automática: pedidos prontos esperam alguns segundos para virar rota com outros próximos.
+  roteirizacaoAutomatica     Boolean @default(false)
+  roteirizacaoEscopo         String  @default("LOJA") // LOJA = só pedidos desta loja | TODOS = junta com outros comércios
   createdAt         DateTime  @default(now())
 
   enderecos           ComercioEndereco[]
@@ -551,6 +554,11 @@ model Pedido {
   // Código da loja: 4 últimos números do telefone do cliente no momento da criação (não muda se o telefone for editado).
   // Nunca vai para o app do entregador.
   codigoConfirmacao  String?
+  // Roteirização: rota em que o pedido está, posição da entrega na rota e até quando espera para ser roteirizado.
+  rotaId             String?
+  rota               Rota?     @relation(fields: [rotaId], references: [id], onDelete: SetNull)
+  ordemRota          Int?
+  aguardandoRotaAte  DateTime?
   // Financeiro: fatura em que o pedido foi cobrado do comércio e acerto em que foi pago ao entregador.
   faturaId           String?
   fatura             Fatura?           @relation(fields: [faturaId], references: [id], onDelete: SetNull)
@@ -925,6 +933,24 @@ model Configuracao {
   smtpUsuario              String?
   smtpSenha                String? // criptografada
   resendChave              String? // criptografada
+  // Roteirização automática (valores gerais; liga/desliga e escopo ficam em cada comércio).
+  rotaEsperaSegundos       Int     @default(15)  // tempo que o pedido pronto espera para juntar outros
+  rotaMaxPedidos           Int     @default(3)   // máximo de entregas numa rota
+  rotaDistanciaMaxKm       Float   @default(3)   // distância máxima entre as entregas de uma rota
+  rotaRaioColetaKm         Float   @default(2)   // lojas diferentes só se juntam se estiverem até esta distância
+}
+
+// Rota: várias entregas oferecidas juntas a um entregador (aceita tudo de uma vez).
+model Rota {
+  id           String    @id @default(cuid())
+  codigo       String    @unique
+  origem       String    // AUTOMATICA | MANUAL
+  criadoPor    String?
+  entregadorId String?
+  aceitaEm     DateTime?
+  createdAt    DateTime  @default(now())
+
+  pedidos      Pedido[]
 }
 
 // Entregador bloqueado por uma loja: não vê nem recebe corridas dela (continua trabalhando para as outras).
