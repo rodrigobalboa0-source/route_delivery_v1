@@ -180,7 +180,7 @@ input[type="datetime-local"], input[type="date"] { color-scheme: dark; }
 .chave-rapida input:focus-visible + .interruptor { outline: 2px solid var(--primaria); outline-offset: 2px; }
 
 /* Mapa + lateral */
-.painel-grade { display: grid; grid-template-columns: minmax(0, 1fr) 270px; gap: 14px; align-items: start; }
+.painel-grade { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: start; }
 .painel-principal { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .mapa-barra { display: flex; gap: 8px; }
 .mb {

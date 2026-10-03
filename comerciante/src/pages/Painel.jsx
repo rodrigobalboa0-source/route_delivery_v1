@@ -2,7 +2,7 @@
 //   1) criação rápida de entrega numa linha (cliente, telefone, endereço, 📍, complemento, Retorno?, Criar Entrega);
 //   2) mapa largo com barra própria (mostrar/ocultar, +, −, ver todos) e, ao lado, os entregadores com pedidos da loja;
 //   3) entregas em aberto, com "Visualizar fila", busca e filtro.
-import { useMemo, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../auth";
@@ -14,7 +14,7 @@ import AcoesPedido from "../components/AcoesPedido";
 import CampoCliente from "../components/CampoCliente";
 import CampoEndereco from "../components/CampoEndereco";
 import { textoValor, useFormEntrega } from "../hooks/useFormEntrega";
-import { COM_ENTREGADOR, STATUS_PEDIDO, VEICULOS, dataHora, moeda, tempoRelativo } from "../utils/format";
+import { COM_ENTREGADOR, STATUS_PEDIDO, dataHora, moeda, tempoRelativo } from "../utils/format";
 
 const VAZIO = { clienteNome: "", clienteTelefone: "", endereco: "", complemento: "", formaPagamento: "", observacao: "", agendadoPara: "" };
 const PAGAMENTOS = ["Pago (online)", "Pix", "Cartão na entrega", "Dinheiro"];
@@ -110,49 +110,6 @@ function CriarRapido({ onPrevia, onCriado, retornoPercentual, comCodigo }) {
         <button type="submit" className="btn btn-laranja" disabled={ocupado}>{v.agendadoPara ? "Agendar Entrega" : "Criar Entrega"}</button>
       </div>
     </form>
-  );
-}
-
-// Lateral: entregadores trabalhando em pedidos da loja agora.
-function Entregadores({ pedidos, onPedido }) {
-  const [busca, setBusca] = useState("");
-  const lista = useMemo(() => {
-    const m = new Map();
-    pedidos.filter(p => p.entregador && COM_ENTREGADOR.includes(p.status)).forEach(p => {
-      const e = m.get(p.entregador.id) || { ...p.entregador, pedidos: [] };
-      e.pedidos.push(p);
-      m.set(e.id, e);
-    });
-    const q = busca.trim().toLowerCase();
-    return [...m.values()].filter(e => !q || e.nomeCompleto.toLowerCase().includes(q) || e.pedidos.some(p => p.clienteNome.toLowerCase().includes(q)));
-  }, [pedidos, busca]);
-
-  return (
-    <aside className="painel-lateral">
-      <div className="busca-icone">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
-        <input type="search" value={busca} onChange={e => setBusca(e.target.value)} placeholder="Pesquisar" aria-label="Pesquisar entregadores" />
-      </div>
-      <h3 className="lateral-titulo">Entregadores com seus pedidos</h3>
-      {lista.length === 0 ? <SemRegistros /> : (
-        <ul className="lateral-lista">
-          {lista.map(e => (
-            <li key={e.id}>
-              <span className="avatar" aria-hidden="true">{e.fotoUrl ? <img src={e.fotoUrl} alt="" /> : e.nomeCompleto[0]}</span>
-              <div>
-                <strong>{e.nomeCompleto}</strong>
-                <small>{VEICULOS[e.veiculoTipo] || "—"} · posição {tempoRelativo(e.localizacaoEm)}</small>
-                {e.pedidos.map(p => (
-                  <button key={p.id} type="button" className="link lateral-pedido" onClick={() => onPedido(p.id)}>
-                    {p.clienteNome} · {STATUS_PEDIDO[p.status]?.rotulo}
-                  </button>
-                ))}
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-    </aside>
   );
 }
 
@@ -306,7 +263,6 @@ export default function Painel() {
           )}
           <EmAberto pedidos={pedidos} carregado={!!mapa.dados} onAbrir={setAberto} onPronto={pronto} ocupado={ocupado} onAlterado={() => mapa.recarregar({ silencioso: true })} />
         </div>
-        <Entregadores pedidos={pedidos} onPedido={setAberto} />
       </div>
 
       {aberto && <DetalhePedido id={aberto} onFechar={() => setAberto(null)} />}
