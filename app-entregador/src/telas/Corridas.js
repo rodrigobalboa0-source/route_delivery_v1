@@ -13,8 +13,16 @@ const INTERVALO_LISTAS_MS = 30000; // reserva: o tempo real (src/tempoReal.js) a
 const INTERVALO_POSICAO_MS = 10000;
 const INTERVALO_SINAL_MS = 30000; // "sinal de vida" enquanto online (sem sinal por 2 min = offline automático)
 
-function abrirRota(lat, lng, endereco) {
-  const destino = lat != null && lng != null ? `${lat},${lng}` : encodeURIComponent(endereco || "");
+// Navegação no Google Maps ou no Waze (o link abre o app instalado; sem ele, abre no navegador).
+function abrirRota(lat, lng, endereco, app = "google") {
+  const temPonto = lat != null && lng != null;
+  if (app === "waze") {
+    Linking.openURL(temPonto
+      ? `https://waze.com/ul?ll=${lat},${lng}&navigate=yes`
+      : `https://waze.com/ul?q=${encodeURIComponent(endereco || "")}&navigate=yes`);
+    return;
+  }
+  const destino = temPonto ? `${lat},${lng}` : encodeURIComponent(endereco || "");
   Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${destino}&travelmode=driving`);
 }
 const ligar = tel => Linking.openURL(`tel:${String(tel).replace(/[^\d+]/g, "")}`);
@@ -319,13 +327,15 @@ function EntregaAtiva({ p, onAtualizar, onErro }) {
       >
         <Campo rotulo={p.codigoLoja ? "4 últimos números do telefone" : "Código"} value={codigoEntrega} onChangeText={t => setCodigoEntrega(t.replace(/\D/g, "").slice(0, p.codigoLoja ? 4 : 8))} keyboardType="number-pad" autoFocus placeholder="Ex.: 1234" />
       </Confirmar>
+      <Text style={st.rotaRotulo}>{indoParaLoja ? "Rota até a loja" : "Rota até o cliente"}</Text>
       <View style={st.acoes}>
-        {indoParaLoja
-          ? <Botao pequeno variante="secundario" titulo="Rota até a loja" onPress={() => abrirRota(loja?.lat, loja?.lng, enderecoLoja(p.comercio))} estilo={st.acao} />
-          : <Botao pequeno variante="secundario" titulo="Rota até o cliente" onPress={() => abrirRota(p.latDestino, p.lngDestino, p.endereco)} estilo={st.acao} />}
-        {indoParaLoja && p.comercio?.telefone ? <Botao pequeno variante="secundario" titulo="Ligar p/ loja" onPress={() => ligar(p.comercio.telefone)} estilo={st.acao} /> : null}
-        {!indoParaLoja && p.clienteTelefone ? <Botao pequeno variante="secundario" titulo="Ligar p/ cliente" onPress={() => ligar(p.clienteTelefone)} estilo={st.acao} /> : null}
+        <Botao pequeno variante="secundario" titulo="Waze" estilo={st.acao}
+          onPress={() => (indoParaLoja ? abrirRota(loja?.lat, loja?.lng, enderecoLoja(p.comercio), "waze") : abrirRota(p.latDestino, p.lngDestino, p.endereco, "waze"))} />
+        <Botao pequeno variante="secundario" titulo="Google Maps" estilo={st.acao}
+          onPress={() => (indoParaLoja ? abrirRota(loja?.lat, loja?.lng, enderecoLoja(p.comercio)) : abrirRota(p.latDestino, p.lngDestino, p.endereco))} />
       </View>
+      {indoParaLoja && p.comercio?.telefone ? <Botao pequeno variante="secundario" titulo="Ligar p/ loja" onPress={() => ligar(p.comercio.telefone)} /> : null}
+      {!indoParaLoja && p.clienteTelefone ? <Botao pequeno variante="secundario" titulo="Ligar p/ cliente" onPress={() => ligar(p.clienteTelefone)} /> : null}
     </Cartao>
   );
 }
@@ -572,6 +582,7 @@ const st = StyleSheet.create({
   ganhoValor: { color: cor.ok, fontSize: 20, fontWeight: "800" },
   parada: { flexDirection: "row", gap: 10, alignItems: "flex-start" },
   paradaNum: { color: "#fff", backgroundColor: cor.primaria, width: 24, height: 24, borderRadius: 12, textAlign: "center", lineHeight: 24, fontSize: 13, fontWeight: "800", overflow: "hidden" },
+  rotaRotulo: { color: cor.texto3, fontSize: 13, marginBottom: -4 },
   rotaInfo: { color: cor.primariaClara, fontSize: 14, fontWeight: "700" },
   popFundo: { flex: 1, backgroundColor: "rgba(3,8,18,0.75)", justifyContent: "flex-end", padding: 14 },
   pop: { backgroundColor: cor.superficie, borderRadius: 18, borderWidth: 2, borderColor: cor.ok, overflow: "hidden", maxWidth: 520, width: "100%", alignSelf: "center" },
