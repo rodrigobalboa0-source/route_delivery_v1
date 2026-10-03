@@ -1,6 +1,7 @@
 // Menu "Ações" do pedido no sistema da loja (Painel, Fila e detalhe do pedido).
-//   Antes do aceite: Pedido pronto, Editar, Detalhes, Finalizar*, Copiar link de rastreio, Escrever observação, Editar comércio*, Cancelar
-//   Depois do aceite: + Editar entregador*, Bloquear entregador*, Trocar entregador, Reprocurar
+//   Antes do aceite: Pedido pronto, Editar, Detalhes, Finalizar*, Copiar link de rastreio, Escrever observação, Editar comércio*,
+//                    Reprocurar (pedido pronto), Cancelar
+//   Depois do aceite: + Editar entregador*, Bloquear entregador*, Trocar entregador (sem Reprocurar)
 //   (* só quando o ADM libera em Configurações › Permissões da loja)
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
@@ -81,7 +82,7 @@ function TrocarEntregador({ pedido, onFechar }) {
   return (
     <Modal titulo={`Trocar entregador — ${pedido.codigo}`} onFechar={() => onFechar(false)}>
       <p className="apagado" style={{ marginTop: 0 }}>Entregadores online que podem pegar corridas da sua loja (mais perto primeiro). A corrida passa direto para quem você escolher.</p>
-      {erro ? <p>{erro}</p> : !lista ? <Carregando /> : outros.length === 0 ? <p className="apagado">Nenhum outro entregador online agora. Use “Reprocurar” para chamar quem ficar online.</p> : (
+      {erro ? <p>{erro}</p> : !lista ? <Carregando /> : outros.length === 0 ? <p className="apagado">Nenhum outro entregador online agora. Tente de novo em instantes.</p> : (
         <ul className="lista-escolha">
           {outros.map(e => (
             <li key={e.id}>
@@ -278,7 +279,8 @@ export default function AcoesPedido({ pedido, onDetalhes, onAlterado, rotulo = "
     comEntregador && perm.editarEntregador && { rotulo: "🛵 Editar entregador", acao: () => setModal({ tipo: "entregador" }) },
     comEntregador && perm.bloquearEntregador && { rotulo: "⛔ Bloquear entregador", acao: () => setModal({ tipo: "bloquear" }) },
     comEntregador && { rotulo: "⇄ Trocar entregador", acao: () => setModal({ tipo: "trocar" }) },
-    comEntregador && { rotulo: "↻ Reprocurar", acao: () => setModal({ tipo: "reprocurar" }) },
+    // Reprocurar: só antes do aceite (pedido pronto, sem entregador e fora da espera da roteirização).
+    pedido.status === "PENDENTE" && !pedido.entregador && !pedido.aguardandoRotaAte && { rotulo: "↻ Reprocurar", acao: () => setModal({ tipo: "reprocurar" }) },
     { rotulo: "✕ Cancelar", perigo: true, acao: () => setModal({ tipo: "cancelar" }) },
   ].filter(Boolean);
 
@@ -310,9 +312,9 @@ export default function AcoesPedido({ pedido, onDetalhes, onAlterado, rotulo = "
           onConfirmar={() => api.patch(`/pedidos/${pedido.id}/finalizar`).then(r => { avisar("Pedido finalizado."); return r; })} />
       )}
       {modal?.tipo === "reprocurar" && (
-        <Confirmar titulo="Reprocurar entregador?" botao="Tirar e procurar outro" onFechar={fechar}
-          texto={`${nomeEnt} sai desta corrida e os entregadores online são chamados de novo.`}
-          onConfirmar={() => api.patch(`/pedidos/${pedido.id}/reprocurar`).then(r => { avisar("Procurando outro entregador."); return r; })} />
+        <Confirmar titulo="Reprocurar entregador?" botao="Chamar de novo" variante="primario" onFechar={fechar}
+          texto="Os entregadores online são chamados de novo, com alarme, inclusive quem recusou esta corrida."
+          onConfirmar={() => api.patch(`/pedidos/${pedido.id}/reprocurar`).then(r => { avisar("Chamando os entregadores de novo."); return r; })} />
       )}
       {modal?.tipo === "bloquear" && (
         <Confirmar titulo={`Bloquear ${nomeEnt}?`} botao="Bloquear na minha loja" variante="perigo" campo="Motivo (opcional)" onFechar={fechar}

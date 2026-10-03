@@ -559,6 +559,8 @@ model Pedido {
   rota               Rota?     @relation(fields: [rotaId], references: [id], onDelete: SetNull)
   ordemRota          Int?
   aguardandoRotaAte  DateTime?
+  // Última vez que a loja usou "Reprocurar" (o app abre o aviso de novo para todos).
+  reprocuradoEm      DateTime?
   // Financeiro: fatura em que o pedido foi cobrado do comércio e acerto em que foi pago ao entregador.
   faturaId           String?
   fatura             Fatura?           @relation(fields: [faturaId], references: [id], onDelete: SetNull)

@@ -181,7 +181,7 @@ function PermissoesLoja({ pode }) {
       <div className="cartao-topo"><h2>Permissões da loja</h2></div>
       <p className="apagado" style={{ marginTop: 0 }}>
         Escolha, loja por loja, as funções extras do sistema da loja. Editar, Detalhes, Copiar link de rastreio,
-        Escrever observação, Trocar entregador, Reprocurar e Cancelar ficam sempre disponíveis.
+        Escrever observação, Trocar entregador (depois do aceite), Reprocurar (antes do aceite) e Cancelar ficam sempre disponíveis.
       </p>
       <dl className="legenda-permissoes">
         {PERMISSOES_LOJA.map(p => <div key={p.nome}><dt>{p.rotulo}</dt><dd>{p.dica}</dd></div>)}

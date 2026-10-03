@@ -258,7 +258,7 @@ router.get(
       select: {
         id: true, codigo: true, status: true, clienteNome: true, clienteTelefone: true, endereco: true, complemento: true, retorno: true,
         agendadoPara: true, valor: true, prontoEm: true, comercioId: true, latDestino: true, lngDestino: true, createdAt: true, observacao: true,
-        integracaoSlug: true, codigoExterno: true,
+        integracaoSlug: true, codigoExterno: true, aguardandoRotaAte: true,
         entregador: { select: { id: true, nomeCompleto: true, fotoUrl: true, veiculoTipo: true, telefone: true, lat: true, lng: true, localizacaoEm: true } },
       },
     });
@@ -270,7 +270,7 @@ router.get(
         id: p.id, codigo: p.codigo, status: p.status, clienteNome: p.clienteNome, clienteTelefone: p.clienteTelefone,
         endereco: p.endereco, complemento: p.complemento, retorno: p.retorno, agendadoPara: p.agendadoPara, valor: p.valor,
         prontoEm: p.prontoEm, createdAt: p.createdAt, observacao: p.observacao, rastreio: tokenRastreio(p.id),
-        integracaoSlug: p.integracaoSlug, codigoExterno: p.codigoExterno,
+        integracaoSlug: p.integracaoSlug, codigoExterno: p.codigoExterno, aguardandoRotaAte: p.aguardandoRotaAte,
         destino: p.latDestino != null ? { lat: p.latDestino, lng: p.lngDestino } : null,
         entregador: p.entregador,
       })),
@@ -475,14 +475,26 @@ router.patch(
   })
 );
 
-// PATCH /api/app/comerciante/pedidos/:id/reprocurar — tira o entregador e chama os outros de novo
+// PATCH /api/app/comerciante/pedidos/:id/reprocurar — pedido pronto que ninguém aceitou ainda:
+// chama de novo todos os entregadores (inclusive quem recusou), com novo alarme. Na rota, vale a rota inteira.
+// Depois do aceite não existe mais: para mudar o entregador, a loja usa "Trocar entregador".
 router.patch(
   "/pedidos/:id/reprocurar",
   asyncHandler(async (req, res) => {
     const pedido = await pedidoDoComercio(req);
-    if (!COM_ENTREGADOR.includes(pedido.status)) throw erroHttp(409, "Este pedido não está com entregador.");
-    const nome = (await prisma.entregador.findUnique({ where: { id: pedido.entregadorId }, select: { nomeCompleto: true } }))?.nomeCompleto;
-    await voltarParaFila(req, pedido, `Loja tirou ${nome || "o entregador"} e está procurando outro entregador.`);
+    if (pedido.entregadorId || COM_ENTREGADOR.includes(pedido.status)) throw erroHttp(409, "O entregador já aceitou este pedido. Para mudar, use “Trocar entregador”.");
+    if (pedido.status !== "PENDENTE") throw erroHttp(409, "Só dá para reprocurar pedido pronto que ainda não foi aceito.");
+    if (pedido.aguardandoRotaAte) throw erroHttp(409, "O pedido está sendo roteirizado: em alguns segundos os entregadores são chamados.");
+    const ids = pedido.rotaId
+      ? (await prisma.pedido.findMany({ where: { rotaId: pedido.rotaId }, select: { id: true } })).map(p => p.id)
+      : [pedido.id];
+    await prisma.$transaction([
+      prisma.pedidoRecusa.deleteMany({ where: { pedidoId: { in: ids } } }),
+      prisma.pedido.updateMany({ where: { id: { in: ids } }, data: { reprocuradoEm: new Date() } }),
+    ]);
+    await registrarLog(pedido.id, "Loja reprocurou: entregadores chamados de novo (inclusive quem tinha recusado).");
+    const push = require("../../services/push.service");
+    emSegundoPlano(() => (pedido.rotaId ? push.avisarNovaRota(pedido.rotaId) : push.avisarNovaCorrida(pedido.id)), "Push reprocurar");
     res.json(await prisma.pedido.findUnique({ where: { id: pedido.id }, include: INCLUDE_PADRAO }));
   })
 );

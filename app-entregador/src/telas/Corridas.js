@@ -39,6 +39,8 @@ function agruparOfertas(lista) {
     } else ofertas.push({ id: p.id, rota: null, pedidos: [p] });
   }
   for (const o of porRota.values()) o.pedidos.sort((a, b) => (a.ordemRota || 0) - (b.ordemRota || 0));
+  // "Reprocurar" da loja muda a chave: o pop-up abre de novo mesmo para quem já tinha visto.
+  for (const o of ofertas) o.chave = `${o.id}@${o.pedidos.map(p => p.reprocuradoEm || "").sort().pop()}`;
   return ofertas;
 }
 
@@ -73,10 +75,10 @@ export function useOperacao(entregador, setEntregador) {
       // Corrida ou rota nova (inclusive agendada que chegou no horário): entra na fila do pop-up.
       if (online) {
         if (vistas.current) {
-          const chegaram = ofs.filter(o => !vistas.current.has(o.id));
+          const chegaram = ofs.filter(o => !vistas.current.has(o.chave));
           if (chegaram.length) setNovas(f => [...f, ...chegaram.filter(o => !f.some(x => x.id === o.id))]);
         }
-        vistas.current = new Set([...(vistas.current || []), ...ofs.map(o => o.id)]);
+        vistas.current = new Set([...(vistas.current || []), ...ofs.map(o => o.chave)]);
       } else {
         vistas.current = null;
       }
