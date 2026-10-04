@@ -259,14 +259,17 @@ function EntregaAtiva({ p, onAtualizar, onErro }) {
   const [ocupado, setOcupado] = useState(false);
   const etapa = ETAPA[p.status];
   const loja = p.comercio?.enderecos?.[0];
-  const indoParaLoja = ["ATRIBUIDO", "NA_LOJA"].includes(p.status);
+  // Retornando (entrega com retorno): o destino volta a ser a loja.
+  const retornando = p.status === "RETORNANDO";
+  const indoParaLoja = ["ATRIBUIDO", "NA_LOJA", "RETORNANDO"].includes(p.status);
 
   const [pedirCodigo, setPedirCodigo] = useState(false);
   const [codigoEntrega, setCodigoEntrega] = useState("");
 
   async function avancar(codigo) {
     // iFood: finalizar exige o código de entrega que o cliente informa.
-    if (etapa.proxima === "ENTREGUE" && p.exigeCodigoEntrega && !codigo) { setPedirCodigo(true); return; }
+    // O código é conferido na entrega ao cliente; na volta à loja (Retornando) não pede de novo.
+    if (etapa.proxima === "ENTREGUE" && !retornando && p.exigeCodigoEntrega && !codigo) { setPedirCodigo(true); return; }
     setPedirCodigo(false);
     setOcupado(true);
     try {
@@ -315,7 +318,8 @@ function EntregaAtiva({ p, onAtualizar, onErro }) {
           <Text style={st.obsTexto}>{p.observacao.trim()}</Text>
         </View>
       ) : null}
-      {etapa && <Botao titulo={etapa.botao} variante={etapa.proxima === "ENTREGUE" ? "sucesso" : "primario"} onPress={() => avancar()} carregando={ocupado} />}
+      {retornando ? <Text style={st.avisoRetorno}>↩ Entregue ao cliente. Volte à loja e toque em "Cheguei na loja" para concluir.</Text> : null}
+      {etapa && <Botao titulo={p.retorno && etapa.botaoRetorno ? etapa.botaoRetorno : etapa.botao} variante={etapa.proxima === "ENTREGUE" ? "sucesso" : "primario"} onPress={() => avancar()} carregando={ocupado} />}
       <Confirmar
         visivel={pedirCodigo}
         titulo={p.codigoLoja ? "Código de entrega" : "Código de entrega do iFood"}
@@ -599,6 +603,7 @@ const st = StyleSheet.create({
   parada: { flexDirection: "row", gap: 10, alignItems: "flex-start" },
   paradaNum: { color: "#fff", backgroundColor: cor.primaria, width: 24, height: 24, borderRadius: 12, textAlign: "center", lineHeight: 24, fontSize: 13, fontWeight: "800", overflow: "hidden" },
   rotaRotulo: { color: cor.texto3, fontSize: 13, marginBottom: -4 },
+  avisoRetorno: { color: cor.aviso, fontSize: 14, fontWeight: "700", lineHeight: 20 },
   rotaInfo: { color: cor.primariaClara, fontSize: 14, fontWeight: "700" },
   popFundo: { flex: 1, backgroundColor: "rgba(3,8,18,0.75)", justifyContent: "flex-end", padding: 14 },
   pop: { backgroundColor: cor.superficie, borderRadius: 18, borderWidth: 2, borderColor: cor.ok, overflow: "hidden", maxWidth: 520, width: "100%", alignSelf: "center" },

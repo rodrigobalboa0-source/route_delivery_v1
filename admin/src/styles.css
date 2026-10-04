@@ -1118,3 +1118,7 @@ code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-siz
 
 /* Cadastros: chave liga/desliga na lista */
 .chave-situacao { display: inline-flex; align-items: center; padding-top: 0; gap: 10px; position: relative; cursor: pointer; }
+
+/* Status Retornando (entrega com retorno voltando à loja): laranja no mapa */
+.pino-pedido.st-RETORNANDO { --cor: #ea580c; }
+.leaflet-tooltip.rotulo-pedido.st-RETORNANDO { border-left-color: #ea580c; }

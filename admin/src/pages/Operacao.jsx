@@ -19,6 +19,7 @@ const CONTADORES = [
   { status: "NA_LOJA", rotulo: "Na loja" },
   { status: "EM_ROTA", rotulo: "Em Rota" },
   { status: "NO_CLIENTE", rotulo: "Cheguei no cliente" },
+  { status: "RETORNANDO", rotulo: "Retornando" },
   { status: "ENTREGUE", rotulo: "Entregue" },
   { status: "CANCELADO", rotulo: "Cancelada" },
   { status: "ATRASADO", rotulo: "Atrasado" },

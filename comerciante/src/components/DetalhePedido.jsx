@@ -20,7 +20,10 @@ const ETAPAS = [
   { status: "ENTREGUE", rotulo: "Entregue" },
 ];
 
-function etapaAtual(p) {
+// Entrega com retorno ganha a etapa "Retornando" (entregue ao cliente, voltando à loja) antes de "Entregue".
+const etapasDo = p => (p.retorno ? [...ETAPAS.slice(0, 6), { status: "RETORNANDO", rotulo: "Retornando" }, ETAPAS[6]] : ETAPAS);
+
+function etapaAtual(p, etapas) {
   if (p.status === "ATRASADO") {
     // Atrasado: mostra a etapa real pelo último carimbo.
     if (p.noClienteEm) return 5;
@@ -28,7 +31,7 @@ function etapaAtual(p) {
     if (p.naLojaEm) return 3;
     return p.entregadorId ? 2 : 1;
   }
-  return ETAPAS.findIndex(e => e.status === p.status);
+  return etapas.findIndex(e => e.status === p.status);
 }
 
 export function Etapas({ pedido }) {
@@ -36,10 +39,11 @@ export function Etapas({ pedido }) {
   if (pedido.status === "PREPARANDO" && pedido.agendadoPara) {
     return <div className="aviso-caixa agendado-caixa">⏰ Agendado — o entregador será chamado em {dataHora(pedido.agendadoPara)}.</div>;
   }
-  const atual = etapaAtual(pedido);
+  const etapas = etapasDo(pedido);
+  const atual = etapaAtual(pedido, etapas);
   return (
-    <ol className="etapas" aria-label="Andamento da entrega">
-      {ETAPAS.map((e, i) => (
+    <ol className="etapas" aria-label="Andamento da entrega" style={{ gridTemplateColumns: `repeat(${etapas.length}, minmax(0, 1fr))` }}>
+      {etapas.map((e, i) => (
         <li key={e.status} className={i < atual ? "feita" : i === atual ? "atual" : ""} aria-current={i === atual ? "step" : undefined}>
           <span className="etapa-ponto" aria-hidden="true">{i < atual ? "✓" : ""}</span>
           <span className="etapa-rotulo">{e.rotulo}</span>

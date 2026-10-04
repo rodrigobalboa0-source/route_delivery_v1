@@ -25,7 +25,9 @@ export const ETAPA = {
   NA_LOJA: { rotulo: "Na loja", botao: "Saí para entrega", proxima: "EM_ROTA" },
   EM_ROTA: { rotulo: "Em rota", botao: "Cheguei no cliente", proxima: "NO_CLIENTE" },
   ATRASADO: { rotulo: "Atrasado", botao: "Cheguei no cliente", proxima: "NO_CLIENTE" },
-  NO_CLIENTE: { rotulo: "No cliente", botao: "Finalizar entrega", proxima: "ENTREGUE" },
+  NO_CLIENTE: { rotulo: "No cliente", botao: "Finalizar entrega", botaoRetorno: "Entreguei — voltar à loja", proxima: "ENTREGUE" },
+  // Entrega com retorno: já entregue ao cliente; finaliza ao chegar de volta na loja.
+  RETORNANDO: { rotulo: "Retornando", botao: "Cheguei na loja (retorno)", proxima: "ENTREGUE" },
 };
 
 export const VEICULOS = { MOTO: "Moto", BIKE: "Bike", CARRO: "Carro" };

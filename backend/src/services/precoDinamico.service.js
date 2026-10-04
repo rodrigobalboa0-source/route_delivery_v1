@@ -8,7 +8,7 @@ const prisma = require("../lib/prisma");
 
 const r2 = v => Math.round((v + Number.EPSILON) * 100) / 100;
 const brl = v => Number(v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-const ABERTOS = ["PREPARANDO", "PENDENTE", "ATRIBUIDO", "NA_LOJA", "EM_ROTA", "NO_CLIENTE", "ATRASADO"];
+const { ABERTOS } = require("../utils/statusPedido");
 
 const textoRegra = r => (r.tipoAplicacao === "MULTIPLICADOR" ? `${String(r.valor).replace(".", ",")}x` : `+${brl(r.valor)}`);
 

@@ -422,7 +422,7 @@ async function sincronizar({ forcar = false } = {}) {
 
 // Etapas a partir de "saiu para entrega": ao chegar em qualquer uma (mesmo pulando etapas pelo painel),
 // avisa o dispatch ao iFood uma única vez — é depois dele que o iFood pode pedir o código de entrega.
-const SAIU_OU_DEPOIS = ["EM_ROTA", "NO_CLIENTE", "ENTREGUE"];
+const SAIU_OU_DEPOIS = ["EM_ROTA", "NO_CLIENTE", "RETORNANDO", "ENTREGUE"];
 
 async function aoMudarStatus(pedidoId, de, para) {
   // Chegou ao cliente: avisa o iFood (antes do código de entrega).

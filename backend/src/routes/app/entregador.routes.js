@@ -584,6 +584,7 @@ router.patch(
     const ordem = ETAPAS_ENTREGADOR.indexOf(para);
     if (ordem < 1) throw erroHttp(400, "Etapa inválida. Use NA_LOJA, EM_ROTA ou NO_CLIENTE.");
     if (!COM_ENTREGADOR.includes(pedido.status)) throw erroHttp(409, "Este pedido não está em andamento com você.");
+    if (pedido.status === "RETORNANDO") throw erroHttp(409, "Já entregue ao cliente: falta só voltar à loja.");
     if (pedido.status !== "ATRASADO" && ETAPAS_ENTREGADOR.indexOf(pedido.status) >= ordem) throw erroHttp(409, "Essa etapa já foi informada.");
     await conferirLocal(req, pedido, para === "NO_CLIENTE" ? "cliente" : "loja");
     const { count } = await prisma.pedido.updateMany({
@@ -598,11 +599,22 @@ router.patch(
 );
 
 // PATCH /api/app/entregador/pedidos/:id/finalizar
+// Entrega COM RETORNO: no cliente vira RETORNANDO (códigos e iFood conferidos aqui); de volta à loja, ENTREGUE.
 router.patch(
   "/pedidos/:id/finalizar",
   asyncHandler(async (req, res) => {
     const pedido = await pedidoDoEntregador(req);
     if (!COM_ENTREGADOR.includes(pedido.status)) throw erroHttp(409, "Este pedido não está em andamento com você.");
+    if (pedido.status === "RETORNANDO") {
+      await conferirLocal(req, pedido, "loja");
+      const { count } = await prisma.pedido.updateMany({
+        where: { id: pedido.id, status: "RETORNANDO", entregadorId: req.entregador.id }, data: { status: "ENTREGUE", ...carimbos(pedido, "ENTREGUE") },
+      });
+      if (!count) throw erroHttp(409, "O pedido mudou enquanto isso. Atualize a tela.");
+      await registrarStatusPedido({ pedidoId: pedido.id, de: "RETORNANDO", para: "ENTREGUE", entregadorId: req.entregador.id, autor: autorEntregador(req) });
+      await registrarLog(pedido.id, `${req.entregador.nomeCompleto} voltou à loja: entrega com retorno concluída.`);
+      return res.json(pedidoParaApp(await prisma.pedido.findUnique({ where: { id: pedido.id }, include: INCLUDE_PEDIDO_APP })));
+    }
     await conferirLocal(req, pedido, "cliente");
     // iFood com código de entrega: o cliente informa o código e o iFood confere antes de concluir.
     const ifoodSvc = require("../../services/ifood.service");
@@ -612,11 +624,14 @@ router.patch(
       await registrarLog(pedido.id, "Código de entrega do iFood confirmado.");
     }
     if (atual.codigoConfirmacao) await conferirCodigoLoja(req, atual);
+    const para = pedido.retorno ? "RETORNANDO" : "ENTREGUE";
     const atualizado = await prisma.pedido.update({
-      where: { id: pedido.id }, data: { status: "ENTREGUE", ...carimbos(pedido, "ENTREGUE") }, include: INCLUDE_PEDIDO_APP,
+      where: { id: pedido.id }, data: { status: para, ...carimbos(pedido, para) }, include: INCLUDE_PEDIDO_APP,
     });
-    await registrarStatusPedido({ pedidoId: pedido.id, de: pedido.status, para: "ENTREGUE", entregadorId: req.entregador.id, autor: autorEntregador(req) });
-    await registrarLog(pedido.id, `Entrega concluída por ${req.entregador.nomeCompleto}.`);
+    await registrarStatusPedido({ pedidoId: pedido.id, de: pedido.status, para, entregadorId: req.entregador.id, autor: autorEntregador(req) });
+    await registrarLog(pedido.id, para === "RETORNANDO"
+      ? `${req.entregador.nomeCompleto} entregou ao cliente e está retornando à loja.`
+      : `Entrega concluída por ${req.entregador.nomeCompleto}.`);
     res.json(pedidoParaApp(atualizado));
   })
 );

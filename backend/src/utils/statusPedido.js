@@ -2,11 +2,12 @@
 //   PREPARANDO (Criado) -> PENDENTE (Pedido pronto) -> ATRIBUIDO (Atribuída) -> NA_LOJA (Na loja)
 //   -> EM_ROTA (Em rota) -> NO_CLIENTE (Cheguei no cliente) -> ENTREGUE (Entregue); CANCELADO (Cancelada).
 //   ATRASADO: marcação de atraso de um pedido em andamento.
+//   RETORNANDO: entrega com retorno já entregue ao cliente; o entregador volta à loja e aí o pedido vira ENTREGUE.
 
-const TODOS = ["PREPARANDO", "PENDENTE", "ATRIBUIDO", "NA_LOJA", "EM_ROTA", "NO_CLIENTE", "ENTREGUE", "ATRASADO", "CANCELADO"];
+const TODOS = ["PREPARANDO", "PENDENTE", "ATRIBUIDO", "NA_LOJA", "EM_ROTA", "NO_CLIENTE", "RETORNANDO", "ENTREGUE", "ATRASADO", "CANCELADO"];
 
-// Com entregador trabalhando nele (do aceite até antes de entregar).
-const COM_ENTREGADOR = ["ATRIBUIDO", "NA_LOJA", "EM_ROTA", "NO_CLIENTE", "ATRASADO"];
+// Com entregador trabalhando nele (do aceite até terminar — no retorno, até voltar à loja).
+const COM_ENTREGADOR = ["ATRIBUIDO", "NA_LOJA", "EM_ROTA", "NO_CLIENTE", "RETORNANDO", "ATRASADO"];
 
 // Ainda não terminou (nem entregue nem cancelado).
 const ABERTOS = ["PREPARANDO", "PENDENTE", ...COM_ENTREGADOR];
@@ -18,7 +19,7 @@ const ETAPAS_ENTREGADOR = ["ATRIBUIDO", "NA_LOJA", "EM_ROTA", "NO_CLIENTE"];
 
 const ROTULOS = {
   PREPARANDO: "Criado", PENDENTE: "Pedido pronto", ATRIBUIDO: "Atribuída", NA_LOJA: "Na loja", EM_ROTA: "Em rota",
-  NO_CLIENTE: "Cheguei no cliente", ENTREGUE: "Pedido entregue", ATRASADO: "Atrasado", CANCELADO: "Cancelada",
+  NO_CLIENTE: "Cheguei no cliente", RETORNANDO: "Retornando", ENTREGUE: "Pedido entregue", ATRASADO: "Atrasado", CANCELADO: "Cancelada",
 };
 
 // Um evento de histórico é "aceite" quando o pedido passa a ter entregador trabalhando nele.

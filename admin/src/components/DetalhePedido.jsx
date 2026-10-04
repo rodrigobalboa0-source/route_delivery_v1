@@ -16,6 +16,7 @@ export const ACOES = {
   NA_LOJA: EM_ANDAMENTO,
   EM_ROTA: EM_ANDAMENTO,
   NO_CLIENTE: EM_ANDAMENTO,
+  RETORNANDO: ["finalizar", "cancelar"],
   ATRASADO: ["atribuir", "trocar", "reprocurar", "finalizar", "cancelar"],
   ENTREGUE: [],
   CANCELADO: [],

@@ -73,6 +73,7 @@ enum PermissaoColeta {
 // Fluxo: PREPARANDO (Criado) -> PENDENTE (Pedido pronto) -> ATRIBUIDO (Atribuída) -> NA_LOJA (Na loja)
 //        -> EM_ROTA (Em rota) -> NO_CLIENTE (Cheguei no cliente) -> ENTREGUE. CANCELADO em qualquer etapa.
 //        ATRASADO: marcação manual de atraso de um pedido em andamento.
+//        RETORNANDO: entrega COM RETORNO já entregue ao cliente; o entregador volta à loja e aí vira ENTREGUE.
 enum StatusPedido {
   PREPARANDO
   PENDENTE
@@ -80,6 +81,7 @@ enum StatusPedido {
   NA_LOJA
   EM_ROTA
   NO_CLIENTE
+  RETORNANDO
   ENTREGUE
   ATRASADO
   CANCELADO
@@ -612,6 +614,7 @@ model Pedido {
   naLojaEm        DateTime?   // motoboy chegou na loja para coletar
   saiuEm          DateTime?   // saiu para entrega (Em rota)
   noClienteEm     DateTime?   // motoboy chegou no cliente
+  retornandoEm    DateTime?   // entrega com retorno: entregue ao cliente, voltando à loja
   entregueEm      DateTime?
   canceladoEm     DateTime?
   // Pedidos recebidos por integração: qual integração e o id do pedido lá.

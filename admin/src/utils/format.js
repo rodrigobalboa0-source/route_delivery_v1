@@ -47,15 +47,16 @@ export const STATUS_PEDIDO = {
   NA_LOJA: { rotulo: "Na loja", tom: "info" },
   EM_ROTA: { rotulo: "Em rota", tom: "info" },
   NO_CLIENTE: { rotulo: "Cheguei no cliente", tom: "info" },
+  RETORNANDO: { rotulo: "Retornando", tom: "aviso" }, // entrega com retorno: já entregue ao cliente, voltando à loja
   ENTREGUE: { rotulo: "Pedido entregue", tom: "ok" },
   ATRASADO: { rotulo: "Atrasado", tom: "critico" },
   CANCELADO: { rotulo: "Cancelada", tom: "apagado" },
 };
 
 // Ordem do fluxo (para listas e seletor de status). Atrasado é uma marcação à parte, no fim.
-export const FLUXO_PEDIDO = ["PREPARANDO", "PENDENTE", "ATRIBUIDO", "NA_LOJA", "EM_ROTA", "NO_CLIENTE", "ENTREGUE", "CANCELADO", "ATRASADO"];
+export const FLUXO_PEDIDO = ["PREPARANDO", "PENDENTE", "ATRIBUIDO", "NA_LOJA", "EM_ROTA", "NO_CLIENTE", "RETORNANDO", "ENTREGUE", "CANCELADO", "ATRASADO"];
 // Com motoboy trabalhando no pedido (do aceite até antes de entregar).
-export const COM_ENTREGADOR = ["ATRIBUIDO", "NA_LOJA", "EM_ROTA", "NO_CLIENTE", "ATRASADO"];
+export const COM_ENTREGADOR = ["ATRIBUIDO", "NA_LOJA", "EM_ROTA", "NO_CLIENTE", "RETORNANDO", "ATRASADO"];
 
 export const STATUS_ENTREGADOR = {
   EM_ANALISE: { rotulo: "Em análise", tom: "aviso" },

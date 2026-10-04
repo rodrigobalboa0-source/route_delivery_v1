@@ -22,6 +22,7 @@ function carimbos(atual, para, agora = new Date()) {
   if (para === "NA_LOJA" && !atual?.naLojaEm) c.naLojaEm = agora;
   if (para === "EM_ROTA" && !atual?.saiuEm) c.saiuEm = agora;
   if (para === "NO_CLIENTE" && !atual?.noClienteEm) c.noClienteEm = agora;
+  if (para === "RETORNANDO" && !atual?.retornandoEm) c.retornandoEm = agora;
   if (para === "ENTREGUE") c.entregueEm = agora;
   if (para === "CANCELADO") c.canceladoEm = agora;
   return c;

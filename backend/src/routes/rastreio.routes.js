@@ -34,16 +34,18 @@ router.get(
     });
     if (!p) return res.status(404).json({ erro: "Entrega não encontrada. Confira o link com a loja." });
     const loja = p.comercio.enderecos[0];
-    const emAndamento = COM_ENTREGADOR.includes(p.status);
+    // Para o cliente, "Retornando" já é entrega feita (o entregador está voltando à loja).
+    const status = p.status === "RETORNANDO" ? "ENTREGUE" : p.status;
+    const emAndamento = COM_ENTREGADOR.includes(status);
     res.set("Cache-Control", "no-store").json({
       codigo: p.codigoExterno || p.codigo,
-      status: p.status,
+      status,
       loja: { nome: p.comercio.nomeFantasia, fotoUrl: p.comercio.fotoUrl, lat: loja?.lat ?? null, lng: loja?.lng ?? null },
       cliente: String(p.clienteNome || "").split(" ")[0],
       endereco: p.endereco,
       destino: p.latDestino != null ? { lat: p.latDestino, lng: p.lngDestino } : null,
       agendadoPara: p.agendadoPara,
-      horarios: { criado: p.createdAt, pronto: p.prontoEm, aceito: p.aceitoEm, naLoja: p.naLojaEm, saiu: p.saiuEm, noCliente: p.noClienteEm, entregue: p.entregueEm, cancelado: p.canceladoEm },
+      horarios: { criado: p.createdAt, pronto: p.prontoEm, aceito: p.aceitoEm, naLoja: p.naLojaEm, saiu: p.saiuEm, noCliente: p.noClienteEm, entregue: p.entregueEm || p.retornandoEm, cancelado: p.canceladoEm },
       entregador: p.entregador && emAndamento ? {
         nome: p.entregador.nomeCompleto.split(" ")[0],
         fotoUrl: p.entregador.fotoUrl,
