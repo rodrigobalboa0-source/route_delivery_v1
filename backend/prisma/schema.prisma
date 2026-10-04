@@ -525,6 +525,19 @@ model PromocaoEvento {
 }
 
 // Avisos que o entregador já viu (para o pop-up aparecer uma vez só).
+// Preço dinâmico do entregador ligado/desligado no painel: vira pop-up no app (visto em PromocaoAvisoVisto, "din:<id>").
+model PrecoDinamicoEvento {
+  id            String   @id @default(cuid())
+  regraId       String
+  nome          String
+  tipoAplicacao String
+  valor         Float
+  tipo          String   // ATIVADA | DESATIVADA
+  createdAt     DateTime @default(now())
+
+  @@index([createdAt])
+}
+
 model PromocaoAvisoVisto {
   id           String     @id @default(cuid())
   entregadorId String

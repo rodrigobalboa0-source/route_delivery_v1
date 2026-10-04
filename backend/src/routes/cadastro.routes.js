@@ -81,16 +81,21 @@ const avisarAoLigar = tipo => (regra, anterior) => {
   if (!regra.ativo || anterior?.ativo) return;
   require("../utils/segundoPlano").emSegundoPlano(() => require("../services/push.service").avisarTaxaDinamica(regra, tipo), "Push taxa dinâmica");
 };
-// Preço dinâmico do entregador mudou: as entregas abertas recebem (ou perdem) o bônus na hora.
-const aplicarNoEntregador = tipo => async () => {
+// Preço dinâmico do entregador mudou: ligada -> as entregas abertas recebem o bônus na hora; desligada/excluída ->
+// os pedidos já lançados mantêm o valor (só os próximos saem sem). Liga/desliga vira pop-up no app.
+const mudouRegraEntregador = tipo => async (regra, anterior) => {
   if (tipo !== "entregador") return;
-  const n = await require("../services/precoDinamico.service").aplicarEntregadorNasAbertas();
-  if (n) console.log(`[preço dinâmico] ${n} entrega(s) aberta(s) atualizada(s)`);
+  const dinamico = require("../services/precoDinamico.service");
+  await dinamico.registrarEvento(regra, anterior);
+  if (regra?.ativo) {
+    const n = await dinamico.aplicarEntregadorNasAbertas();
+    if (n) console.log(`[preço dinâmico] ${n} entrega(s) aberta(s) com o bônus`);
+  }
 };
 const opcoesRegraPreco = (tipoPadrao, tipo) => ({
   orderBy: { nome: "asc" }, beforeCreate: validarRegraPreco(tipoPadrao), beforeUpdate: validarRegraPreco(tipoPadrao),
-  afterSave: async (regra, anterior) => { avisarAoLigar(tipo)(regra, anterior); await aplicarNoEntregador(tipo)(); },
-  afterDelete: aplicarNoEntregador(tipo),
+  afterSave: async (regra, anterior) => { avisarAoLigar(tipo)(regra, anterior); await mudouRegraEntregador(tipo)(regra, anterior); },
+  afterDelete: apagada => mudouRegraEntregador(tipo)(null, apagada),
 });
 // PATCH /:chave/:id/ativo { ativo } — liga/desliga a regra direto da lista (sem abrir a edição).
 const alternarRegra = (modelo, tipo) => async (req, res) => {
@@ -98,7 +103,7 @@ const alternarRegra = (modelo, tipo) => async (req, res) => {
   if (!anterior) return res.status(404).json({ erro: "Regra não encontrada." });
   const regra = await prisma[modelo].update({ where: { id: req.params.id }, data: { ativo: !!req.body?.ativo } });
   avisarAoLigar(tipo)(regra, anterior);
-  await aplicarNoEntregador(tipo)();
+  await mudouRegraEntregador(tipo)(regra, anterior);
   res.json(regra);
 };
 router.patch("/preco-dinamico-demanda/:id/ativo", asyncHandler(alternarRegra("precoDinamicoDemanda", "demanda")));

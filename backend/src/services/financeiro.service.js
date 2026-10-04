@@ -26,7 +26,7 @@ function comissaoDoPedido(p) {
   }
   if (r.tipo !== "SEM_REGRA" && Array.isArray(p.dinamicoEntregador) && p.dinamicoEntregador.length) {
     const bonus = require("./precoDinamico.service").bonusEntregador(r.valor, p.dinamicoEntregador);
-    if (bonus.valor) r = { ...r, valor: r2(r.valor + bonus.valor), regra: `${r.regra} + preço dinâmico (${bonus.descricao})`, bonusDinamico: bonus.valor };
+    if (bonus.valor) r = { ...r, valor: r2(r.valor + bonus.valor), regra: `${r.regra} + preço dinâmico (${bonus.descricao})`, bonusDinamico: bonus.valor, bonusDescricao: bonus.descricao };
   }
   return r;
 }
@@ -148,7 +148,8 @@ async function ganhoParaApp(pedidos, entregador) {
   );
   return pedidos.map((p, i) => {
     const c = comissaoDoPedido(completos[i]);
-    return { ...p, ganhoEntregador: c.tipo === "SEM_REGRA" ? null : c.valor, ...kmDaEntrega(p) };
+    // bonusDinamico/dinamicoTexto: o app mostra o preço dinâmico separado ("⚡ Chuva +R$ 2,00"), não só somado.
+    return { ...p, ganhoEntregador: c.tipo === "SEM_REGRA" ? null : c.valor, bonusDinamico: c.bonusDinamico || 0, dinamicoTexto: c.bonusDinamico ? (p.dinamicoEntregador || []).map(r => r.nome).join(", ") : null, ...kmDaEntrega(p) };
   });
 }
 

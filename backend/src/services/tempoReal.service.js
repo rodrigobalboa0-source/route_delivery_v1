@@ -89,6 +89,7 @@ async function versaoEntregador(entregadorId) {
     (SELECT "updatedAt" FROM "Entregador" WHERE id = ${entregadorId}) AS "eu",
     (SELECT max("createdAt") FROM "PromocaoEvento") AS "promoMax",
     (SELECT max("createdAt") FROM "ComissaoManual" WHERE "entregadorId" = ${entregadorId}) AS "comissaoMax",
+    (SELECT max("createdAt") FROM "PrecoDinamicoEvento") AS "dinamicoMax",
     (SELECT max(m."createdAt") FROM "Mensagem" m JOIN "Conversa" c ON c.id = m."conversaId" WHERE c."entregadorId" = ${entregadorId}) AS "msgMax",
     (SELECT max("entregueEm") FROM "Pedido" WHERE status = 'ENTREGUE') AS "rankingMax"`;
   return {
@@ -96,7 +97,7 @@ async function versaoEntregador(entregadorId) {
     disponiveis: v(r.dispMax, r.dispQtd),
     meus: v(r.meusMax),
     eu: v(r.eu),
-    avisos: v(r.promoMax, r.comissaoMax),
+    avisos: v(r.promoMax, r.comissaoMax, r.dinamicoMax),
     mensagens: v(r.msgMax),
   };
 }

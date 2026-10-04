@@ -227,7 +227,7 @@ const CADASTROS = [
   },
   {
     chave: "preco-dinamico-entregador", titulo: "Preço dinâmico entregador", area: "precificacao",
-    descricao: "Regras que aumentam o ganho do entregador em cada entrega. Ativa, vale na hora: entra nas entregas abertas e nas novas, aparece no app (oferta e carteira) e no acerto. Desativada, sai das entregas ainda não aceitas. Use a chave da coluna Situação para ligar e desligar.",
+    descricao: "Regras que aumentam o ganho do entregador em cada entrega. Ativa, vale na hora: entra nas entregas abertas e nas novas, aparece no app (oferta e carteira, separado do ganho) e no acerto. Desativada, os pedidos já lançados mantêm o valor — só os próximos saem sem. Ligar ou desligar mostra um aviso no app de todos os entregadores. Use a chave da coluna Situação.",
     ...regraPrecoDinamico("VALOR_FIXO"),
   },
   {

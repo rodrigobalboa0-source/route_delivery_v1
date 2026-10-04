@@ -62,11 +62,12 @@ function useAvisos() {
   const [fila, setFila] = useState([]);
   const vistos = useRef(new Set());
   const buscar = useCallback(async () => {
-    const [promos, comissoes] = await Promise.all([
+    const [promos, comissoes, dinamicos] = await Promise.all([
       api.get("/promocoes/avisos").catch(() => []),
       api.get("/comissoes/avisos").catch(() => []),
+      api.get("/preco-dinamico/avisos").catch(() => []),
     ]);
-    const novos = [...promos.map(a => ({ ...a, _tipo: "promocao" })), ...comissoes.map(a => ({ ...a, _tipo: "comissao" }))]
+    const novos = [...dinamicos.map(a => ({ ...a, _tipo: "dinamico" })), ...promos.map(a => ({ ...a, _tipo: "promocao" })), ...comissoes.map(a => ({ ...a, _tipo: "comissao" }))]
       .filter(a => !vistos.current.has(`${a._tipo}:${a.avisoId}`));
     if (novos.length) setFila(f => [...f, ...novos.filter(n => !f.some(x => x._tipo === n._tipo && x.avisoId === n.avisoId))]);
   }, []);
@@ -80,7 +81,8 @@ function useAvisos() {
     const a = fila[0];
     if (!a) return;
     vistos.current.add(`${a._tipo}:${a.avisoId}`);
-    api.post(a._tipo === "promocao" ? `/promocoes/avisos/${encodeURIComponent(a.avisoId)}/visto` : `/comissoes/avisos/${a.avisoId}/visto`).catch(() => {});
+    const rota = { promocao: "/promocoes/avisos", comissao: "/comissoes/avisos", dinamico: "/preco-dinamico/avisos" }[a._tipo];
+    api.post(`${rota}/${encodeURIComponent(a.avisoId)}/visto`).catch(() => {});
     setFila(f => f.slice(1));
   }
   return { atual: fila[0] || null, fechar };

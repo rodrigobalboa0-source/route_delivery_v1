@@ -79,7 +79,7 @@ async function avisarNovaCorrida(pedidoId, somente) {
     const [p] = await ganhoParaApp([pedido], e).catch(() => [pedido]);
     const partes = [
       p.kmEntrega != null ? `${p.kmEstimado ? "≈ " : ""}${String(p.kmEntrega).replace(".", ",")} km da loja até o cliente` : null,
-      p.ganhoEntregador != null ? `Você ganha ${brl(p.ganhoEntregador)}` : null,
+      p.ganhoEntregador != null ? `Você ganha ${brl(p.ganhoEntregador)}${p.bonusDinamico ? ` (⚡ +${brl(p.bonusDinamico)} preço dinâmico)` : ""}` : null,
       pedido.retorno ? "com retorno" : null,
     ].filter(Boolean);
     mensagens.push({

@@ -720,6 +720,24 @@ router.post(
   })
 );
 
+// GET /api/app/entregador/preco-dinamico/avisos — pop-ups de preço dinâmico ligado/desligado (últimas 24 h)
+router.get(
+  "/preco-dinamico/avisos",
+  asyncHandler(async (req, res) => {
+    res.json(await require("../../services/precoDinamico.service").avisosPara(req.entregador.id));
+  })
+);
+
+// POST /api/app/entregador/preco-dinamico/avisos/:avisoId/visto
+router.post(
+  "/preco-dinamico/avisos/:avisoId/visto",
+  asyncHandler(async (req, res) => {
+    if (!/^din:[a-z0-9]+$/i.test(req.params.avisoId)) return res.status(400).json({ erro: "Aviso inválido." });
+    await marcarVisto(req.entregador.id, req.params.avisoId);
+    res.json({ ok: true });
+  })
+);
+
 // ---------- Comissões lançadas pelo ADM (Financeiro › Comissão) ----------
 
 // Manual: paga pela conta a pagar. Automática (por entrega): paga no acerto do entregador.

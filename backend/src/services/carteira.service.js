@@ -17,8 +17,13 @@ async function extrato(entregadorId, db = prisma) {
   ]);
   const movs = [];
   for (const p of await comTabelaPadrao(pedidos)) {
-    const valor = r2(comissaoDoPedido(p).valor || 0);
-    if (valor > 0) movs.push({ id: `e-${p.id}`, tipo: "ENTREGA", data: p.entregueEm || p.updatedAt, descricao: "Comissão de Entrega", detalhe: `${p.codigo} · ${p.comercio?.nomeFantasia || ""}`.trim(), valor });
+    const c = comissaoDoPedido(p);
+    const valor = r2(c.valor || 0);
+    if (valor > 0) movs.push({
+      id: `e-${p.id}`, tipo: "ENTREGA", data: p.entregueEm || p.updatedAt, descricao: "Comissão de Entrega",
+      detalhe: `${p.codigo} · ${p.comercio?.nomeFantasia || ""}`.trim(), valor,
+      ...(c.bonusDinamico ? { bonusDinamico: r2(c.bonusDinamico), dinamicoTexto: c.bonusDescricao } : {}),
+    });
   }
   for (const c of comissoes) {
     movs.push({ id: `c-${c.id}`, tipo: "COMISSAO", data: c.createdAt, descricao: c.origem === "AUTOMATICA" ? "Comissão automática" : "Comissão", detalhe: c.comercioNome, valor: r2(c.valor) });

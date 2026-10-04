@@ -242,6 +242,7 @@ export function Carteira() {
             <View style={st.colDesc}>
               <Text style={st.desc}>{m.descricao}</Text>
               {m.status === "PENDENTE" && <Text style={st.pendente}>em análise</Text>}
+              {m.bonusDinamico > 0 ? <Text style={st.dinamico}>⚡ inclui preço dinâmico +{moeda(m.bonusDinamico)}</Text> : null}
               {m.tipo === "SAQUE" && m.status !== "RECUSADO" && /taxa/.test(m.detalhe || "") ? <Text style={st.detalhe}>{m.detalhe.split(" · ").slice(-1)[0]}</Text> : null}
               {m.status === "RECUSADO" && m.detalhe ? <Text style={st.detalhe} numberOfLines={2}>{m.detalhe}</Text> : null}
             </View>
@@ -285,6 +286,7 @@ const st = StyleSheet.create({
   desc: { color: cor.texto, fontSize: 14 },
   detalhe: { color: cor.texto3, fontSize: 11 },
   pendente: { color: cor.aviso, fontSize: 11, fontWeight: "700" },
+  dinamico: { color: cor.aviso, fontSize: 11, fontWeight: "700" },
   colValor: { width: 104, textAlign: "right", fontWeight: "700", fontSize: 14 },
   valorRiscado: { color: cor.texto3, textDecorationLine: "line-through" },
   vazio: { color: cor.texto3, textAlign: "center", padding: 24 },

@@ -343,12 +343,21 @@ function EntregaAtiva({ p, onAtualizar, onErro }) {
 }
 
 // "Você ganha R$ 8,50" (comissão da tabela, padrão do veículo ou repasse fixo; com o adicional de retorno).
+// Com preço dinâmico: mostra o bônus separado ("⚡ Chuva +R$ 2,00 · já incluído").
 function Ganho({ p }) {
   if (p.ganhoEntregador == null) return null;
   return (
-    <View style={st.ganho}>
-      <Text style={st.ganhoRotulo}>Você ganha</Text>
-      <Text style={st.ganhoValor}>{moeda(p.ganhoEntregador)}</Text>
+    <View style={[st.ganho, p.bonusDinamico > 0 && st.ganhoComBonus]}>
+      <View style={st.ganhoLinha}>
+        <Text style={st.ganhoRotulo}>Você ganha</Text>
+        <Text style={st.ganhoValor}>{moeda(p.ganhoEntregador)}</Text>
+      </View>
+      {p.bonusDinamico > 0 ? (
+        <View style={st.dinamico}>
+          <Text style={st.dinamicoTexto}>⚡ Preço dinâmico{p.dinamicoTexto ? ` · ${p.dinamicoTexto}` : ""}</Text>
+          <Text style={st.dinamicoValor}>+{moeda(p.bonusDinamico)}</Text>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -419,7 +428,7 @@ function DadosRota({ o }) {
           <Text style={st.etapaTexto} numberOfLines={2}>{lojas.map(l => l?.nomeFantasia).join(" + ")}</Text>
         </View>
       </View>
-      {ganho != null && <Ganho p={{ ganhoEntregador: ganho }} />}
+      {ganho != null && <Ganho p={{ ganhoEntregador: ganho, bonusDinamico: o.pedidos.reduce((s, p) => s + (p.bonusDinamico || 0), 0), dinamicoTexto: o.pedidos.find(p => p.dinamicoTexto)?.dinamicoTexto }} />}
       {kmTotal != null && (
         <View style={st.kmItem}>
           <Text style={st.kmValor}>≈ {km(kmTotal)}</Text>
@@ -579,7 +588,12 @@ const st = StyleSheet.create({
   avisoCodigo: { color: cor.texto2, fontSize: 13, lineHeight: 18 },
   kmValor: { color: cor.texto, fontSize: 17, fontWeight: "800" },
   kmRotulo: { color: cor.texto3, fontSize: 12 },
-  ganho: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: "rgba(34,197,94,0.12)", borderColor: "rgba(34,197,94,0.4)", borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },
+  ganho: { backgroundColor: "rgba(34,197,94,0.12)", borderColor: "rgba(34,197,94,0.4)", borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, gap: 6 },
+  ganhoComBonus: { borderColor: cor.aviso },
+  ganhoLinha: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  dinamico: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8, backgroundColor: "rgba(245,165,36,0.14)", borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
+  dinamicoTexto: { color: cor.aviso, fontSize: 13, fontWeight: "700", flexShrink: 1 },
+  dinamicoValor: { color: cor.aviso, fontSize: 15, fontWeight: "800", flexShrink: 0 },
   ganhoRotulo: { color: cor.texto2, fontSize: 14, fontWeight: "600" },
   ganhoValor: { color: cor.ok, fontSize: 20, fontWeight: "800" },
   parada: { flexDirection: "row", gap: 10, alignItems: "flex-start" },
