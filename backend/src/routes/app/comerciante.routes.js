@@ -499,6 +499,50 @@ router.patch(
   })
 );
 
+// ---------- Créditos ----------
+
+const r2 = v => Math.round(v * 100) / 100;
+// Comprovante: imagem (já reduzida no navegador) ou PDF, como data URL, até ~2,5 MB.
+const comprovanteValido = v => typeof v === "string" && v.length <= 3.5 * 1024 * 1024
+  && /^data:(image\/(jpeg|jpg|png|webp)|application\/pdf);base64,[A-Za-z0-9+/=]+$/.test(v);
+
+// GET /api/app/comerciante/creditos — saldo, totais, extrato e solicitações (sem o comprovante)
+router.get(
+  "/creditos",
+  asyncHandler(async (req, res) => {
+    const [movimentos, solicitacoes, g] = await Promise.all([
+      prisma.creditoMovimento.findMany({ where: { comercioId: req.comercio.id }, orderBy: { createdAt: "desc" }, take: 200, select: { id: true, tipo: true, valor: true, descricao: true, createdAt: true } }),
+      prisma.creditoSolicitacao.findMany({ where: { comercioId: req.comercio.id }, orderBy: { createdAt: "desc" }, take: 100, select: { id: true, valor: true, metodo: true, observacao: true, status: true, motivo: true, analisadoEm: true, createdAt: true } }),
+      // Totais pelo extrato completo (a lista acima é limitada).
+      prisma.creditoMovimento.groupBy({ by: ["tipo"], where: { comercioId: req.comercio.id }, _sum: { valor: true } }),
+    ]);
+    const total = tipo => r2(g.find(x => x.tipo === tipo)?._sum.valor || 0);
+    const totalComprado = total("CREDITO"), totalUtilizado = total("DEBITO");
+    res.json({ saldo: r2(totalComprado - totalUtilizado), totalComprado, totalUtilizado, movimentos, solicitacoes });
+  })
+);
+
+// POST /api/app/comerciante/creditos/solicitar { valor, metodo: PIX|OUTROS, comprovante, observacao? }
+// Só vai para análise com o comprovante do pagamento.
+router.post(
+  "/creditos/solicitar",
+  asyncHandler(async (req, res) => {
+    const b = req.body || {};
+    const valor = r2(Number(String(b.valor ?? "").replace(",", ".")));
+    if (!Number.isFinite(valor) || valor <= 0) throw erroHttp(400, "Informe um valor maior que zero.");
+    if (valor > 100000) throw erroHttp(400, "Valor acima do permitido por solicitação (R$ 100.000,00).");
+    if (!["PIX", "OUTROS"].includes(b.metodo)) throw erroHttp(400, "Escolha o método de pagamento.");
+    if (!comprovanteValido(b.comprovante)) throw erroHttp(400, "Anexe o comprovante do pagamento (imagem ou PDF de até 2,5 MB).");
+    const observacao = String(b.observacao || "").trim().slice(0, 500) || null;
+    const s = await prisma.creditoSolicitacao.create({
+      data: { comercioId: req.comercio.id, valor, metodo: b.metodo, comprovante: b.comprovante, observacao },
+      select: { id: true, valor: true, metodo: true, observacao: true, status: true, createdAt: true },
+    });
+    await prisma.notificacao.create({ data: { tipo: "financeiro", texto: `${req.comercio.nomeFantasia} pediu R$ ${valor.toFixed(2).replace(".", ",")} de crédito (${b.metodo === "PIX" ? "PIX" : "outros"}). Analise em Financeiro › Crédito.` } }).catch(() => {});
+    res.status(201).json(s);
+  })
+);
+
 // Entregadores que podem pegar corridas desta loja (online, ativos, com permissão de coleta e sem bloqueio da loja).
 async function entregadoresQuePodem(comercioId) {
   return prisma.entregador.findMany({

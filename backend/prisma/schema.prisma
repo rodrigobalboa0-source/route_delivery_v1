@@ -207,6 +207,7 @@ model Comercio {
   entregadoresPermitidos EntregadorComercioPermitido[]
   lojasIntegracao     IntegracaoLoja[]
   creditos            CreditoMovimento[]
+  solicitacoesCredito CreditoSolicitacao[]
   comissoesManuais    ComissaoManual[]
   conversa            Conversa?
   clientes            ClienteComercio[]
@@ -835,6 +836,27 @@ model CreditoMovimento {
   autorNome   String?
   createdAt   DateTime @default(now())
 
+  @@index([comercioId, createdAt])
+}
+
+// Pedido de crédito feito pela loja (sistema do comerciante › Créditos), com o comprovante do pagamento.
+// A equipe analisa em Financeiro › Crédito: aprovada vira um lançamento de CREDITO no saldo da loja.
+model CreditoSolicitacao {
+  id           String    @id @default(cuid())
+  comercioId   String
+  comercio     Comercio  @relation(fields: [comercioId], references: [id], onDelete: Cascade)
+  valor        Float
+  metodo       String    // PIX | OUTROS
+  comprovante  String    // data URL (imagem reduzida ou PDF)
+  observacao   String?
+  status       String    @default("PENDENTE") // PENDENTE | APROVADA | RECUSADA
+  motivo       String?   // motivo da recusa
+  analisadoPor String?
+  analisadoEm  DateTime?
+  movimentoId  String?   // lançamento de crédito gerado na aprovação
+  createdAt    DateTime  @default(now())
+
+  @@index([status, createdAt])
   @@index([comercioId, createdAt])
 }
 

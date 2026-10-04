@@ -251,7 +251,7 @@ export default function Painel() {
           {mostrarMapa && (
             <div className="painel-mapa">
               {!mapa.dados ? <Carregando /> : (
-                <MapaEntregadores pedidos={pedidos} loja={lojaPonto} altura={250} onPedido={p => setAberto(p.id)} carregado controle={controle} previa={previa} semLegenda />
+                <MapaEntregadores pedidos={pedidos} loja={lojaPonto} altura="clamp(380px, 62vh, 760px)" onPedido={p => setAberto(p.id)} carregado controle={controle} previa={previa} semLegenda />
               )}
             </div>
           )}

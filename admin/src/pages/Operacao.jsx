@@ -270,7 +270,7 @@ export default function Operacao() {
       <h1 className="op-titulo">Pedidos • Acompanhamento</h1>
 
       <section className="op-mapa">
-        <MapaEntregadores entregadores={online.dados || []} pedidos={mapa.dados || []} carregado={mapa.dados != null && online.dados != null} altura={440} onPedido={p => mudarParam("abrir", p.id)} />
+        <MapaEntregadores entregadores={online.dados || []} pedidos={mapa.dados || []} carregado={mapa.dados != null && online.dados != null} altura="clamp(440px, 64vh, 820px)" onPedido={p => mudarParam("abrir", p.id)} />
       </section>
 
       <section className="op-cards">

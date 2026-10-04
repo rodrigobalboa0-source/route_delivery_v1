@@ -8,6 +8,7 @@ import { useAuth } from "../../auth";
 import { useApi } from "../../hooks/useApi";
 import { Abas, Badge, Botao, Cabecalho, Carregando, ErroCaixa, StatTile, Vazio, useAcao, useToast } from "../../components/ui";
 import { FiltroPeriodo, usePeriodo } from "../../components/relatorios";
+import Baixar from "../../components/Baixar";
 import { dataHora, moeda, numero, paraInputData } from "../../utils/format";
 
 const dataBR = t => (t ? t.split("-").reverse().join("/") : "");
@@ -15,29 +16,6 @@ const textoPeriodo = p => `Período: ${dataBR(p.desde)} a ${dataBR(p.ate)}`;
 const nomeArquivo = (base, p) => `${base}-${p.desde}-a-${p.ate}`;
 const kmBR = v => `${Number(v || 0).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} km`;
 
-// Botões "Excel" e "PDF" de um download.
-function Baixar({ rotulo, gerar, desabilitado }) {
-  const [gerando, setGerando] = useState(null);
-  const avisar = useToast();
-  async function baixar(formato) {
-    setGerando(formato);
-    try {
-      const { exportarExcel, exportarPdf } = await import("../../utils/exportar");
-      await (formato === "excel" ? exportarExcel : exportarPdf)(await gerar());
-    } catch (e) {
-      avisar(`Não foi possível gerar o arquivo: ${e.message}`, "erro");
-    } finally {
-      setGerando(null);
-    }
-  }
-  return (
-    <div className="baixar-grupo" role="group" aria-label={`Baixar ${rotulo}`}>
-      <span>{rotulo}</span>
-      <Botao pequeno disabled={desabilitado || !!gerando} onClick={() => baixar("excel")}>{gerando === "excel" ? "Gerando…" : "Baixar Excel"}</Botao>
-      <Botao pequeno disabled={desabilitado || !!gerando} onClick={() => baixar("pdf")}>{gerando === "pdf" ? "Gerando…" : "Baixar PDF"}</Botao>
-    </div>
-  );
-}
 
 // Colunas do relatório (tela, Excel e PDF usam as mesmas).
 const COLUNAS_RELATORIO = [

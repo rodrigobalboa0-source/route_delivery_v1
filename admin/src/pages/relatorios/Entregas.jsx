@@ -5,6 +5,7 @@ import { qs } from "../../api";
 import { useApi } from "../../hooks/useApi";
 import { BadgeMapa, Botao, Cabecalho, ErroCaixa } from "../../components/ui";
 import { FiltroPeriodo, TabelaRelatorio, baixarCsv, duracao, usePeriodo } from "../../components/relatorios";
+import Baixar from "../../components/Baixar";
 import { ORIGEM_PEDIDO, STATUS_PEDIDO, dataHora, km, moeda } from "../../utils/format";
 
 // Zero ou negativo = desconhecido (horários reconstruídos de pedidos antigos).
@@ -41,6 +42,40 @@ const COLUNAS = [
 // Na tela mostramos menos colunas; o CSV leva todas.
 const VISIVEIS = ["codigo", "createdAt", "status", "comercio", "cliente", "entregador", "distanciaKm", "valor", "tempoTotal"];
 
+// Excel e PDF (com a logo): as colunas principais e os totais do período.
+const dataBR = t => (t ? t.split("-").reverse().join("/") : "");
+function specEntregas(linhas, periodo, filtros) {
+  const entregues = linhas.filter(l => l.status === "ENTREGUE");
+  const valor = entregues.reduce((s, l) => s + (l.valor || 0), 0);
+  const kmTotal = entregues.reduce((s, l) => s + (l.distanciaKm || 0), 0);
+  return {
+    arquivo: `entregas-${periodo.desde}-a-${periodo.ate}`,
+    aba: "Entregas",
+    titulo: "Relatório de entregas",
+    subtitulo: [`Período: ${dataBR(periodo.desde)} a ${dataBR(periodo.ate)}`, filtros].filter(Boolean).join(" · "),
+    resumo: [
+      ["Entregas no período", linhas.length.toLocaleString("pt-BR")],
+      ["Finalizadas", entregues.length.toLocaleString("pt-BR")],
+      ["Canceladas", linhas.filter(l => l.status === "CANCELADO").length.toLocaleString("pt-BR")],
+      ["Valor das finalizadas", moeda(valor)],
+    ],
+    colunas: [
+      { titulo: "Criado", valor: l => l.createdAt, tipo: "data", largura: 17, larguraPdf: 24 },
+      { titulo: "Pedido", valor: l => [l.codigo, l.codigoExterno].filter(Boolean).join(" · "), largura: 16, larguraPdf: 22 },
+      { titulo: "Status", valor: l => STATUS_PEDIDO[l.status]?.rotulo || l.status, largura: 16, larguraPdf: 22 },
+      { titulo: "Comércio", valor: l => l.comercio?.nomeFantasia, largura: 24 },
+      { titulo: "Cliente", valor: l => l.clienteNome, largura: 22 },
+      { titulo: "Endereço", valor: l => l.endereco, largura: 40, larguraPdf: 55 },
+      { titulo: "Entregador", valor: l => l.entregador?.nomeCompleto, largura: 22 },
+      { titulo: "Km", valor: l => l.distanciaKm, tipo: "km", largura: 11, larguraPdf: 16 },
+      { titulo: "Entregue em", valor: l => l.entregueEm, tipo: "data", largura: 17, larguraPdf: 24 },
+      { titulo: "Valor", valor: l => l.valor, tipo: "moeda", largura: 13, larguraPdf: 20 },
+    ],
+    linhas,
+    totais: { 1: `${linhas.length} entrega(s)`, 7: kmTotal, 9: valor },
+  };
+}
+
 export default function Entregas() {
   const navegar = useNavigate();
   const [periodo, setPeriodo] = usePeriodo(7);
@@ -55,7 +90,7 @@ export default function Entregas() {
 
   return (
     <>
-      <Cabecalho titulo="Entregas" subtitulo="Todas as entregas do período, com horários de cada etapa. O CSV traz todas as colunas." />
+      <Cabecalho titulo="Entregas" subtitulo="Todas as entregas do período, com horários de cada etapa. Baixe em Excel ou PDF (o CSV traz todas as colunas)." />
       <FiltroPeriodo valor={periodo} onChange={setPeriodo}>
         <select value={status} onChange={e => setStatus(e.target.value)} aria-label="Status">
           <option value="">Todos os status</option>
@@ -72,6 +107,14 @@ export default function Entregas() {
       </FiltroPeriodo>
       <ErroCaixa erro={erro} />
       {dados?.length === 1000 && <div className="aviso-caixa">Mostrando as 1.000 entregas mais recentes. Reduza o período para ver todas.</div>}
+      <div className="botoes">
+        <Baixar rotulo="Relatório de entregas" desabilitado={!dados?.length}
+          gerar={() => specEntregas(dados, periodo, [
+            status && STATUS_PEDIDO[status]?.rotulo,
+            comercioId && (comercios || []).find(c => c.id === comercioId)?.nomeFantasia,
+            entregadorId && (entregadores || []).find(e => e.id === entregadorId)?.nomeCompleto,
+          ].filter(Boolean).join(" · "))} />
+      </div>
       <TabelaRelatorio
         colunas={COLUNAS.filter(c => VISIVEIS.includes(c.chave))}
         linhas={dados}

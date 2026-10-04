@@ -20,7 +20,7 @@ const ICONES = {
   solicitar: <><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><path d="M14 3v6h6M12 12v6M9 15h6" /></>,
   relatorios: <><path d="M3 3v18h18" /><path d="M8 17v-5M13 17V8M18 17v-9" /></>,
   agenda: <><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M3 9h18M8 2v4M16 2v4" /></>,
-  devolucao: <><path d="M9 14 4 9l5-5" /><path d="M4 9h11a5 5 0 0 1 0 10h-3" /></>,
+  credito: <><rect x="3" y="5" width="18" height="15" rx="2" /><path d="M16 12h5v4h-5a2 2 0 0 1 0-4zM3 9h14" /></>,
   mensagens: <><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></>,
   conta: <><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></>,
   sair: <><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" /></>,
@@ -36,13 +36,12 @@ const MENU = [
   { para: "/solicitar", rotulo: "Solicitar Entrega", icone: "solicitar" },
   { rotulo: "Relatórios", icone: "relatorios", base: "/relatorios", filhos: [
     { para: "/relatorios/entregas", rotulo: "Entregas" },
-    { para: "/relatorios/financeiro", rotulo: "Financeiro e faturas" },
   ] },
   { rotulo: "Agendamentos", icone: "agenda", base: "/agendamentos", filhos: [
     { para: "/agendamentos", rotulo: "Entregas agendadas" },
     { para: "/agendamentos/novo", rotulo: "Novo agendamento" },
   ] },
-  { para: "/devolucoes", rotulo: "Devoluções", icone: "devolucao" },
+  { para: "/creditos", rotulo: "Créditos", icone: "credito" },
 ];
 
 function useFora(ref, aberto, fechar) {

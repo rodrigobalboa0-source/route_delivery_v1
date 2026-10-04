@@ -345,3 +345,37 @@ input[type="datetime-local"], input[type="date"] { color-scheme: dark; }
 .negociacao { display: flex; align-items: center; gap: 12px; padding: 10px 12px; margin-bottom: 12px; border: 1px solid var(--borda); border-radius: var(--raio); }
 .negociacao > div { flex: 1; min-width: 0; }
 .negociacao.pendente { border-color: var(--aviso); background: var(--aviso-fundo); }
+
+/* ---------- Créditos ---------- */
+
+.titulo-creditos { display: flex; align-items: center; gap: 10px; margin: 0 0 4px; }
+.titulo-creditos svg, .credito-historico h2 svg { width: 26px; height: 26px; fill: none; stroke: var(--primaria); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.credito-historico h2 svg { width: 20px; height: 20px; stroke: var(--texto-2); }
+.creditos-cartoes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-bottom: 16px; }
+.credito-cartao { background: var(--superficie); border: 1px solid var(--borda); border-radius: 12px; padding: 20px 22px; display: flex; flex-direction: column; gap: 12px; min-height: 130px; justify-content: center; }
+.credito-cartao strong { font-size: 26px; font-weight: 800; color: var(--texto); }
+.credito-rotulo { display: flex; align-items: center; gap: 10px; color: var(--texto-2); font-size: 14px; }
+.credito-saldo { background: linear-gradient(135deg, #1f6fd1, #3d8bfd); border-color: transparent; color: #fff; }
+.credito-saldo .credito-rotulo { color: rgba(255, 255, 255, 0.85); letter-spacing: 0.04em; font-size: 13px; }
+.credito-saldo strong { color: #fff; font-size: 32px; }
+.credito-pilula { align-self: flex-start; background: rgba(255, 255, 255, 0.18); border-radius: 999px; padding: 3px 12px; font-size: 12px; }
+.credito-icone { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; font-style: normal; font-weight: 700; flex-shrink: 0; }
+.credito-icone.entrada { background: rgba(76, 194, 76, 0.16); color: var(--ok); }
+.credito-icone.saida { background: rgba(229, 72, 77, 0.16); color: var(--critico); }
+.credito-historico h2 { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; font-size: 17px; }
+.credito-vazio { padding: 44px 0; }
+.credito-lista { list-style: none; margin: 0; padding: 0; }
+.credito-lista li { display: flex; align-items: center; gap: 12px; padding: 11px 2px; border-top: 1px solid var(--borda); }
+.credito-lista li:first-child { border-top: 0; }
+.credito-lista li > div { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.credito-lista li > strong { white-space: nowrap; }
+.form-credito { display: flex; flex-direction: column; gap: 12px; }
+.campo-moeda { display: flex; align-items: center; gap: 8px; border: 1px solid var(--borda-forte, var(--borda)); border-radius: 8px; padding: 0 10px; background: var(--superficie-2, transparent); }
+.campo-moeda input { border: 0; background: transparent; flex: 1; padding: 9px 0; font-size: 16px; outline: none; color: inherit; }
+.campo-moeda:focus-within { border-color: var(--primaria); }
+.metodos-pagamento { display: flex; gap: 8px; flex-wrap: wrap; }
+.metodo { display: inline-flex; align-items: center; gap: 7px; padding: 9px 14px; border: 1px solid var(--borda); border-radius: 8px; cursor: pointer; }
+.metodo.marcado { border-color: var(--primaria); background: var(--primaria-suave, rgba(61, 139, 253, 0.12)); font-weight: 600; }
+.abas-com-acoes { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.abas-com-acoes > .baixar-grupo { margin-bottom: 10px; }
+@media (max-width: 760px) { .creditos-cartoes { grid-template-columns: 1fr; } }

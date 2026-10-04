@@ -143,10 +143,27 @@ function Notificacoes() {
   );
 }
 
+// Menu lateral recolhido (só os ícones) no computador — a escolha fica salva neste navegador.
+const CHAVE_RECOLHIDO = "rd_adm_menu_recolhido";
+function lerRecolhido() {
+  try { return localStorage.getItem(CHAVE_RECOLHIDO) !== "0"; } catch { return true; }
+}
+
 export default function Layout() {
   const { conta, sair } = useAuth();
   const [menuAberto, setMenuAberto] = useState(false);
+  const [recolhido, setRecolhido] = useState(lerRecolhido);
   const local = useLocation();
+
+  function alternarRecolhido(valor = !recolhido) {
+    setRecolhido(valor);
+    try { localStorage.setItem(CHAVE_RECOLHIDO, valor ? "1" : "0"); } catch { /* sem armazenamento */ }
+  }
+  // Recolhido, clicar num grupo (Relatórios, Cadastros...) abre o menu já com o grupo expandido.
+  function abrirGrupo(para) {
+    if (recolhido) { alternarRecolhido(false); setGruposAbertos(g => new Set([...g, para])); return; }
+    alternarGrupo(para);
+  }
 
   // Grupos expandidos (ex.: Cadastros). Abre sozinho quando a rota atual está dentro do grupo.
   const [gruposAbertos, setGruposAbertos] = useState(() => new Set(MENU.filter(i => i.filhos && local.pathname.startsWith(i.para)).map(i => i.para)));
@@ -166,7 +183,7 @@ export default function Layout() {
   }
 
   return (
-    <div className="app">
+    <div className={`app ${recolhido ? "menu-recolhido" : ""} ${local.pathname.startsWith("/operacao") ? "tela-cheia-operacao" : ""}`}>
       <aside className={`menu ${menuAberto ? "aberto" : ""}`}>
         <div className="marca marca-imagem">
           <img src="/logo-route-delivery.png" alt="Route Delivery" className="marca-img" />
@@ -175,17 +192,18 @@ export default function Layout() {
         <nav className="menu-lista">
           {MENU.map(i =>
             i.acao === "sair" ? (
-              <button key="sair" type="button" className="menu-item menu-botao" onClick={sair}>
+              <button key="sair" type="button" className="menu-item menu-botao" onClick={sair} title={i.rotulo}>
                 <span className="menu-icone" aria-hidden="true">{i.icone}</span>
-                <span>{i.rotulo}</span>
+                <span className="menu-texto">{i.rotulo}</span>
               </button>
             ) : i.filhos ? (
               <div key={i.para} className="menu-grupo">
                 <button
                   type="button"
+                  title={i.rotulo}
                   className={`menu-item menu-botao ${local.pathname.startsWith(i.para + "/") ? "ativo" : ""}`}
                   aria-expanded={gruposAbertos.has(i.para)}
-                  onClick={() => alternarGrupo(i.para)}
+                  onClick={() => abrirGrupo(i.para)}
                 >
                   <span className="menu-icone" aria-hidden="true">{i.icone}</span>
                   <span className="menu-rotulo">{i.rotulo}</span>
@@ -203,9 +221,9 @@ export default function Layout() {
                 )}
               </div>
             ) : (
-              <NavLink key={i.para} to={i.para} className={({ isActive }) => (isActive ? "menu-item ativo" : "menu-item")}>
+              <NavLink key={i.para} to={i.para} title={i.rotulo} className={({ isActive }) => (isActive ? "menu-item ativo" : "menu-item")}>
                 <span className="menu-icone" aria-hidden="true">{i.icone}</span>
-                <span>{i.rotulo}</span>
+                <span className="menu-texto">{i.rotulo}</span>
               </NavLink>
             )
           )}
@@ -216,6 +234,7 @@ export default function Layout() {
       <div className="principal">
         <header className="topo">
           <button type="button" className="icone-btn so-mobile" onClick={() => setMenuAberto(true)} aria-label="Abrir menu">☰</button>
+          <button type="button" className="icone-btn so-computador" onClick={() => alternarRecolhido()} aria-label={recolhido ? "Mostrar o menu completo" : "Recolher o menu"} title={recolhido ? "Mostrar o menu completo" : "Recolher o menu"} aria-pressed={!recolhido}>☰</button>
           <div className="topo-espaco" />
           <Notificacoes />
           <div className="usuario">

@@ -168,7 +168,7 @@ export default function MapaEntregadores({ entregadores = [], pedidos = [], altu
 
   return (
     <div className="mapa" style={{ height: altura }}>
-      <MapContainer center={pontos[0] || CENTRO_PADRAO} zoom={13} scrollWheelZoom={false} style={{ height: "100%", width: "100%" }}>
+      <MapContainer center={pontos[0] || CENTRO_PADRAO} zoom={13} scrollWheelZoom style={{ height: "100%", width: "100%" }}>
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"

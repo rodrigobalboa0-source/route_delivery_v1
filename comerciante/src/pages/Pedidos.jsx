@@ -1,26 +1,82 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api, qs } from "../api";
+import { useAuth } from "../auth";
 import { useApi } from "../hooks/useApi";
-import { Abas, BadgeMapa, Botao, Cabecalho, Carregando, ErroCaixa, Vazio, useAcao } from "../components/ui";
+import { Abas, BadgeMapa, Botao, Cabecalho, Carregando, ErroCaixa, Vazio, useAcao, useToast } from "../components/ui";
 import DetalhePedido from "../components/DetalhePedido";
-import { COM_ENTREGADOR, STATUS_PEDIDO, dataHora, moeda, paraInputData } from "../utils/format";
+import { STATUS_PEDIDO, dataHora, moeda, paraInputData } from "../utils/format";
 
-const ABERTOS = ["PREPARANDO", "PENDENTE", ...COM_ENTREGADOR];
 const VISOES = {
-  abertos: { rotulo: "Em aberto", status: ABERTOS.join(",") },
+  todos: { rotulo: "Todos", status: "" },
   entregues: { rotulo: "Entregues", status: "ENTREGUE" },
   cancelados: { rotulo: "Cancelados", status: "CANCELADO" },
-  todos: { rotulo: "Todos", status: "" },
 };
 
-// Lista de entregas com filtros. "fixo" = filtro sempre aplicado (ex.: Devoluções = só com retorno).
+const dataBR = t => (t ? t.split("-").reverse().join("/") : "");
+
+// Excel e PDF (com a logo) do que está na tela: período, aba e busca aplicados.
+function specEntregas(lista, { desde, ate, ver, busca, loja }) {
+  const entregues = lista.filter(p => p.status === "ENTREGUE");
+  const valor = entregues.reduce((s, p) => s + (p.valor || 0), 0);
+  const kmTotal = entregues.reduce((s, p) => s + (p.distanciaKm || 0), 0);
+  return {
+    arquivo: `entregas-${desde}-a-${ate}`,
+    aba: "Entregas",
+    titulo: "Relatório de entregas",
+    subtitulo: [loja, `Período: ${dataBR(desde)} a ${dataBR(ate)}`, ver !== "todos" && VISOES[ver].rotulo, busca && `Busca: ${busca}`].filter(Boolean).join(" · "),
+    resumo: [
+      ["Entregas", lista.length.toLocaleString("pt-BR")],
+      ["Entregues", entregues.length.toLocaleString("pt-BR")],
+      ["Canceladas", lista.filter(p => p.status === "CANCELADO").length.toLocaleString("pt-BR")],
+      ["Valor das entregues", moeda(valor)],
+    ],
+    colunas: [
+      { titulo: "Criado", valor: p => p.createdAt, tipo: "data", largura: 17, larguraPdf: 24 },
+      { titulo: "Pedido", valor: p => [p.codigo, p.codigoExterno].filter(Boolean).join(" · "), largura: 16, larguraPdf: 22 },
+      { titulo: "Status", valor: p => STATUS_PEDIDO[p.status]?.rotulo || p.status, largura: 16, larguraPdf: 22 },
+      { titulo: "Cliente", valor: p => p.clienteNome, largura: 22 },
+      { titulo: "Endereço", valor: p => [p.endereco, p.complemento].filter(Boolean).join(" · "), largura: 40, larguraPdf: 60 },
+      { titulo: "Retorno", valor: p => (p.retorno ? "Sim" : "Não"), largura: 9, larguraPdf: 16 },
+      { titulo: "Entregador", valor: p => p.entregador?.nomeCompleto, largura: 22 },
+      { titulo: "Km", valor: p => p.distanciaKm, tipo: "km", largura: 11, larguraPdf: 16 },
+      { titulo: "Valor", valor: p => p.valor, tipo: "moeda", largura: 13, larguraPdf: 20 },
+    ],
+    linhas: lista,
+    totais: { 1: `${lista.length} entrega(s)`, 7: kmTotal, 8: valor },
+  };
+}
+
+function Baixar({ gerar, desabilitado }) {
+  const [gerando, setGerando] = useState(null);
+  const avisar = useToast();
+  async function baixar(formato) {
+    setGerando(formato);
+    try {
+      const { exportarExcel, exportarPdf } = await import("../utils/exportar");
+      await (formato === "excel" ? exportarExcel : exportarPdf)(gerar());
+    } catch (e) {
+      avisar(`Não foi possível gerar o arquivo: ${e.message}`, "erro");
+    } finally {
+      setGerando(null);
+    }
+  }
+  return (
+    <div className="botoes baixar-grupo" role="group" aria-label="Baixar relatório">
+      <Botao pequeno disabled={desabilitado || !!gerando} onClick={() => baixar("pdf")}>{gerando === "pdf" ? "Gerando…" : "⬇ Baixar PDF"}</Botao>
+      <Botao pequeno disabled={desabilitado || !!gerando} onClick={() => baixar("excel")}>{gerando === "excel" ? "Gerando…" : "⬇ Baixar Excel"}</Botao>
+    </div>
+  );
+}
+
+// Lista de entregas com filtros. "fixo" = filtro sempre aplicado.
 export default function Pedidos({
   titulo = "Entregas",
   subtitulo = "Todas as entregas da sua loja. A lista se atualiza sozinha.",
   fixo = {},
   diasPadrao = 0, // período inicial: hoje (0) ou os últimos N dias
 }) {
+  const { loja } = useAuth();
   const [params, setParams] = useSearchParams();
   const hoje = paraInputData(new Date());
   const [ver, setVer] = useState(VISOES[params.get("ver")] ? params.get("ver") : "todos");
@@ -65,7 +121,10 @@ export default function Pedidos({
         <input type="search" value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar cliente, código, telefone ou endereço" aria-label="Buscar" style={{ flex: "1 1 220px" }} />
       </div>
 
-      <Abas ativa={ver} onChange={setVer} abas={Object.entries(VISOES).map(([valor, x]) => ({ valor, rotulo: x.rotulo }))} />
+      <div className="abas-com-acoes">
+        <Abas ativa={ver} onChange={setVer} abas={Object.entries(VISOES).map(([valor, x]) => ({ valor, rotulo: x.rotulo }))} />
+        <Baixar desabilitado={!lista.length} gerar={() => specEntregas(lista, { desde, ate, ver, busca: buscaAplicada, loja: loja?.nomeFantasia })} />
+      </div>
       <ErroCaixa erro={erro} onTentar={() => recarregar()} />
 
       <div className="cartao cartao-tabela">
