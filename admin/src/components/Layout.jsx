@@ -72,6 +72,7 @@ const SUBMENU_RELATORIOS = [
 
 // Submenu do Financeiro — ordem definida pelo cliente, não reordenar.
 const SUBMENU_FINANCEIRO = [
+  { para: "/financeiro/dashboard", rotulo: "Dashboard", icone: "grafico" },
   { para: "/financeiro/acerto", rotulo: "Acerto de Entregadores", icone: "caminhao" },
   { para: "/financeiro/contas-pagar", rotulo: "Contas a Pagar", icone: "saida" },
   { para: "/financeiro/contas-receber", rotulo: "Contas a Receber", icone: "entrada" },

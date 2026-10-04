@@ -48,6 +48,87 @@ router.get(
   })
 );
 
+// GET /api/financeiro/dashboard?desde=AAAA-MM-DD&ate=AAAA-MM-DD — visão geral da operação no período:
+// faturamento das entregas finalizadas, custo com entregadores (ganho por entrega + comissões), margem,
+// entregas e cancelamentos, série por dia (ou por mês em períodos longos), principais comércios e entregadores,
+// e o caixa de agora (a receber, a pagar, saques pendentes e crédito das lojas).
+router.get(
+  "/dashboard",
+  asyncHandler(async (req, res) => {
+    const { entregasDoPeriodo, comissaoDoPedido, r2 } = require("../services/financeiro.service");
+    const dia = (t, fim) => (/^\d{4}-\d{2}-\d{2}$/.test(t || "") ? new Date(`${t}T${fim ? "23:59:59.999" : "00:00:00"}-03:00`) : null);
+    const ate = dia(req.query.ate, true) || new Date();
+    const desde = dia(req.query.desde) || new Date(ate.getTime() - 29 * 864e5);
+    if (desde > ate) return res.status(400).json({ erro: "A data de início é depois da data de fim." });
+    const agora = new Date();
+
+    const [entregas, canceladas, comissoes, faturasAbertas, faturasAtrasadas, contasPagar, saquesPendentes, saquesPeriodo, creditos] = await Promise.all([
+      entregasDoPeriodo({ desde, ate }),
+      prisma.pedido.count({ where: { status: "CANCELADO", canceladoEm: { gte: desde, lte: ate } } }),
+      prisma.comissaoManual.aggregate({ where: { referencia: { gte: desde, lte: ate } }, _sum: { valor: true } }),
+      prisma.fatura.aggregate({ where: { paga: false, vencimento: { gte: agora } }, _sum: { valor: true }, _count: { _all: true } }),
+      prisma.fatura.aggregate({ where: { paga: false, vencimento: { lt: agora } }, _sum: { valor: true }, _count: { _all: true } }),
+      prisma.contaPagar.aggregate({ where: { paga: false }, _sum: { valor: true }, _count: { _all: true } }),
+      prisma.saqueEntregador.findMany({ where: { status: "PENDENTE" }, select: { valor: true, valorTaxa: true } }),
+      prisma.saqueEntregador.findMany({ where: { status: { not: "RECUSADO" }, createdAt: { gte: desde, lte: ate } }, select: { valor: true, valorTaxa: true, status: true } }),
+      prisma.creditoMovimento.groupBy({ by: ["tipo"], _sum: { valor: true } }),
+    ]);
+
+    // Série: por dia (Brasília); acima de 62 dias, por mês.
+    const porMes = ate - desde > 62 * 864e5;
+    const chave = d => {
+      const iso = new Date(d).toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" });
+      return porMes ? iso.slice(0, 7) : iso;
+    };
+    const serie = new Map();
+    for (let t = new Date(desde); t <= ate; t = new Date(t.getTime() + (porMes ? 28 : 1) * 864e5)) serie.set(chave(t), { periodo: chave(t), faturado: 0, custo: 0, entregas: 0 });
+    serie.set(chave(ate), serie.get(chave(ate)) || { periodo: chave(ate), faturado: 0, custo: 0, entregas: 0 });
+
+    const comercios = new Map(), entregadores = new Map();
+    let faturado = 0, custoEntregas = 0, km = 0;
+    for (const p of entregas) {
+      const ganho = comissaoDoPedido(p).valor || 0;
+      const valor = p.valor || 0;
+      faturado += valor; custoEntregas += ganho; km += p.distanciaKm || 0;
+      const s = serie.get(chave(p.entregueEm)) || serie.set(chave(p.entregueEm), { periodo: chave(p.entregueEm), faturado: 0, custo: 0, entregas: 0 }).get(chave(p.entregueEm));
+      s.faturado += valor; s.custo += ganho; s.entregas++;
+      const c = comercios.get(p.comercioId) || { nome: p.comercio?.nomeFantasia || "—", entregas: 0, faturado: 0 };
+      c.entregas++; c.faturado += valor; comercios.set(p.comercioId, c);
+      const e = entregadores.get(p.entregadorId) || { nome: p.entregador?.nomeCompleto || "—", entregas: 0, ganho: 0, km: 0 };
+      e.entregas++; e.ganho += ganho; e.km += p.distanciaKm || 0; entregadores.set(p.entregadorId, e);
+    }
+    const custoComissoes = comissoes._sum.valor || 0;
+    const custo = custoEntregas + custoComissoes;
+    const taxasSaque = saquesPeriodo.reduce((s, x) => s + (x.valorTaxa || 0), 0);
+    const margem = faturado - custo + taxasSaque;
+    const credito = creditos.reduce((s, g) => s + (g.tipo === "CREDITO" ? 1 : -1) * (g._sum.valor || 0), 0);
+    const topo = (mapa, campo) => [...mapa.values()].sort((a, b) => b[campo] - a[campo]).slice(0, 8)
+      .map(x => ({ ...x, faturado: x.faturado != null ? r2(x.faturado) : undefined, ganho: x.ganho != null ? r2(x.ganho) : undefined, km: x.km != null ? Number(x.km.toFixed(1)) : undefined }));
+
+    res.json({
+      periodo: { desde, ate, agrupamento: porMes ? "MES" : "DIA" },
+      operacao: {
+        faturado: r2(faturado), custoEntregas: r2(custoEntregas), custoComissoes: r2(custoComissoes), custo: r2(custo),
+        taxasSaque: r2(taxasSaque), margem: r2(margem), margemPct: faturado ? Number(((margem / faturado) * 100).toFixed(1)) : null,
+        entregas: entregas.length, canceladas, cancelamentoPct: entregas.length + canceladas ? Number(((canceladas / (entregas.length + canceladas)) * 100).toFixed(1)) : 0,
+        ticketMedio: entregas.length ? r2(faturado / entregas.length) : 0, km: Number(km.toFixed(1)),
+        entregadoresAtivos: entregadores.size, comerciosAtivos: comercios.size,
+        sacadoNoPeriodo: r2(saquesPeriodo.reduce((s, x) => s + x.valor, 0)),
+      },
+      caixa: {
+        aReceber: r2(faturasAbertas._sum.valor || 0), faturasAbertas: faturasAbertas._count._all,
+        emAtraso: r2(faturasAtrasadas._sum.valor || 0), faturasAtrasadas: faturasAtrasadas._count._all,
+        aPagar: r2(contasPagar._sum.valor || 0), contasAPagar: contasPagar._count._all,
+        saquesPendentes: r2(saquesPendentes.reduce((s, x) => s + x.valor - (x.valorTaxa || 0), 0)), qtdSaquesPendentes: saquesPendentes.length,
+        creditoLojas: r2(credito),
+      },
+      serie: [...serie.values()].sort((a, b) => a.periodo.localeCompare(b.periodo)).map(s => ({ ...s, faturado: r2(s.faturado), custo: r2(s.custo), margem: r2(s.faturado - s.custo) })),
+      topComercios: topo(comercios, "faturado").map(({ ganho, km: _k, ...x }) => x),
+      topEntregadores: topo(entregadores, "entregas").map(({ faturado: _f, ...x }) => x),
+    });
+  })
+);
+
 // GET /api/financeiro/receita-mensal — série para o gráfico de receita (últimos 12 meses)
 router.get(
   "/receita-mensal",

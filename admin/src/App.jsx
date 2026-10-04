@@ -26,6 +26,7 @@ import { PaginaCadastro } from "./pages/Cadastros";
 import ContasGerenciais from "./pages/ContasGerenciais";
 import Mensagens from "./pages/Mensagens";
 import Acerto from "./pages/financeiro/Acerto";
+import DashboardFinanceiro from "./pages/financeiro/Dashboard";
 import ContasPagar from "./pages/financeiro/ContasPagar";
 import ContasReceber from "./pages/financeiro/ContasReceber";
 import Credito from "./pages/financeiro/Credito";
@@ -118,7 +119,8 @@ export default function App() {
 
         <Route path="mensagens" element={<Mensagens />} />
         <Route path="financeiro">
-          <Route index element={<Navigate to="acerto" replace />} />
+          <Route index element={<Navigate to="dashboard" replace />} />
+          <Route path="dashboard" element={<DashboardFinanceiro />} />
           <Route path="acerto" element={<Acerto />} />
           <Route path="contas-pagar" element={<ContasPagar />} />
           <Route path="contas-receber" element={<ContasReceber />} />
