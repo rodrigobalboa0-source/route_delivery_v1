@@ -8,7 +8,7 @@ import { FiltroPeriodo, TabelaRelatorio, usePeriodo } from "../../components/rel
 import { data, moeda, paraInputData } from "../../utils/format";
 import { mascaraDocumento, soDigitos } from "../../utils/documento";
 import { valorPorExtenso } from "../../utils/extenso";
-import { FORMAS_PAGAMENTO, abrirImpressao } from "./Acerto";
+import { FORMAS_PAGAMENTO, abrirImpressao } from "./pagamento";
 import { AvisoEmpresa } from "./GerarNota";
 
 const ORIGEM = { ACERTO: "Acerto de entregador", FATURA: "Fatura", CONTA_PAGAR: "Conta a pagar", AVULSO: "Avulso" };

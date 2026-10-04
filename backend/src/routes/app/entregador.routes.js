@@ -837,7 +837,7 @@ router.get(
     ]);
     const qtd = tipo => feitos.find(f => f.tipo === tipo)?._count || 0;
     const saque = tipo => ({
-      limitePorSolicitacao: regras[tipo].limitePorSolicitacao, maxSolicitacoesDia: regras[tipo].maxSolicitacoesDia,
+      limitePorSolicitacao: regras[tipo].limitePorSolicitacao, maxSolicitacoesDia: regras[tipo].maxSolicitacoesDia, taxaPercentual: regras[tipo].taxaPercentual || 0,
       feitosHoje: qtd(tipo), ...carteira.situacaoRegra(regras[tipo], qtd(tipo), hoje),
     });
     res.json({ saldo, movimentos, conta, saques: { NORMAL: saque("NORMAL"), RAPIDO: saque("RAPIDO") } });
@@ -879,11 +879,13 @@ router.post(
       if (!sit.pode) throw erroHttp(400, sit.motivo);
       const { saldo } = await carteira.extrato(req.entregador.id, tx);
       if (valor > saldo + 1e-9) throw erroHttp(400, `Saldo insuficiente (disponível: ${saldo.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}).`);
-      return tx.saqueEntregador.create({ data: { entregadorId: req.entregador.id, tipo, valor, conta } });
+      const taxaPercentual = regra.taxaPercentual || 0;
+      const valorTaxa = Math.round(valor * taxaPercentual) / 100;
+      return tx.saqueEntregador.create({ data: { entregadorId: req.entregador.id, tipo, valor, conta, taxaPercentual, valorTaxa } });
     }, { timeout: 20000 });
     const nome = carteira.ROTULO_SAQUE[tipo];
     await prisma.notificacao.create({ data: { tipo: "financeiro", texto: `${req.entregador.nomeCompleto} pediu ${nome.toLowerCase()} de R$ ${valor.toFixed(2).replace(".", ",")}. Pague em Financeiro › Saques.` } }).catch(() => {});
-    res.status(201).json({ id: saque.id, numero: saque.numero, tipo, valor, status: saque.status });
+    res.status(201).json({ id: saque.id, numero: saque.numero, tipo, valor, valorTaxa: saque.valorTaxa, liquido: Math.round((valor - saque.valorTaxa) * 100) / 100, status: saque.status });
   })
 );
 

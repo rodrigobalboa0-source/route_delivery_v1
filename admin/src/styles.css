@@ -1111,3 +1111,7 @@ code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-siz
 /* Financeiro › Saques */
 .conta-saque { font-size: 13px; line-height: 1.45; }
 .conta-saque + .campo, form .conta-saque { margin-bottom: 12px; }
+
+/* Acerto de Entregadores: calendários de início e fim */
+.filtro-data { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 13px; }
+.tabela tfoot td { border-top: 2px solid var(--borda-forte, var(--borda)); }

@@ -6,7 +6,7 @@ import { useApi } from "../../hooks/useApi";
 import { Botao, Cabecalho, ErroCaixa } from "../../components/ui";
 import { TabelaRelatorio } from "../../components/relatorios";
 import { data, moeda, numero } from "../../utils/format";
-import { abrirImpressao } from "./Acerto";
+import { abrirImpressao } from "./pagamento";
 import { situacaoConta } from "./ContasPagar";
 
 export function AvisoEmpresa() {

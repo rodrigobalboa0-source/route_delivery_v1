@@ -1,221 +1,199 @@
-// Financeiro › Acerto de Entregadores — ganhos do período (início/fim) e fechamento do pagamento.
-import { useState } from "react";
+// Financeiro › Acerto de Entregadores — por entregador no período (início/fim): entregas finalizadas e canceladas,
+// total de taxas, quanto retirou pelo app (saques) e o saldo que ficou na carteira. Abaixo, as retiradas do período
+// (normais e rápidas, com a taxa de cada saque), que podem ser marcadas como pagamento pendente ou realizado.
+import { useEffect, useState } from "react";
 import { api, qs } from "../../api";
 import { useAuth } from "../../auth";
 import { useApi } from "../../hooks/useApi";
-import { Badge, Botao, BotaoConfirmar, Cabecalho, Campo, Carregando, ErroCaixa, Modal, StatTile, useAcao } from "../../components/ui";
-import { FiltroPeriodo, TabelaRelatorio, usePeriodo } from "../../components/relatorios";
-import { VEICULOS, data, dataHora, moeda, numero, paraInputData } from "../../utils/format";
+import { Badge, Botao, Cabecalho, Carregando, ErroCaixa, Vazio, useAcao } from "../../components/ui";
+import Baixar from "../../components/Baixar";
+import { VEICULOS, dataHora, moeda, numero, paraInputData } from "../../utils/format";
 
-export const FORMAS_PAGAMENTO = ["Pix", "Transferência bancária", "Dinheiro", "Boleto", "Cartão", "Depósito"];
-export const abrirImpressao = caminho => window.open(caminho, "_blank", "noopener");
+const dataBR = t => (t ? t.split("-").reverse().join("/") : "");
+const pct = v => `${Number(v || 0).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%`;
+const TIPO = { NORMAL: "Normal", RAPIDO: "Rápido" };
+const STATUS = { PENDENTE: ["aviso", "Pagamento pendente"], PAGO: ["ok", "Pagamento realizado"], RECUSADO: ["critico", "Recusado"] };
 
-function ModalFechar({ linha, periodo, onFechar, onFeito }) {
-  const [ajustes, setAjustes] = useState("");
-  const [descricaoAjustes, setDescricaoAjustes] = useState("");
-  const [vencimento, setVencimento] = useState(paraInputData(new Date()));
-  const [observacao, setObservacao] = useState("");
-  const { executar, ocupado } = useAcao();
-  const ajusteNum = Number(String(ajustes).replace(",", ".")) || 0;
-  const total = linha.comissaoPendente + (linha.comissaoAutoPendente || 0) + ajusteNum;
-
-  async function fechar(e) {
-    e.preventDefault();
-    const r = await executar(() => api.post("/financeiro/acertos", {
-      entregadorId: linha.entregadorId, ...periodo, ajustes: ajusteNum, descricaoAjustes, vencimento, observacao,
-    }), "Acerto fechado — conta a pagar gerada.");
-    if (r) onFeito();
-  }
-
-  return (
-    <Modal titulo={`Fechar acerto · ${linha.nome}`} onFechar={onFechar}>
-      <form onSubmit={fechar}>
-        <dl className="detalhes">
-          <dt>Período</dt><dd>{data(`${periodo.desde}T12:00:00`)} a {data(`${periodo.ate}T12:00:00`)}</dd>
-          <dt>Entregas pendentes</dt><dd>{numero(linha.pendentes)}</dd>
-          <dt>Comissão das entregas</dt><dd>{moeda(linha.comissaoPendente)}</dd>
-          {linha.comissaoAutoPendente > 0 && <><dt>Comissão automática</dt><dd>{moeda(linha.comissaoAutoPendente)} <span className="apagado">(extra pago pela empresa)</span></dd></>}
-        </dl>
-        {linha.semRegra > 0 && <div className="aviso-caixa">{linha.semRegra} entrega(s) sem regra de comissão entram com R$ 0. Ajuste o cadastro antes, ou compense no ajuste.</div>}
-        <div className="grade-campos">
-          <Campo rotulo="Ajuste (R$)" dica="Bônus positivo, desconto negativo (ex.: -15).">
-            <input type="number" step="0.01" value={ajustes} onChange={e => setAjustes(e.target.value)} />
-          </Campo>
-          <Campo rotulo="Vencimento do pagamento"><input type="date" value={vencimento} onChange={e => setVencimento(e.target.value)} required /></Campo>
-          {ajusteNum !== 0 && (
-            <Campo rotulo="Motivo do ajuste *" largo><input value={descricaoAjustes} onChange={e => setDescricaoAjustes(e.target.value)} required /></Campo>
-          )}
-          <Campo rotulo="Observação" largo><input value={observacao} onChange={e => setObservacao(e.target.value)} /></Campo>
-        </div>
-        <div className="total-destaque">Total a pagar <strong>{moeda(total)}</strong></div>
-        <div className="form-rodape">
-          <Botao variante="fantasma" onClick={onFechar}>Cancelar</Botao>
-          <button type="submit" className="btn btn-primario" disabled={ocupado || total < 0}>Fechar acerto</button>
-        </div>
-      </form>
-    </Modal>
-  );
+function specResumo(linhas, desde, ate, busca) {
+  const soma = c => linhas.reduce((s, l) => s + (l[c] || 0), 0);
+  return {
+    arquivo: `acerto-entregadores-${desde}-a-${ate}`, aba: "Entregadores", titulo: "Acerto de Entregadores",
+    subtitulo: [`Período: ${dataBR(desde)} a ${dataBR(ate)}`, busca && `Busca: ${busca}`].filter(Boolean).join(" · "),
+    resumo: [["Entregas finalizadas", numero(soma("finalizadas"))], ["Total de taxas", moeda(soma("taxas"))], ["Retirado pelo app", moeda(soma("retirado"))], ["Saldo nas carteiras", moeda(soma("saldoAtual"))]],
+    colunas: [
+      { titulo: "Entregador", valor: l => l.nome, largura: 28 },
+      { titulo: "Finalizadas", valor: l => l.finalizadas, tipo: "numero", largura: 12, larguraPdf: 22 },
+      { titulo: "Canceladas", valor: l => l.canceladas, tipo: "numero", largura: 12, larguraPdf: 22 },
+      { titulo: "Total de taxas", valor: l => l.taxas, tipo: "moeda", largura: 15 },
+      { titulo: "Retirado", valor: l => l.retirado, tipo: "moeda", largura: 14 },
+      { titulo: "Retirada rápida", valor: l => l.retiradoRapido, tipo: "moeda", largura: 15 },
+      { titulo: "Taxas de saque", valor: l => l.taxasSaque, tipo: "moeda", largura: 15 },
+      { titulo: "Saldo após retiradas", valor: l => l.saldoAtual, tipo: "moeda", largura: 18 },
+    ],
+    linhas,
+    totais: { 1: soma("finalizadas"), 2: soma("canceladas"), 3: soma("taxas"), 4: soma("retirado"), 5: soma("retiradoRapido"), 6: soma("taxasSaque"), 7: soma("saldoAtual") },
+  };
 }
 
-export function ModalPagamento({ titulo, valor, onFechar, onConfirmar, rotuloData = "Data do pagamento" }) {
-  const [forma, setForma] = useState("Pix");
-  const [dia, setDia] = useState(paraInputData(new Date()));
-  return (
-    <Modal titulo={titulo} onFechar={onFechar}>
-      <form onSubmit={e => { e.preventDefault(); onConfirmar({ formaPagamento: forma, data: dia }); }}>
-        <div className="total-destaque">Valor <strong>{moeda(valor)}</strong></div>
-        <div className="grade-campos">
-          <Campo rotulo="Forma de pagamento">
-            <select value={forma} onChange={e => setForma(e.target.value)}>{FORMAS_PAGAMENTO.map(f => <option key={f}>{f}</option>)}</select>
-          </Campo>
-          <Campo rotulo={rotuloData}><input type="date" value={dia} onChange={e => setDia(e.target.value)} required /></Campo>
-        </div>
-        <div className="form-rodape">
-          <Botao variante="fantasma" onClick={onFechar}>Cancelar</Botao>
-          <button type="submit" className="btn btn-primario">Confirmar</button>
-        </div>
-      </form>
-    </Modal>
-  );
-}
-
-function DetalheAcerto({ id, onFechar }) {
-  const { dados: a } = useApi(`/financeiro/acertos/${id}`);
-  const autoPorPedido = Object.fromEntries((a?.comissoes || []).filter(c => c.pedidoId).map(c => [c.pedidoId, c.valor]));
-  return (
-    <Modal titulo={a ? `Acerto nº ${a.numero} · ${a.entregador.nomeCompleto}` : "Acerto"} onFechar={onFechar} largo>
-      {!a ? <Carregando /> : (
-        <>
-          <dl className="detalhes">
-            <dt>Período</dt><dd>{data(a.inicio)} a {data(a.fim)}</dd>
-            <dt>Comissão</dt><dd>{moeda(a.valorComissao)} ({a.entregas} entregas)</dd>
-            {a.comissoesAutomaticas > 0 && <><dt>Comissão automática</dt><dd>{moeda(a.comissoesAutomaticas)} ({a.comissoes.length} entrega(s), extra pago pela empresa)</dd></>}
-            <dt>Ajuste</dt><dd>{a.ajustes ? `${moeda(a.ajustes)} — ${a.descricaoAjustes}` : "—"}</dd>
-            <dt>Total</dt><dd><strong>{moeda(a.valorTotal)}</strong></dd>
-            <dt>Situação</dt><dd>{a.pago ? `Pago em ${data(a.pagoEm)} (${a.formaPagamento || "—"})` : "Pendente de pagamento"}</dd>
-            <dt>Fechado por</dt><dd>{a.autorNome || "—"} em {dataHora(a.createdAt)}</dd>
-          </dl>
-          <table className="tabela tabela-compacta">
-            <thead><tr><th>Pedido</th><th>Entregue</th><th>Comércio</th><th className="num">Valor</th><th className="num">Comissão</th><th className="num">Automática</th></tr></thead>
-            <tbody>
-              {a.pedidos.map(p => (
-                <tr key={p.id}><td>{p.codigo}</td><td>{dataHora(p.entregueEm)}</td><td>{p.comercio?.nomeFantasia}</td><td className="num">{moeda(p.valor)}</td><td className="num">{moeda(p.comissaoEntregador)}</td><td className="num">{autoPorPedido[p.id] != null ? moeda(autoPorPedido[p.id]) : "—"}</td></tr>
-              ))}
-            </tbody>
-          </table>
-        </>
-      )}
-    </Modal>
-  );
+function specRetiradas(saques, desde, ate, tipo) {
+  const validos = saques.filter(s => s.status !== "RECUSADO");
+  const soma = (lista, c) => lista.reduce((s, x) => s + (x[c] || 0), 0);
+  return {
+    arquivo: `retiradas-${desde}-a-${ate}`, aba: "Retiradas", titulo: "Retiradas dos entregadores",
+    subtitulo: [`Período: ${dataBR(desde)} a ${dataBR(ate)}`, tipo && `Somente saque ${TIPO[tipo].toLowerCase()}`].filter(Boolean).join(" · "),
+    resumo: [["Retiradas", numero(validos.length)], ["Valor sacado", moeda(soma(validos, "valor"))], ["Taxas de saque", moeda(soma(validos, "valorTaxa"))], ["Pagamento pendente", moeda(soma(validos.filter(s => s.status === "PENDENTE"), "liquido"))]],
+    colunas: [
+      { titulo: "Data", valor: s => s.createdAt, tipo: "data", largura: 17, larguraPdf: 26 },
+      { titulo: "Nº", valor: s => s.numero, largura: 7, larguraPdf: 12 },
+      { titulo: "Entregador", valor: s => s.entregador, largura: 26 },
+      { titulo: "Tipo", valor: s => TIPO[s.tipo], largura: 10, larguraPdf: 16 },
+      { titulo: "Sacou", valor: s => s.valor, tipo: "moeda", largura: 13 },
+      { titulo: "Taxa (%)", valor: s => pct(s.taxaPercentual), largura: 10, larguraPdf: 16 },
+      { titulo: "Valor da taxa", valor: s => s.valorTaxa, tipo: "moeda", largura: 13 },
+      { titulo: "A receber", valor: s => s.liquido, tipo: "moeda", largura: 13 },
+      { titulo: "Status", valor: s => STATUS[s.status][1], largura: 20, larguraPdf: 32 },
+    ],
+    linhas: saques,
+    totais: { 4: soma(validos, "valor"), 6: soma(validos, "valorTaxa"), 7: soma(validos, "liquido") },
+  };
 }
 
 export default function Acerto() {
   const { podeEditar } = useAuth();
   const pode = podeEditar("financeiro");
-  const [periodo, setPeriodo] = usePeriodo(7);
-  const [entregadorId, setEntregadorId] = useState("");
-  const [fechando, setFechando] = useState(null);
-  const [pagando, setPagando] = useState(null);
-  const [vendo, setVendo] = useState(null);
-  const { dados: entregadores } = useApi("/entregadores");
-  const ganhos = useApi(`/financeiro/ganhos${qs({ ...periodo, entregadorId })}`);
-  const acertos = useApi(`/financeiro/acertos${qs({ ...periodo, entregadorId })}`);
-  const { executar } = useAcao();
-  const t = ganhos.dados?.totais;
+  const hoje = paraInputData(new Date());
+  const [desde, setDesde] = useState(paraInputData(new Date(Date.now() - 6 * 864e5)));
+  const [ate, setAte] = useState(hoje);
+  const [busca, setBusca] = useState("");
+  const [buscaAplicada, setBuscaAplicada] = useState("");
+  const [tipo, setTipo] = useState("");
+  const [status, setStatus] = useState("");
+  const { executar, ocupado } = useAcao();
 
-  function atualizar() {
-    ganhos.recarregar({ silencioso: true });
-    acertos.recarregar({ silencioso: true });
-  }
+  useEffect(() => { const t = setTimeout(() => setBuscaAplicada(busca.trim()), 350); return () => clearTimeout(t); }, [busca]);
+  const { dados, erro, carregando, recarregar } = useApi(`/financeiro/acerto-entregadores${qs({ desde, ate, busca: buscaAplicada })}`);
+  const linhas = dados?.linhas || [];
+  const saques = (dados?.saques || []).filter(s => (!tipo || s.tipo === tipo) && (!status || s.status === status));
+  const rapidas = (dados?.saques || []).filter(s => s.tipo === "RAPIDO" && s.status !== "RECUSADO");
 
-  async function recibo(a) {
-    const r = await executar(() => api.post(`/financeiro/acertos/${a.id}/recibo`));
-    if (r) abrirImpressao(`/imprimir/recibo/${r.id}`);
+  async function marcar(s, para) {
+    const rota = para === "PAGO" ? "pagar" : "pendente";
+    if (await executar(() => api.post(`/financeiro/saques/${s.id}/${rota}`, para === "PAGO" ? { formaPagamento: "PIX" } : {}),
+      para === "PAGO" ? `Saque nº ${s.numero} confirmado como pago. O entregador foi avisado.` : `Saque nº ${s.numero} voltou para pagamento pendente.`)) {
+      recarregar({ silencioso: true });
+    }
   }
 
   return (
     <>
-      <Cabecalho titulo="Acerto de Entregadores" subtitulo="Escolha o início e o fim para ver os ganhos de cada entregador e fechar o pagamento" />
-      <FiltroPeriodo valor={periodo} onChange={setPeriodo}>
-        <select value={entregadorId} onChange={e => setEntregadorId(e.target.value)} aria-label="Entregador">
-          <option value="">Todos os entregadores</option>
-          {(entregadores || []).map(e => <option key={e.id} value={e.id}>{e.nomeCompleto}</option>)}
-        </select>
-      </FiltroPeriodo>
-      <ErroCaixa erro={ganhos.erro || acertos.erro} />
+      <Cabecalho titulo="Acerto de Entregadores" subtitulo="Taxas, entregas e retiradas de cada entregador no período" />
+      <div className="filtros">
+        <label className="filtro-data">Início <input type="date" value={desde} max={ate || undefined} onChange={e => setDesde(e.target.value)} aria-label="Data de início" /></label>
+        <label className="filtro-data">Fim <input type="date" value={ate} min={desde || undefined} onChange={e => setAte(e.target.value)} aria-label="Data de fim" /></label>
+        <input type="search" value={busca} onChange={e => setBusca(e.target.value)} placeholder="Pesquisar entregador" aria-label="Pesquisar entregador" />
+      </div>
+      <ErroCaixa erro={erro} onTentar={() => recarregar()} />
 
-      {t && (
-        <div className="grade-stats">
-          <StatTile rotulo="A acertar no período" valor={moeda(t.comissaoPendente + t.comissaoAutoPendente)} tom={t.comissaoPendente + t.comissaoAutoPendente > 0 ? "aviso" : undefined} detalhe={t.comissaoAutoPendente > 0 ? `inclui ${moeda(t.comissaoAutoPendente)} de comissão automática` : "Entregas ainda não acertadas"} />
-          <StatTile rotulo="Já acertado" valor={moeda(t.comissaoAcertada)} />
-          <StatTile rotulo="Entregas concluídas" valor={numero(t.entregas)} />
-          <StatTile rotulo="Entregas sem regra" valor={numero(t.semRegra)} tom={t.semRegra ? "critico" : undefined} detalhe={t.semRegra ? "Ganho R$ 0 — veja Comissão" : ""} />
+      <section className="cartao cartao-tabela">
+        <div className="tabela-barra">
+          <strong>Entregadores</strong>
+          <Baixar rotulo="Resumo" desabilitado={!linhas.length} gerar={() => specResumo(linhas, desde, ate, buscaAplicada)} />
         </div>
-      )}
-
-      <h2 className="titulo-secao">Ganhos por entregador</h2>
-      <TabelaRelatorio
-        linhas={ganhos.dados?.linhas}
-        carregando={ganhos.carregando}
-        vazio="Nenhuma entrega concluída no período"
-        chaveLinha={l => l.entregadorId}
-        nomeCsv={`ganhos_entregadores_${periodo.desde}_${periodo.ate}`}
-        colunas={[
-          { chave: "nome", rotulo: "Entregador", valor: l => <><strong>{l.nome}</strong><div className="celula-sub">{VEICULOS[l.veiculoTipo]}</div></> },
-          { chave: "entregas", rotulo: "Entregas", num: true, valor: l => numero(l.entregas) },
-          { chave: "pendentes", rotulo: "A acertar", num: true, valor: l => numero(l.pendentes) },
-          { chave: "comissaoPendente", rotulo: "Comissão entregas", num: true, valor: l => moeda(l.comissaoPendente) },
-          { chave: "comissaoAutoPendente", rotulo: "Comissão automática", num: true, valor: l => (l.comissaoAuto > 0 ? moeda(l.comissaoAutoPendente) : <span className="apagado">—</span>) },
-          { chave: "aPagar", rotulo: "Total a acertar", num: true, valor: l => <strong>{moeda(l.aPagar)}</strong> },
-          { chave: "comissaoAcertada", rotulo: "Já acertado", num: true, valor: l => moeda(l.comissaoAcertada) },
-          { chave: "acao", rotulo: "", valor: l => (pode && (l.pendentes > 0 || l.comissaoAutoPendente > 0)
-            ? <Botao pequeno variante="primario" onClick={() => setFechando(l)}>Fechar acerto</Botao>
-            : l.pendentes === 0 && !l.comissaoAutoPendente ? <Badge tom="ok">✓ Tudo acertado</Badge> : null), csv: () => "" },
-        ]}
-      />
-
-      <h2 className="titulo-secao">Acertos deste período</h2>
-      <TabelaRelatorio
-        linhas={acertos.dados}
-        carregando={acertos.carregando}
-        vazio="Nenhum acerto fechado neste período"
-        chaveLinha={l => l.id}
-        nomeCsv={`acertos_${periodo.desde}_${periodo.ate}`}
-        colunas={[
-          { chave: "numero", rotulo: "Nº", num: true },
-          { chave: "entregador", rotulo: "Entregador", valor: l => l.entregador.nomeCompleto, ordenar: l => l.entregador.nomeCompleto },
-          { chave: "periodo", rotulo: "Período", valor: l => `${data(l.inicio)} a ${data(l.fim)}`, ordenar: l => new Date(l.inicio).getTime() },
-          { chave: "entregas", rotulo: "Entregas", num: true },
-          { chave: "valorTotal", rotulo: "Total", num: true, valor: l => <strong>{moeda(l.valorTotal)}</strong> },
-          { chave: "pago", rotulo: "Situação", valor: l => (l.pago ? <Badge tom="ok">✓ Pago {data(l.pagoEm)}</Badge> : <Badge tom="aviso">A pagar</Badge>), csv: l => (l.pago ? "Pago" : "A pagar") },
-          { chave: "acoes", rotulo: "", csv: () => "", valor: l => (
-            <span className="acoes-celula">
-              <Botao pequeno variante="fantasma" onClick={() => setVendo(l.id)}>Ver</Botao>
-              {pode && !l.pago && <Botao pequeno onClick={() => setPagando(l)}>Registrar pagamento</Botao>}
-              {l.pago && <Botao pequeno onClick={() => recibo(l)}>Recibo</Botao>}
-              {pode && l.pago && <Botao pequeno variante="fantasma" onClick={async () => { if (await executar(() => api.patch(`/financeiro/acertos/${l.id}/reabrir`), "Pagamento reaberto.")) atualizar(); }}>Reabrir</Botao>}
-              {pode && !l.pago && (
-                <BotaoConfirmar pequeno confirmar="Excluir? As entregas voltam a ficar a acertar." onConfirm={async () => {
-                  if (await executar(() => api.del(`/financeiro/acertos/${l.id}`), "Acerto excluído.")) atualizar();
-                }}>Excluir</BotaoConfirmar>
+        {carregando && !dados ? <Carregando /> : linhas.length === 0 ? <Vazio titulo="Nenhum entregador com movimento no período" /> : (
+          <div className="tabela-rolagem">
+            <table className="tabela">
+              <thead>
+                <tr>
+                  <th>Entregador</th>
+                  <th className="num">Finalizadas</th>
+                  <th className="num">Canceladas</th>
+                  <th className="num">Total de taxas</th>
+                  <th className="num">Retirado pelo app</th>
+                  <th className="num">Retirada rápida</th>
+                  <th className="num">Saldo após retiradas</th>
+                </tr>
+              </thead>
+              <tbody>
+                {linhas.map(l => (
+                  <tr key={l.entregadorId}>
+                    <td><strong>{l.nome}</strong><div className="celula-sub">{VEICULOS[l.veiculoTipo] || ""}</div></td>
+                    <td className="num"><Badge tom="ok">{numero(l.finalizadas)}</Badge></td>
+                    <td className="num">{l.canceladas ? <Badge tom="critico">{numero(l.canceladas)}</Badge> : <span className="apagado">0</span>}</td>
+                    <td className="num"><strong>{moeda(l.taxas)}</strong></td>
+                    <td className="num">{moeda(l.retirado)}{l.aPagar > 0 && <div className="celula-sub">{moeda(l.aPagar)} a pagar</div>}</td>
+                    <td className="num">{moeda(l.retiradoRapido)}{l.taxasSaque > 0 && <div className="celula-sub">taxas {moeda(l.taxasSaque)}</div>}</td>
+                    <td className="num"><strong className={l.saldoAtual < 0 ? "texto-critico" : ""}>{moeda(l.saldoAtual)}</strong></td>
+                  </tr>
+                ))}
+              </tbody>
+              {linhas.length > 1 && (
+                <tfoot>
+                  <tr>
+                    <td><strong>Total</strong></td>
+                    {["finalizadas", "canceladas"].map(c => <td key={c} className="num"><strong>{numero(linhas.reduce((s, l) => s + l[c], 0))}</strong></td>)}
+                    {["taxas", "retirado", "retiradoRapido", "saldoAtual"].map(c => <td key={c} className="num"><strong>{moeda(linhas.reduce((s, l) => s + l[c], 0))}</strong></td>)}
+                  </tr>
+                </tfoot>
               )}
-            </span>
-          ) },
-        ]}
-      />
+            </table>
+          </div>
+        )}
+      </section>
 
-      {fechando && <ModalFechar linha={fechando} periodo={periodo} onFechar={() => setFechando(null)} onFeito={() => { setFechando(null); atualizar(); }} />}
-      {pagando && (
-        <ModalPagamento
-          titulo={`Pagamento do acerto nº ${pagando.numero} · ${pagando.entregador.nomeCompleto}`}
-          valor={pagando.valorTotal}
-          onFechar={() => setPagando(null)}
-          onConfirmar={async ({ formaPagamento, data: pagoEm }) => {
-            if (await executar(() => api.patch(`/financeiro/acertos/${pagando.id}/pagar`, { formaPagamento, pagoEm }), "Pagamento registrado.")) { setPagando(null); atualizar(); }
-          }}
-        />
-      )}
-      {vendo && <DetalheAcerto id={vendo} onFechar={() => setVendo(null)} />}
+      <section className="cartao cartao-tabela">
+        <div className="tabela-barra">
+          <strong>Retiradas do período</strong>
+          <div className="botoes">
+            <select value={tipo} onChange={e => setTipo(e.target.value)} aria-label="Tipo de retirada">
+              <option value="">Todas as retiradas</option>
+              <option value="RAPIDO">Só retirada rápida</option>
+              <option value="NORMAL">Só retirada normal</option>
+            </select>
+            <select value={status} onChange={e => setStatus(e.target.value)} aria-label="Status do pagamento">
+              <option value="">Todos os status</option>
+              <option value="PENDENTE">Pagamento pendente</option>
+              <option value="PAGO">Pagamento realizado</option>
+              <option value="RECUSADO">Recusado</option>
+            </select>
+            <Baixar rotulo="Retiradas" desabilitado={!saques.length} gerar={() => specRetiradas(saques, desde, ate, tipo)} />
+          </div>
+        </div>
+        {dados && rapidas.length > 0 && (
+          <div className="tabela-barra apagado">
+            <span>Retiradas rápidas no período: <strong>{numero(rapidas.length)}</strong> · sacado <strong>{moeda(rapidas.reduce((s, x) => s + x.valor, 0))}</strong> · taxas <strong>{moeda(rapidas.reduce((s, x) => s + x.valorTaxa, 0))}</strong></span>
+          </div>
+        )}
+        {carregando && !dados ? <Carregando /> : saques.length === 0 ? <Vazio titulo="Nenhuma retirada no período" /> : (
+          <div className="tabela-rolagem">
+            <table className="tabela">
+              <thead>
+                <tr><th>Retirada</th><th>Entregador</th><th>Tipo</th><th className="num">Sacou</th><th className="num">Taxa</th><th className="num">A receber</th><th>Status</th><th /></tr>
+              </thead>
+              <tbody>
+                {saques.map(s => (
+                  <tr key={s.id}>
+                    <td><strong>Nº {s.numero}</strong><div className="celula-sub">{dataHora(s.createdAt)}</div></td>
+                    <td>{s.entregador}</td>
+                    <td>{s.tipo === "RAPIDO" ? <Badge tom="aviso">Rápido</Badge> : <Badge>Normal</Badge>}</td>
+                    <td className="num"><strong>{moeda(s.valor)}</strong></td>
+                    <td className="num">{pct(s.taxaPercentual)}<div className="celula-sub">{moeda(s.valorTaxa)}</div></td>
+                    <td className="num">{moeda(s.liquido)}</td>
+                    <td>
+                      <Badge tom={STATUS[s.status][0]}>{STATUS[s.status][1]}</Badge>
+                      {s.pagoEm && <div className="celula-sub">{dataHora(s.pagoEm)}</div>}
+                      {s.motivo && <div className="celula-sub">Motivo: {s.motivo}</div>}
+                    </td>
+                    <td className="botoes">
+                      {pode && s.status === "PENDENTE" && <Botao pequeno variante="primario" disabled={ocupado} onClick={() => marcar(s, "PAGO")}>Confirmar como pago</Botao>}
+                      {pode && s.status === "PAGO" && <Botao pequeno variante="fantasma" disabled={ocupado} onClick={() => marcar(s, "PENDENTE")}>Marcar como pendente</Botao>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
     </>
   );
 }

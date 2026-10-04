@@ -103,7 +103,7 @@ function RetirarSaldo({ dados, onFechar, onFeito }) {
       <>
         <View style={st.feitoIcone}><Feather name="check" size={30} color={cor.ok} /></View>
         <Text style={[st.modalTitulo, { textAlign: "center" }]}>Saque solicitado!</Text>
-        <Text style={[st.modalTexto, { textAlign: "center" }]}>{moeda(feito.valor)} vão para a sua conta assim que a equipe confirmar o pagamento. Você recebe um aviso no celular.</Text>
+        <Text style={[st.modalTexto, { textAlign: "center" }]}>{moeda(feito.liquido ?? feito.valor)} vão para a sua conta assim que a equipe confirmar o pagamento{feito.valorTaxa ? ` (taxa de ${moeda(feito.valorTaxa)})` : ""}. Você recebe um aviso no celular.</Text>
         <Botao titulo="Entendi" onPress={onFeito} />
       </>
     );
@@ -123,8 +123,14 @@ function RetirarSaldo({ dados, onFechar, onFeito }) {
           {regra.limitePorSolicitacao != null ? `Até ${moeda(regra.limitePorSolicitacao)} por saque · ` : ""}
           {regra.feitosHoje} de {regra.maxSolicitacoesDia} pedido(s) hoje
         </Text>
+        {regra.taxaPercentual > 0 && <Text style={st.regra}>Taxa deste saque: {String(regra.taxaPercentual).replace(".", ",")}% do valor</Text>}
         {!regra.pode && <Text style={[st.regra, { color: cor.aviso }]}>⚠ {regra.motivo}</Text>}
         <Campo rotulo="Valor (R$)" value={valor} onChangeText={t => setValor(t.replace(/[^\d,]/g, ""))} keyboardType="decimal-pad" placeholder="0,00" />
+        {regra.taxaPercentual > 0 && valorDigitado(valor) > 0 && (
+          <Text style={st.regra}>
+            Taxa {moeda(Math.round(valorDigitado(valor) * regra.taxaPercentual) / 100)} · você recebe {moeda(valorDigitado(valor) - Math.round(valorDigitado(valor) * regra.taxaPercentual) / 100)}
+          </Text>
+        )}
         {maximo > 0 && <Botao pequeno variante="fantasma" titulo={`Sacar ${moeda(maximo)}${maximo < dados.saldo ? " (máximo por saque)" : " (tudo)"}`} onPress={() => setValor(maximo.toFixed(2).replace(".", ","))} />}
         <Text style={st.rotulo}>Receber em</Text>
         <View style={st.contaCaixa}>
@@ -236,6 +242,7 @@ export function Carteira() {
             <View style={st.colDesc}>
               <Text style={st.desc}>{m.descricao}</Text>
               {m.status === "PENDENTE" && <Text style={st.pendente}>em análise</Text>}
+              {m.tipo === "SAQUE" && m.status !== "RECUSADO" && /taxa/.test(m.detalhe || "") ? <Text style={st.detalhe}>{m.detalhe.split(" · ").slice(-1)[0]}</Text> : null}
               {m.status === "RECUSADO" && m.detalhe ? <Text style={st.detalhe} numberOfLines={2}>{m.detalhe}</Text> : null}
             </View>
             {m.status === "RECUSADO"

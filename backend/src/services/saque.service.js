@@ -49,8 +49,13 @@ function normalizarRegra(r = {}, nome) {
   const invalidas = datas.filter(d => !dataValida(d));
   if (invalidas.length) throw erro400(`${nome}: data(s) inválida(s): ${invalidas.join(", ")}. Use o formato AAAA-MM-DD.`);
 
+  // Taxa (%) descontada de cada saque deste tipo (ex.: saque rápido). Vazio = 0.
+  const taxa = r.taxaPercentual === "" || r.taxaPercentual == null ? 0 : Number(String(r.taxaPercentual).replace(",", "."));
+  if (!Number.isFinite(taxa) || taxa < 0 || taxa > 50) throw erro400(`${nome}: a taxa deve ficar entre 0% e 50%.`);
+
   return {
     limitePorSolicitacao: limite,
+    taxaPercentual: Math.round(taxa * 100) / 100,
     maxSolicitacoesDia: max,
     diasPermitidos: dias.sort((a, b) => a - b),
     datasEspecificas: datas.sort(),

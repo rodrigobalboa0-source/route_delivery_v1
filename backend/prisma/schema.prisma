@@ -348,6 +348,8 @@ model SaqueEntregador {
   valor         Float
   status        String     @default("PENDENTE") // PENDENTE | PAGO | RECUSADO
   conta         Json       // cópia da conta bancária no momento do pedido
+  taxaPercentual Float     @default(0) // taxa do tipo de saque no momento do pedido (%)
+  valorTaxa     Float      @default(0) // valor da taxa; o entregador recebe valor - valorTaxa
   motivo        String?    // motivo da recusa
   formaPagamento String?
   observacao    String?
@@ -966,6 +968,7 @@ model RegraSaque {
   id                    String    @id @default(cuid())
   tipo                  TipoSaque @unique
   limitePorSolicitacao  Float?    // null = sem limite
+  taxaPercentual        Float     @default(0) // taxa cobrada sobre cada saque deste tipo (%), descontada do valor pago
   maxSolicitacoesDia    Int       @default(1)
   diasPermitidos        Int[]     // 0 = domingo ... 6 = sábado; vazio = todos os dias
   datasEspecificas      String[]  // "YYYY-MM-DD"; se houver, têm prioridade sobre diasPermitidos

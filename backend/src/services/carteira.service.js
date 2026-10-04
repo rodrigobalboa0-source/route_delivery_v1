@@ -31,8 +31,9 @@ async function extrato(entregadorId, db = prisma) {
   }
   for (const s of saques) {
     const nome = ROTULO_SAQUE[s.tipo] || "Saque";
-    if (s.status === "PAGO") movs.push({ id: `s-${s.id}`, tipo: "SAQUE", data: s.pagoEm || s.createdAt, descricao: `${nome} Realizado`, detalhe: `Saque nº ${s.numero}`, valor: -r2(s.valor), status: "PAGO" });
-    else if (s.status === "PENDENTE") movs.push({ id: `s-${s.id}`, tipo: "SAQUE", data: s.createdAt, descricao: `${nome} solicitado`, detalhe: "Em análise — o valor já foi reservado", valor: -r2(s.valor), status: "PENDENTE" });
+    const taxa = s.valorTaxa ? ` · taxa ${String(s.taxaPercentual).replace(".", ",")}% (R$ ${s.valorTaxa.toFixed(2).replace(".", ",")})` : "";
+    if (s.status === "PAGO") movs.push({ id: `s-${s.id}`, tipo: "SAQUE", data: s.pagoEm || s.createdAt, descricao: `${nome} Realizado`, detalhe: `Saque nº ${s.numero}${taxa}`, valor: -r2(s.valor), status: "PAGO" });
+    else if (s.status === "PENDENTE") movs.push({ id: `s-${s.id}`, tipo: "SAQUE", data: s.createdAt, descricao: `${nome} solicitado`, detalhe: `Em análise — o valor já foi reservado${taxa}`, valor: -r2(s.valor), status: "PENDENTE" });
     else movs.push({ id: `s-${s.id}`, tipo: "SAQUE", data: s.recusadoEm || s.createdAt, descricao: `${nome} recusado`, detalhe: `Valor devolvido ao saldo${s.motivo ? ` · ${s.motivo}` : ""}`, valor: 0, valorOriginal: r2(s.valor), status: "RECUSADO" });
   }
   movs.sort((a, b) => new Date(b.data) - new Date(a.data));

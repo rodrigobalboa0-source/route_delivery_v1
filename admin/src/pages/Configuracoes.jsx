@@ -411,6 +411,7 @@ const TIPOS_SAQUE = [
 function paraFormulario(r) {
   return {
     limitePorSolicitacao: r.limitePorSolicitacao ?? "",
+    taxaPercentual: r.taxaPercentual ?? 0,
     maxSolicitacoesDia: r.maxSolicitacoesDia,
     diasPermitidos: r.diasPermitidos || [],
     datasEspecificas: (r.datasEspecificas || []).join(", "),
@@ -430,6 +431,11 @@ function BlocoSaque({ titulo, valor, onChange, desabilitado }) {
         <label className="campo">
           <span className="campo-rotulo">Limite por solicitação (R$)</span>
           <input type="number" min="0" step="0.01" placeholder="Sem limite" value={valor.limitePorSolicitacao} onChange={set("limitePorSolicitacao")} disabled={desabilitado} />
+        </label>
+        <label className="campo">
+          <span className="campo-rotulo">Taxa por saque (%)</span>
+          <input type="number" min="0" max="50" step="0.01" placeholder="0" value={valor.taxaPercentual} onChange={set("taxaPercentual")} disabled={desabilitado} />
+          <span className="campo-dica">Descontada do valor pago ao entregador. 0 = sem taxa.</span>
         </label>
         <label className="campo">
           <span className="campo-rotulo">Máx. solicitações por dia</span>

@@ -11,7 +11,7 @@ import { useApi } from "../../hooks/useApi";
 import { Abas, Badge, Botao, BotaoConfirmar, Cabecalho, Campo, ErroCaixa, Modal, StatTile, useAcao } from "../../components/ui";
 import { FiltroPeriodo, TabelaRelatorio, porcento, usePeriodo } from "../../components/relatorios";
 import { TIPO_ENTREGA, VEICULOS, data, dataHora, moeda, numero, paraInputData } from "../../utils/format";
-import { ModalPagamento, abrirImpressao } from "./Acerto";
+import { ModalPagamento, abrirImpressao } from "./pagamento";
 
 const TOM_REGRA = { TABELA: "info", FIXO: "neutro", ACERTADO: "ok", SEM_REGRA: "critico" };
 const TIPO_BENEFICIARIO = { ENTREGADOR: "Entregador", FUNCIONARIO: "Funcionário ADM" };

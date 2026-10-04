@@ -82,10 +82,14 @@ export default function Saques() {
                       {s.pagoEm && <div className="celula-sub">{dataHora(s.pagoEm)}{s.formaPagamento ? ` · ${s.formaPagamento}` : ""}{s.analisadoPor ? ` · ${s.analisadoPor}` : ""}</div>}
                       {s.motivo && <div className="celula-sub">Motivo: {s.motivo}</div>}
                     </td>
-                    <td className="num"><strong>{moeda(s.valor)}</strong></td>
+                    <td className="num">
+                      <strong>{moeda(s.valor)}</strong>
+                      {s.valorTaxa > 0 && <div className="celula-sub">taxa {s.taxaPercentual}% ({moeda(s.valorTaxa)}) · pagar {moeda(s.valor - s.valorTaxa)}</div>}
+                    </td>
                     <td className="botoes">
+                      {pode && s.status === "PAGO" && <Botao pequeno variante="fantasma" disabled={ocupado} onClick={async () => { if (await executar(() => api.post(`/financeiro/saques/${s.id}/pendente`), `Saque nº ${s.numero} voltou para pagamento pendente.`)) recarregar({ silencioso: true }); }}>Marcar como pendente</Botao>}
                       {pode && s.status === "PENDENTE" && <>
-                        <Botao pequeno variante="primario" disabled={ocupado} onClick={() => { setPagando(s); setV({ ...v, formaPagamento: "PIX", observacao: "" }); }}>Marcar como pago</Botao>
+                        <Botao pequeno variante="primario" disabled={ocupado} onClick={() => { setPagando(s); setV({ ...v, formaPagamento: "PIX", observacao: "" }); }}>Confirmar como pago</Botao>
                         <Botao pequeno variante="perigo-leve" disabled={ocupado} onClick={() => { setRecusando(s); setV({ ...v, motivo: "" }); }}>Recusar</Botao>
                       </>}
                     </td>
@@ -100,7 +104,7 @@ export default function Saques() {
       {pagando && (
         <Modal titulo={`Pagar saque nº ${pagando.numero} — ${moeda(pagando.valor)}`} onFechar={() => setPagando(null)}>
           <form onSubmit={pagar}>
-            <p>Transfira <strong>{moeda(pagando.valor)}</strong> para {pagando.entregador?.nomeCompleto}:</p>
+            <p>Transfira <strong>{moeda(pagando.valor - (pagando.valorTaxa || 0))}</strong> para {pagando.entregador?.nomeCompleto}{pagando.valorTaxa > 0 ? ` (sacou ${moeda(pagando.valor)}, taxa de ${pagando.taxaPercentual}%)` : ""}:</p>
             <Conta c={pagando.conta} />
             <Campo rotulo="Forma de pagamento">
               <select value={v.formaPagamento} onChange={e => setV({ ...v, formaPagamento: e.target.value })}>

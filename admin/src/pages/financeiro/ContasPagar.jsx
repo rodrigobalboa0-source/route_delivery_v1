@@ -6,7 +6,7 @@ import { useApi } from "../../hooks/useApi";
 import { Abas, Badge, Botao, BotaoConfirmar, Cabecalho, Campo, ErroCaixa, Modal, StatTile, useAcao } from "../../components/ui";
 import { TabelaRelatorio } from "../../components/relatorios";
 import { data, moeda, numero, paraInputData } from "../../utils/format";
-import { ModalPagamento, abrirImpressao } from "./Acerto";
+import { ModalPagamento, abrirImpressao } from "./pagamento";
 
 export const CATEGORIAS_PAGAR = {
   ENTREGADOR: "Entregadores", COMISSAO: "Comissões", FORNECEDOR: "Fornecedor", IMPOSTO: "Impostos", SALARIO: "Salários",

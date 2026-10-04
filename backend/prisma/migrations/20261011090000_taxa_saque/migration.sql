@@ -1,0 +1,6 @@
+-- AlterTable
+ALTER TABLE "RegraSaque" ADD COLUMN     "taxaPercentual" DOUBLE PRECISION NOT NULL DEFAULT 0;
+
+-- AlterTable
+ALTER TABLE "SaqueEntregador" ADD COLUMN     "taxaPercentual" DOUBLE PRECISION NOT NULL DEFAULT 0,
+ADD COLUMN     "valorTaxa" DOUBLE PRECISION NOT NULL DEFAULT 0;
