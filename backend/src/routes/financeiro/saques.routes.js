@@ -47,6 +47,21 @@ router.post(
   })
 );
 
+// DELETE /saques/:id — exclui um saque com pagamento pendente: some do extrato e o valor volta para o saldo.
+// Saque já pago não pode ser excluído (o dinheiro já foi transferido): volte para pendente antes, se foi engano.
+router.delete(
+  "/saques/:id",
+  asyncHandler(async (req, res) => {
+    const s = await prisma.saqueEntregador.findUnique({ where: { id: req.params.id } });
+    if (!s) return res.status(404).json({ erro: "Saque não encontrado." });
+    const { count } = await prisma.saqueEntregador.deleteMany({ where: { id: s.id, status: "PENDENTE" } });
+    if (!count) throw erro400("Só dá para excluir saque com pagamento pendente.");
+    await prisma.notificacao.create({ data: { tipo: "financeiro", texto: `Saque nº ${s.numero} (${brl(s.valor)}) excluído por ${req.conta?.nome || "ADM"}; o valor voltou para o saldo do entregador.` } }).catch(() => {});
+    await avisar(s.entregadorId, "Saque cancelado", `O saque nº ${s.numero} foi cancelado pela equipe e ${brl(s.valor)} voltou para o seu saldo.`);
+    res.json({ ok: true, valor: s.valor });
+  })
+);
+
 // POST /saques/:id/pendente — volta um saque pago para "Pagamento pendente" (marcado como pago por engano)
 router.post(
   "/saques/:id/pendente",

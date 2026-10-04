@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { api, qs } from "../../api";
 import { useAuth } from "../../auth";
 import { useApi } from "../../hooks/useApi";
-import { Badge, Botao, Cabecalho, Carregando, ErroCaixa, Vazio, useAcao } from "../../components/ui";
+import { Badge, Botao, BotaoConfirmar, Cabecalho, Carregando, ErroCaixa, Vazio, useAcao } from "../../components/ui";
 import Baixar from "../../components/Baixar";
 import { VEICULOS, dataHora, moeda, numero, paraInputData } from "../../utils/format";
 
@@ -80,6 +80,12 @@ export default function Acerto() {
     const rota = para === "PAGO" ? "pagar" : "pendente";
     if (await executar(() => api.post(`/financeiro/saques/${s.id}/${rota}`, para === "PAGO" ? { formaPagamento: "PIX" } : {}),
       para === "PAGO" ? `Saque nº ${s.numero} confirmado como pago. O entregador foi avisado.` : `Saque nº ${s.numero} voltou para pagamento pendente.`)) {
+      recarregar({ silencioso: true });
+    }
+  }
+
+  async function excluir(s) {
+    if (await executar(() => api.del(`/financeiro/saques/${s.id}`), `Saque nº ${s.numero} excluído: ${moeda(s.valor)} voltou para o saldo de ${s.entregador}.`)) {
       recarregar({ silencioso: true });
     }
   }
@@ -184,7 +190,10 @@ export default function Acerto() {
                       {s.motivo && <div className="celula-sub">Motivo: {s.motivo}</div>}
                     </td>
                     <td className="botoes">
-                      {pode && s.status === "PENDENTE" && <Botao pequeno variante="primario" disabled={ocupado} onClick={() => marcar(s, "PAGO")}>Confirmar como pago</Botao>}
+                      {pode && s.status === "PENDENTE" && <>
+                        <Botao pequeno variante="primario" disabled={ocupado} onClick={() => marcar(s, "PAGO")}>Confirmar como pago</Botao>
+                        <BotaoConfirmar pequeno confirmar={`Excluir e devolver ${moeda(s.valor)}?`} disabled={ocupado} onConfirm={() => excluir(s)}>Excluir</BotaoConfirmar>
+                      </>}
                       {pode && s.status === "PAGO" && <Botao pequeno variante="fantasma" disabled={ocupado} onClick={() => marcar(s, "PENDENTE")}>Marcar como pendente</Botao>}
                     </td>
                   </tr>

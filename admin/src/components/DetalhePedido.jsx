@@ -147,7 +147,7 @@ export default function DetalhePedido({ id, onFechar, onAlterado }) {
                 {pode && !pedido.rota.aceitaEm && (
                   <div style={{ marginTop: 6 }}>
                     <BotaoConfirmar pequeno disabled={ocupado} confirmar="Desfazer a rota? Cada pedido volta a ser oferecido sozinho."
-                      onConfirm={() => acao(() => api.delete(`/rotas/${pedido.rota.id}`), "Rota desfeita: os pedidos voltaram a ser oferecidos um a um.")}>
+                      onConfirm={() => acao(() => api.del(`/rotas/${pedido.rota.id}`), "Rota desfeita: os pedidos voltaram a ser oferecidos um a um.")}>
                       Desfazer rota
                     </BotaoConfirmar>
                   </div>
