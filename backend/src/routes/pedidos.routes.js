@@ -40,7 +40,12 @@ const ORIGENS = ["PAINEL_ADMIN", "SISTEMA_COMERCIANTE", "APP_COMERCIANTE", "INTE
 //   status só entra na lista (a contagem mostra todos os status do recorte).
 function montarWhere(q, { comStatus = true } = {}) {
   const where = {};
-  if (comStatus && q.status && STATUS.includes(q.status)) where.status = q.status;
+  if (comStatus && q.status) {
+    // Um status ou vários separados por vírgula (ex.: a aba "Em aberto" da Operação).
+    const lista = String(q.status).split(",").filter(s => STATUS.includes(s));
+    if (lista.length === 1) where.status = lista[0];
+    else if (lista.length > 1) where.status = { in: lista };
+  }
   if (q.comercioId) where.comercioId = q.comercioId;
   if (q.entregadorId) where.entregadorId = q.entregadorId;
   if (q.origem && ORIGENS.includes(q.origem)) where.origem = q.origem;

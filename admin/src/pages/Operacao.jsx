@@ -11,6 +11,9 @@ import DetalhePedido from "../components/DetalhePedido";
 import SeletorStatus from "../components/SeletorStatus";
 import { COM_ENTREGADOR, ORIGEM_PEDIDO, STATUS_PEDIDO, VEICULOS, moeda, numero, paraInputData, tempoRelativo } from "../utils/format";
 
+// Aba "Em aberto": tudo que ainda não terminou (nem entregue nem cancelado).
+const ABERTOS_LISTA = ["PREPARANDO", "PENDENTE", ...COM_ENTREGADOR];
+
 // Contadores na ordem da tela; "Total" é calculado.
 const CONTADORES = [
   { status: "PREPARANDO", rotulo: "Criado" },
@@ -149,6 +152,8 @@ export default function Operacao() {
   const [params, setParams] = useSearchParams();
   const status = params.get("status") || "";
   const abrir = params.get("abrir");
+  // Abas da lista: só os pedidos em andamento na tela; finalizados e cancelados ficam nas abas deles.
+  const aba = status === "ENTREGUE" ? "finalizados" : status === "CANCELADO" ? "cancelados" : (params.get("aba") || "abertos");
 
   const hoje = paraInputData(new Date());
   const [cidadeDigitada, setCidadeDigitada] = useState("");
@@ -174,7 +179,8 @@ export default function Operacao() {
     ate: ate ? `${ate}T23:59:59` : "",
   };
 
-  const lista = useApi(`/pedidos${qs({ ...filtros, status, limite: 500 })}`, { intervaloMs: 60000, aoVivo: ["pedidos"] });
+  const statusDaLista = status || { abertos: ABERTOS_LISTA.join(","), finalizados: "ENTREGUE", cancelados: "CANCELADO" }[aba];
+  const lista = useApi(`/pedidos${qs({ ...filtros, status: statusDaLista, limite: 500 })}`, { intervaloMs: 60000, aoVivo: ["pedidos"] });
   const contagem = useApi(`/pedidos/contagem${qs(filtros)}`, { intervaloMs: 60000, aoVivo: ["pedidos"] });
   const geral = useApi("/pedidos/contagem", { intervaloMs: 60000, aoVivo: ["pedidos"] }); // estado atual, sem filtros
   const online = useApi("/entregadores/online", { intervaloMs: 60000, aoVivo: ["entregadores"] });
@@ -215,7 +221,17 @@ export default function Operacao() {
   function mudarParam(chave, valor) {
     const p = new URLSearchParams(params);
     if (valor) p.set(chave, valor); else p.delete(chave);
+    // Filtrar por um status em andamento volta para a aba "Em aberto".
+    if (chave === "status" && valor && !["ENTREGUE", "CANCELADO"].includes(valor)) p.delete("aba");
     setParams(p, { replace: true });
+  }
+
+  function mudarAba(nova) {
+    const p = new URLSearchParams(params);
+    p.delete("status");
+    if (nova === "abertos") p.delete("aba"); else p.set("aba", nova);
+    setParams(p, { replace: true });
+    setSelecionados(new Set());
   }
 
   function alternar(id) {
@@ -354,13 +370,25 @@ export default function Operacao() {
             <strong>{numero(c[x.status] || 0)}</strong>
           </button>
         ))}
-        <button type="button" className={`op-status-card op-status-total ${!status ? "ativo" : ""}`} onClick={() => mudarParam("status", "")}>
+        <button type="button" className={`op-status-card op-status-total ${!status && aba === "abertos" ? "ativo" : ""}`} onClick={() => mudarAba("abertos")}>
           <span>Total</span>
           <strong>{numero(total)}</strong>
         </button>
       </section>
 
       <ErroCaixa erro={lista.erro} onTentar={() => lista.recarregar()} />
+
+      <div className="op-abas" role="tablist" aria-label="Pedidos">
+        {[
+          ["abertos", "Em aberto", ABERTOS_LISTA.reduce((s, k) => s + (c[k] || 0), 0)],
+          ["finalizados", "Finalizados", c.ENTREGUE || 0],
+          ["cancelados", "Cancelados", c.CANCELADO || 0],
+        ].map(([valor, rotulo, qtd]) => (
+          <button key={valor} type="button" role="tab" aria-selected={aba === valor} className={`op-aba ${aba === valor ? "ativa" : ""}`} onClick={() => mudarAba(valor)}>
+            {rotulo} <span className="op-aba-qtd">{numero(qtd)}</span>
+          </button>
+        ))}
+      </div>
 
       <section className="op-tabela-caixa">
         <div className="tabela-rolagem">
