@@ -177,7 +177,7 @@ router.get(
         where: { id: req.comercio.id },
         select: {
           id: true, fotoUrl: true, segmento: true, razaoSocial: true, nomeFantasia: true, tipoDocumento: true, documento: true,
-          nomeCompleto: true, telefone: true, email: true, metodoPagamento: true, createdAt: true,
+          nomeCompleto: true, telefone: true, email: true, metodoPagamento: true, modalidadeCobranca: true, createdAt: true,
           enderecos: { orderBy: { principal: "desc" } },
           precificacoesModal: { select: { veiculo: true } },
         },
@@ -575,10 +575,16 @@ const r2 = v => Math.round(v * 100) / 100;
 const comprovanteValido = v => typeof v === "string" && v.length <= 3.5 * 1024 * 1024
   && /^data:(image\/(jpeg|jpg|png|webp)|application\/pdf);base64,[A-Za-z0-9+/=]+$/.test(v);
 
+// Créditos só para a loja na modalidade Crédito (definida pelo ADM no cadastro do comércio).
+function exigirModoCredito(req) {
+  if (req.comercio.modalidadeCobranca !== "CREDITO") throw erroHttp(403, "Sua loja trabalha no modo Faturamento: os créditos não estão disponíveis. Fale com a equipe Route Delivery.");
+}
+
 // GET /api/app/comerciante/creditos — saldo, totais, extrato e solicitações (sem o comprovante)
 router.get(
   "/creditos",
   asyncHandler(async (req, res) => {
+    exigirModoCredito(req);
     const [movimentos, solicitacoes, g] = await Promise.all([
       prisma.creditoMovimento.findMany({ where: { comercioId: req.comercio.id }, orderBy: { createdAt: "desc" }, take: 200, select: { id: true, tipo: true, valor: true, descricao: true, createdAt: true } }),
       prisma.creditoSolicitacao.findMany({ where: { comercioId: req.comercio.id }, orderBy: { createdAt: "desc" }, take: 100, select: { id: true, valor: true, metodo: true, observacao: true, status: true, motivo: true, analisadoEm: true, createdAt: true } }),
@@ -596,6 +602,7 @@ router.get(
 router.post(
   "/creditos/solicitar",
   asyncHandler(async (req, res) => {
+    exigirModoCredito(req);
     const b = req.body || {};
     const valor = r2(Number(String(b.valor ?? "").replace(",", ".")));
     if (!Number.isFinite(valor) || valor <= 0) throw erroHttp(400, "Informe um valor maior que zero.");

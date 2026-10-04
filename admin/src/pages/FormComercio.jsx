@@ -26,7 +26,7 @@ const TIPOS_PRECIFICACAO = { DISTANCIA: "Distância", PADRAO: "Padrão", ZONA: "
 const DADOS_VAZIOS = {
   fotoUrl: "", segmento: "", dataInicio: "", razaoSocial: "", nomeFantasia: "", tabelaComissaoId: "", cadastroVia: "",
   tipoDocumento: "CNPJ", franquia: "", hub: "", leadCadastradoPor: "", nomeCompleto: "", documento: "", dataNascimento: "",
-  telefone: "", email: "", metodoPagamento: "", observacoes: "",
+  telefone: "", email: "", metodoPagamento: "", modalidadeCobranca: "FATURAMENTO", observacoes: "",
 };
 
 const ENDERECO_VAZIO = { cep: "", rua: "", numero: "", complemento: "", bairro: "", cidade: "", referencia: "", lat: null, lng: null, principal: false };
@@ -362,6 +362,14 @@ export default function FormComercio() {
               >
                 <input type="password" value={senha} onChange={e => setSenha(e.target.value)} autoComplete="new-password" placeholder={novo ? "" : "••••••••••"} />
                 {erroCampo("senha")}
+              </Campo>
+              <Campo rotulo="Modalidade de cobrança" dica={v.modalidadeCobranca === "CREDITO"
+                ? "Crédito: a loja compra saldo pré-pago e vê a aba Créditos no sistema dela."
+                : "Faturamento: a loja paga pelas faturas do período; a aba Créditos fica escondida no sistema dela."}>
+                <select value={v.modalidadeCobranca || "FATURAMENTO"} onChange={set("modalidadeCobranca")}>
+                  <option value="FATURAMENTO">Faturamento</option>
+                  <option value="CREDITO">Crédito (pré-pago)</option>
+                </select>
               </Campo>
               <Campo rotulo="Método de pagamento preferido">
                 <select value={v.metodoPagamento} onChange={set("metodoPagamento")}>

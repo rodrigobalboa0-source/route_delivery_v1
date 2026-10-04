@@ -184,6 +184,9 @@ model Comercio {
   telefone          String?
   email             String?
   metodoPagamento   String?
+  // Como a loja paga as entregas: FATURAMENTO (faturas do período) ou CREDITO (saldo pré-pago).
+  // Só a loja em CREDITO vê a aba Créditos no sistema do comerciante.
+  modalidadeCobranca String   @default("FATURAMENTO")
   observacoes       String?
   // Comércio bloqueado não consegue entrar no sistema do comerciante nem criar pedidos.
   bloqueado         Boolean   @default(false)

@@ -35,7 +35,7 @@ export default function App() {
         </Route>
         <Route path="agendamentos" element={<Agendamentos />} />
         <Route path="agendamentos/novo" element={<NovaEntrega key="agendar" agendar />} />
-        <Route path="creditos" element={<Creditos />} />
+        <Route path="creditos" element={loja.modalidadeCobranca === "CREDITO" ? <Creditos /> : <Navigate to="/painel" replace />} />
         <Route path="mensagens" element={<Mensagens />} />
         <Route path="conta" element={<Conta />} />
 

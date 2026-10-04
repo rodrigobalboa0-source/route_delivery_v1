@@ -123,8 +123,18 @@ export default function Layout() {
   const [menuAberto, setMenuAberto] = useState(false);
   const local = useLocation();
   const msgNova = useMensagemNova();
+  const { loja, recarregarLoja } = useAuth();
+  // Aba Créditos só para a loja na modalidade Crédito (o ADM define no cadastro do comércio).
+  const menu = MENU.filter(i => i.para !== "/creditos" || loja?.modalidadeCobranca === "CREDITO");
 
   useEffect(() => { setMenuAberto(false); }, [local.pathname]);
+  // Mudanças do ADM (modalidade, permissões) valem sem sair: recarrega a loja ao voltar para a aba e a cada minuto.
+  useEffect(() => {
+    const atualizar = () => { if (document.visibilityState === "visible") recarregarLoja().catch(() => {}); };
+    document.addEventListener("visibilitychange", atualizar);
+    const t = setInterval(atualizar, 60000);
+    return () => { document.removeEventListener("visibilitychange", atualizar); clearInterval(t); };
+  }, [recarregarLoja]);
 
   return (
     <div className="loja-app">
@@ -134,7 +144,7 @@ export default function Layout() {
         </div>
         <button type="button" className="icone-btn loja-hamburguer" onClick={() => setMenuAberto(a => !a)} aria-label="Abrir menu" aria-expanded={menuAberto}>☰</button>
         <nav className={`loja-nav ${menuAberto ? "aberto" : ""}`}>
-          {MENU.map(i =>
+          {menu.map(i =>
             i.filhos ? (
               <Suspenso key={i.rotulo} item={i} ativo={local.pathname.startsWith(i.base)} />
             ) : (

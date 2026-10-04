@@ -159,6 +159,7 @@ function DetalheComercio({ id, onFechar, onAlterado }) {
                 <dt>Endereço principal</dt>
                 <dd>{(() => { const e = c.enderecos.find(x => x.principal) || c.enderecos[0]; return e ? `${e.rua}${e.numero ? ", " + e.numero : ""} · ${e.bairro || ""}` : "—"; })()}</dd>
                 <dt>Logins de acesso</dt><dd>{c.usuariosAdicionais.length}</dd>
+                <dt>Modalidade de cobrança</dt><dd>{c.modalidadeCobranca === "CREDITO" ? <Badge tom="aviso">Crédito (pré-pago)</Badge> : <Badge>Faturamento</Badge>}</dd>
                 <dt>Cadastrado via</dt><dd>{CADASTRO_VIA[c.cadastroVia] || "—"}</dd>
                 <dt>Desde</dt><dd>{data(c.dataInicio || c.createdAt)}</dd>
               </dl>

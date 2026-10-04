@@ -42,6 +42,9 @@ function dadosDoBody(body) {
     if (problema) throw erro400(problema);
     dados.documento = soDigitos(dados.documento);
   }
+  if (dados.modalidadeCobranca !== undefined && !["FATURAMENTO", "CREDITO"].includes(dados.modalidadeCobranca)) {
+    throw erro400("Modalidade de cobrança inválida: escolha Faturamento ou Crédito.");
+  }
   return dados;
 }
 

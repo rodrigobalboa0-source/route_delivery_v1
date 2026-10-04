@@ -39,6 +39,7 @@ export default function Conta() {
             <dt>Responsável</dt><dd>{loja.nomeCompleto || "—"}</dd>
             <dt>Telefone</dt><dd>{loja.telefone || "—"}</dd>
             <dt>E-mail</dt><dd>{loja.email || "—"}</dd>
+            <dt>Modalidade</dt><dd>{loja.modalidadeCobranca === "CREDITO" ? "Crédito (pré-pago)" : "Faturamento"}</dd>
             <dt>Pagamento</dt><dd>{loja.metodoPagamento || "—"}</dd>
             <dt>Veículos</dt><dd>{loja.precificacoesModal?.length ? loja.precificacoesModal.map(p => VEICULOS[p.veiculo] || p.veiculo).join(", ") : "Todos"}</dd>
             <dt>Cliente desde</dt><dd>{data(loja.createdAt)}</dd>
