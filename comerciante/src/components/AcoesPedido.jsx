@@ -1,4 +1,4 @@
-// Menu "Ações" do pedido no sistema da loja (Painel, Fila e detalhe do pedido).
+// Menu "Ações" do pedido no sistema da loja (Painel e detalhe do pedido).
 //   Antes do aceite: Pedido pronto, Editar, Detalhes, Finalizar*, Copiar link de rastreio, Escrever observação, Editar comércio*,
 //                    Reprocurar (pedido pronto), Cancelar
 //   Depois do aceite: + Editar entregador*, Bloquear entregador*, Trocar entregador (sem Reprocurar)

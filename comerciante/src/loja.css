@@ -231,27 +231,6 @@ input[type="datetime-local"], input[type="date"] { color-scheme: dark; }
 .filtro-suspenso .campo-check { padding-top: 0; }
 .tabela-aberto th { background: transparent; }
 
-/* ---------- Fila ---------- */
-
-.fila-online { display: inline-flex; align-items: center; gap: 7px; padding: 7px 12px; border-radius: 999px; background: var(--superficie); border: 1px solid var(--borda); }
-.fila-online i { width: 9px; height: 9px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px rgba(76, 194, 76, 0.2); }
-.fila-colunas { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; align-items: start; }
-.fila-coluna { background: var(--superficie); border: 1px solid var(--borda); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 8px; min-height: 160px; border-top: 3px solid var(--borda-forte); }
-.fila-aguardando { border-top-color: var(--amarelo); }
-.fila-coleta { border-top-color: #8b6cf0; }
-.fila-rota { border-top-color: var(--primaria); }
-.fila-coluna header { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; padding: 2px 2px 6px; }
-.fila-coluna header small { grid-column: 1 / -1; color: var(--texto-3); }
-.fila-qtd { min-width: 24px; height: 22px; border-radius: 999px; background: var(--superficie-2); display: grid; place-items: center; font-weight: 700; padding: 0 7px; }
-.fila-cartao { background: var(--superficie-2); border: 1px solid var(--borda); border-radius: 8px; padding: 9px 10px; cursor: pointer; display: flex; flex-direction: column; gap: 3px; }
-.fila-cartao:hover, .fila-cartao:focus { border-color: var(--primaria); outline: none; }
-.fila-cartao small { color: var(--texto-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fila-cartao-topo { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
-.fila-tempo { font-size: 11px; color: var(--texto-2); white-space: nowrap; }
-.fila-tempo.alerta { color: var(--critico); font-weight: 700; }
-.fila-cartao-rodape { display: flex; justify-content: space-between; align-items: center; gap: 6px; margin-top: 4px; }
-.fila-coluna .sem-registros { padding: 18px 6px; }
-
 /* ---------- Detalhe do pedido ---------- */
 
 .etapas { list-style: none; margin: 4px 0 18px; padding: 0; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
@@ -284,7 +263,6 @@ input[type="datetime-local"], input[type="date"] { color-scheme: dark; }
 @media (max-width: 1180px) {
   .painel-grade { grid-template-columns: 1fr; }
   .painel-lateral { position: static; max-height: none; }
-  .fila-colunas { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .topo-link { padding: 8px 9px; font-size: 12.5px; }
 }
 @media (max-width: 900px) {
@@ -298,7 +276,6 @@ input[type="datetime-local"], input[type="date"] { color-scheme: dark; }
 }
 @media (max-width: 640px) {
   .loja-conteudo { padding: 12px 12px 24px; }
-  .fila-colunas { grid-template-columns: 1fr; }
   .cr-nome, .cr-tel, .cr-comp, .cr-obs { flex-basis: 100%; }
   .cr-end { flex-basis: calc(100% - 44px); }
   .criar-rodape .btn-laranja { width: 100%; }

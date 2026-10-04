@@ -19,7 +19,6 @@ const ICONES = {
   painel: <><rect x="3" y="3" width="7" height="9" rx="1.5" /><rect x="14" y="3" width="7" height="5" rx="1.5" /><rect x="14" y="12" width="7" height="9" rx="1.5" /><rect x="3" y="16" width="7" height="5" rx="1.5" /></>,
   solicitar: <><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><path d="M14 3v6h6M12 12v6M9 15h6" /></>,
   relatorios: <><path d="M3 3v18h18" /><path d="M8 17v-5M13 17V8M18 17v-9" /></>,
-  fila: <><path d="M4 6h16M4 12h16M4 18h10" /></>,
   agenda: <><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M3 9h18M8 2v4M16 2v4" /></>,
   devolucao: <><path d="M9 14 4 9l5-5" /><path d="M4 9h11a5 5 0 0 1 0 10h-3" /></>,
   mensagens: <><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></>,
@@ -39,7 +38,6 @@ const MENU = [
     { para: "/relatorios/entregas", rotulo: "Entregas" },
     { para: "/relatorios/financeiro", rotulo: "Financeiro e faturas" },
   ] },
-  { para: "/fila", rotulo: "Fila", icone: "fila" },
   { rotulo: "Agendamentos", icone: "agenda", base: "/agendamentos", filhos: [
     { para: "/agendamentos", rotulo: "Entregas agendadas" },
     { para: "/agendamentos/novo", rotulo: "Novo agendamento" },

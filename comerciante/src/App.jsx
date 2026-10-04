@@ -7,7 +7,6 @@ import Login from "./pages/Login";
 import Painel from "./pages/Painel";
 import NovaEntrega from "./pages/NovaEntrega";
 import Pedidos from "./pages/Pedidos";
-import Fila from "./pages/Fila";
 import Agendamentos from "./pages/Agendamentos";
 import Devolucoes from "./pages/Devolucoes";
 import Financeiro from "./pages/Financeiro";
@@ -36,7 +35,6 @@ export default function App() {
           <Route path="entregas" element={<Pedidos />} />
           <Route path="financeiro" element={<Financeiro />} />
         </Route>
-        <Route path="fila" element={<Fila />} />
         <Route path="agendamentos" element={<Agendamentos />} />
         <Route path="agendamentos/novo" element={<NovaEntrega key="agendar" agendar />} />
         <Route path="devolucoes" element={<Devolucoes />} />

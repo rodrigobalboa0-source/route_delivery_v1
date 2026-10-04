@@ -1,9 +1,8 @@
 // Painel de Controle (modelo enviado pelo cliente):
 //   1) criação rápida de entrega numa linha (cliente, telefone, endereço, 📍, complemento, Retorno?, Criar Entrega);
-//   2) mapa largo com barra própria (mostrar/ocultar, +, −, ver todos) e, ao lado, os entregadores com pedidos da loja;
-//   3) entregas em aberto, com "Visualizar fila", busca e filtro.
+//   2) mapa largo com barra própria (mostrar/ocultar, +, −, ver todos);
+//   3) entregas em aberto, com busca e filtro.
 import { useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { useApi } from "../hooks/useApi";
@@ -122,7 +121,6 @@ const FILTROS = [
 const casaFiltro = (p, f) => (f === "COM_ENTREGADOR" ? COM_ENTREGADOR.includes(p.status) && p.status !== "ATRASADO" : p.status === f);
 
 function EmAberto({ pedidos, carregado, onAbrir, onPronto, ocupado, onAlterado }) {
-  const navegar = useNavigate();
   const [busca, setBusca] = useState("");
   const [filtros, setFiltros] = useState([]);
   const [filtroAberto, setFiltroAberto] = useState(false);
@@ -140,10 +138,6 @@ function EmAberto({ pedidos, carregado, onAbrir, onPronto, ocupado, onAlterado }
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 6h12v10H2zM14 10h4l3 3v3h-7" /><circle cx="6" cy="17.5" r="1.8" /><circle cx="17" cy="17.5" r="1.8" /></svg>
           Entregas em aberto: <strong>{pedidos.length}</strong>
         </span>
-        <button type="button" className="btn btn-amarelo" onClick={() => navegar("/fila")}>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></svg>
-          Visualizar fila
-        </button>
       </div>
       <div className="em-aberto-ferramentas">
         <div className="busca-icone">
