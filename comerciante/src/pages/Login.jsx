@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api } from "../api";
 import { useAuth } from "../auth";
+import { reduzirImagem } from "../utils/imagem";
 
 const SEGMENTOS = ["Restaurante", "Lanchonete", "Pizzaria", "Hamburgueria", "Farmácia", "Mercado", "Padaria", "Pet shop", "Floricultura", "Loja de roupas", "Outro"];
 const soDigitos = v => String(v || "").replace(/\D/g, "");
@@ -13,7 +14,17 @@ function CadastroLoja({ onVoltar }) {
   const [erro, setErro] = useState(null);
   const [enviando, setEnviando] = useState(false);
   const [feito, setFeito] = useState(null);
+  const [foto, setFoto] = useState(null);
   const set = k => e => setV(x => ({ ...x, [k]: e.target.value }));
+
+  // Foto da loja (logo ou fachada): reduzida aqui mesmo, antes de enviar.
+  async function escolherFoto(e) {
+    const arq = e.target.files?.[0];
+    e.target.value = "";
+    if (!arq) return;
+    setErro(null);
+    try { setFoto(await reduzirImagem(arq, 400, 0.85)); } catch (err) { setErro(err.message); }
+  }
 
   // CEP completo: preenche rua, bairro e cidade (ViaCEP).
   async function buscarCep(cep) {
@@ -33,7 +44,7 @@ function CadastroLoja({ onVoltar }) {
     try {
       const r = await api.post("/cadastro", {
         nomeFantasia: v.nomeFantasia, razaoSocial: v.razaoSocial, segmento: v.segmento, tipoDocumento: v.tipoDocumento, documento: v.documento,
-        nomeCompleto: v.nomeCompleto, telefone: v.telefone, email: v.email, senha: v.senha,
+        nomeCompleto: v.nomeCompleto, telefone: v.telefone, email: v.email, senha: v.senha, fotoUrl: foto,
         endereco: { cep: v.cep, rua: v.rua, numero: v.numero, complemento: v.complemento, bairro: v.bairro, cidade: v.cidade },
       });
       setFeito(r.mensagem);
@@ -60,6 +71,23 @@ function CadastroLoja({ onVoltar }) {
       <p className="subtitulo">Preencha os dados da loja. A equipe Route Delivery confere e libera o seu acesso.</p>
       <form onSubmit={enviar} className="form-acesso form-cadastro-loja">
         <h3>Dados da loja</h3>
+        <div className="foto-loja-cadastro">
+          <label className="foto-loja-previa" title="Escolher foto da loja">
+            {foto ? <img src={foto} alt="Foto da loja" /> : <span aria-hidden="true">📷</span>}
+            <input type="file" accept="image/*" onChange={escolherFoto} aria-label="Foto da loja" />
+          </label>
+          <div>
+            <span className="campo-rotulo">Foto da loja</span>
+            <p className="apagado">Logo ou fachada. Aparece para os entregadores nas corridas.</p>
+            <div className="botoes">
+              <label className="btn btn-secundario btn-sm">
+                {foto ? "Trocar foto" : "Adicionar foto"}
+                <input type="file" accept="image/*" onChange={escolherFoto} hidden />
+              </label>
+              {foto && <button type="button" className="btn btn-fantasma btn-sm" onClick={() => setFoto(null)}>Remover</button>}
+            </div>
+          </div>
+        </div>
         <label className="campo"><span className="campo-rotulo">Nome da loja *</span><input value={v.nomeFantasia} onChange={set("nomeFantasia")} required autoFocus placeholder="Como os clientes conhecem" /></label>
         <label className="campo"><span className="campo-rotulo">Razão social</span><input value={v.razaoSocial} onChange={set("razaoSocial")} /></label>
         <label className="campo"><span className="campo-rotulo">Segmento</span>

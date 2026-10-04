@@ -1037,3 +1037,11 @@ code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-siz
 .form-cadastro-loja .linha-campos .campo { min-width: 0; }
 .acesso-cartao { max-height: 100vh; overflow-y: auto; }
 @media (max-width: 520px) { .form-cadastro-loja .linha-campos .campo { flex: 1 1 100% !important; } }
+
+/* Cadastre sua Loja: foto */
+.foto-loja-cadastro { display: flex; gap: 14px; align-items: center; }
+.foto-loja-cadastro p { margin: 2px 0 8px; font-size: 12px; }
+.foto-loja-previa { position: relative; flex: 0 0 84px; width: 84px; height: 84px; border-radius: 16px; border: 2px dashed var(--borda); display: grid; place-items: center; font-size: 28px; overflow: hidden; cursor: pointer; background: var(--superficie-2, transparent); }
+.foto-loja-previa img { width: 100%; height: 100%; object-fit: cover; }
+.foto-loja-previa input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.foto-loja-cadastro .btn input[hidden] { display: none; }

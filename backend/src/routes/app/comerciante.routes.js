@@ -82,6 +82,11 @@ router.post(
     const e = b.endereco || {};
     const endereco = { cep: soDigitos(e.cep).slice(0, 8) || null, rua: txt(e.rua), numero: txt(e.numero, 20), complemento: txt(e.complemento) || null, bairro: txt(e.bairro, 80), cidade: txt(e.cidade, 80) };
     if (!endereco.rua || !endereco.numero || !endereco.bairro || !endereco.cidade) throw erroHttp(400, "Preencha o endereço de coleta (rua, número, bairro e cidade).");
+    // Foto da loja (opcional): imagem já reduzida no navegador, como data URL.
+    const fotoUrl = b.fotoUrl ? String(b.fotoUrl) : null;
+    if (fotoUrl && (!/^data:image\/(jpeg|jpg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(fotoUrl) || fotoUrl.length > 1.5 * 1024 * 1024)) {
+      throw erroHttp(400, "Foto inválida: escolha uma imagem JPG ou PNG.");
+    }
 
     if (await prisma.comercioUsuario.findFirst({ where: { email: { equals: email, mode: "insensitive" } } })) {
       throw erroHttp(409, "Este e-mail já tem acesso a uma loja. Use outro e-mail ou entre com a sua senha.");
@@ -96,7 +101,7 @@ router.post(
     const comercio = await prisma.comercio.create({
       data: {
         nomeFantasia, razaoSocial: txt(b.razaoSocial) || null, segmento: txt(b.segmento, 60) || null, tipoDocumento, documento,
-        nomeCompleto, telefone, email, cadastroVia: "SISTEMA_DO_COMERCIANTE", situacaoCadastro: "EM_ANALISE", dataInicio: new Date(),
+        nomeCompleto, telefone, email, fotoUrl, cadastroVia: "SISTEMA_DO_COMERCIANTE", situacaoCadastro: "EM_ANALISE", dataInicio: new Date(),
         enderecos: { create: [{ ...endereco, lat: pos?.lat ?? null, lng: pos?.lng ?? null, principal: true }] },
         usuariosAdicionais: { create: [{ email, senhaHash: await bcrypt.hash(senha, 10) }] },
       },
