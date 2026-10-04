@@ -33,6 +33,7 @@ router.post(
     if (!usuario || !(await bcrypt.compare(senha, usuario.senhaHash))) {
       return res.status(401).json({ erro: "Credenciais inválidas." });
     }
+    if (usuario.comercio.situacaoCadastro !== "ATIVO") return res.status(403).json({ erro: mensagemSituacao(usuario.comercio) });
     if (usuario.comercio.bloqueado) {
       return res.status(403).json({ erro: "Este comércio está bloqueado. Fale com o suporte." });
     }
@@ -48,6 +49,64 @@ router.post(
   })
 );
 
+// Cadastro feito pela loja: em análise até a equipe aprovar (ou recusado).
+function mensagemSituacao(c) {
+  if (c.situacaoCadastro === "EM_ANALISE") return "Seu cadastro está em análise. Assim que a equipe Route Delivery aprovar, você já consegue entrar.";
+  return `Seu cadastro não foi aprovado${c.motivoRecusa ? `: ${c.motivoRecusa}` : ""}. Fale com a equipe Route Delivery.`;
+}
+
+// POST /api/app/comerciante/cadastro — "Cadastre sua Loja" na tela de login (público).
+// { nomeFantasia, razaoSocial?, segmento?, tipoDocumento: CPF|CNPJ, documento, nomeCompleto, telefone,
+//   email, senha, endereco: { cep, rua, numero, complemento?, bairro, cidade } }
+router.post(
+  "/cadastro",
+  asyncHandler(async (req, res) => {
+    const b = req.body || {};
+    const txt = (v, max = 120) => String(v ?? "").trim().slice(0, max);
+    const { soDigitos, erroDocumento } = require("../../utils/documento");
+    const nomeFantasia = txt(b.nomeFantasia);
+    if (!nomeFantasia) throw erroHttp(400, "Informe o nome da loja.");
+    const tipoDocumento = b.tipoDocumento === "CPF" ? "CPF" : "CNPJ";
+    const documento = soDigitos(b.documento);
+    if (!documento) throw erroHttp(400, `Informe o ${tipoDocumento}.`);
+    const errDoc = erroDocumento(tipoDocumento, documento);
+    if (errDoc) throw erroHttp(400, errDoc);
+    const nomeCompleto = txt(b.nomeCompleto);
+    if (!nomeCompleto) throw erroHttp(400, "Informe o nome do responsável.");
+    const telefone = soDigitos(b.telefone);
+    if (telefone.length < 10 || telefone.length > 13) throw erroHttp(400, "Telefone inválido (com DDD).");
+    const email = txt(b.email).toLowerCase();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw erroHttp(400, "E-mail inválido.");
+    const senha = String(b.senha || "");
+    if (senha.length < 6) throw erroHttp(400, "A senha precisa ter pelo menos 6 caracteres.");
+    const e = b.endereco || {};
+    const endereco = { cep: soDigitos(e.cep).slice(0, 8) || null, rua: txt(e.rua), numero: txt(e.numero, 20), complemento: txt(e.complemento) || null, bairro: txt(e.bairro, 80), cidade: txt(e.cidade, 80) };
+    if (!endereco.rua || !endereco.numero || !endereco.bairro || !endereco.cidade) throw erroHttp(400, "Preencha o endereço de coleta (rua, número, bairro e cidade).");
+
+    if (await prisma.comercioUsuario.findFirst({ where: { email: { equals: email, mode: "insensitive" } } })) {
+      throw erroHttp(409, "Este e-mail já tem acesso a uma loja. Use outro e-mail ou entre com a sua senha.");
+    }
+    if (await prisma.comercio.findFirst({ where: { documento } })) {
+      throw erroHttp(409, `Já existe uma loja cadastrada com este ${tipoDocumento}. Fale com a equipe Route Delivery.`);
+    }
+    // Posição da loja no mapa (melhor esforço; sem ela a equipe ajusta na aprovação).
+    const { geocodificarEndereco } = require("../../utils/geo");
+    const pos = await geocodificarEndereco(`${endereco.rua}, ${endereco.numero} - ${endereco.bairro}, ${endereco.cidade}${endereco.cep ? `, ${endereco.cep}` : ""}`).catch(() => null);
+
+    const comercio = await prisma.comercio.create({
+      data: {
+        nomeFantasia, razaoSocial: txt(b.razaoSocial) || null, segmento: txt(b.segmento, 60) || null, tipoDocumento, documento,
+        nomeCompleto, telefone, email, cadastroVia: "SISTEMA_DO_COMERCIANTE", situacaoCadastro: "EM_ANALISE", dataInicio: new Date(),
+        enderecos: { create: [{ ...endereco, lat: pos?.lat ?? null, lng: pos?.lng ?? null, principal: true }] },
+        usuariosAdicionais: { create: [{ email, senhaHash: await bcrypt.hash(senha, 10) }] },
+      },
+      select: { id: true, nomeFantasia: true },
+    });
+    await prisma.notificacao.create({ data: { tipo: "cadastro", texto: `Nova loja se cadastrou: ${nomeFantasia} (${nomeCompleto}). Aprove em Cadastros › Comércio.` } }).catch(() => {});
+    res.status(201).json({ ok: true, comercio, mensagem: "Cadastro enviado! Assim que a equipe aprovar, você já consegue entrar com o seu e-mail e senha." });
+  })
+);
+
 // ---------- Autenticado ----------
 
 router.use(requireAuth, requireTipo(TIPOS.COMERCIANTE));
@@ -58,6 +117,7 @@ router.use(
     const usuario = await prisma.comercioUsuario.findUnique({ where: { id: req.conta.id }, include: { comercio: true } });
     if (!usuario) return res.status(401).json({ erro: "Usuário não encontrado." });
     if (usuario.comercio.bloqueado) return res.status(403).json({ erro: "Este comércio está bloqueado. Fale com o suporte." });
+    if (usuario.comercio.situacaoCadastro !== "ATIVO") return res.status(403).json({ erro: mensagemSituacao(usuario.comercio) });
     req.comercio = usuario.comercio;
     next();
   })

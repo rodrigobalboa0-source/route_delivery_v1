@@ -1029,3 +1029,11 @@ code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-siz
 .google-passos { margin: 6px 0 0; padding-left: 18px; font-size: 12.5px; color: var(--texto-2); display: grid; gap: 3px; }
 .google-teste { display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; align-items: end; margin-top: 10px; }
 @media (max-width: 700px) { .google-teste { grid-template-columns: 1fr; } }
+/* Login: "Cadastre sua Loja" */
+.cadastre-loja { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--borda); display: flex; flex-direction: column; gap: 8px; text-align: center; }
+.cadastre-loja span { font-size: 13px; color: var(--texto-2); }
+.form-cadastro-loja h3 { margin: 10px 0 0; font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--texto-2); }
+.form-cadastro-loja .linha-campos { display: flex; gap: 10px; flex-wrap: wrap; }
+.form-cadastro-loja .linha-campos .campo { min-width: 0; }
+.acesso-cartao { max-height: 100vh; overflow-y: auto; }
+@media (max-width: 520px) { .form-cadastro-loja .linha-campos .campo { flex: 1 1 100% !important; } }

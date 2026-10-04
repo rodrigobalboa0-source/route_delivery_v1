@@ -187,6 +187,9 @@ model Comercio {
   observacoes       String?
   // Comércio bloqueado não consegue entrar no sistema do comerciante nem criar pedidos.
   bloqueado         Boolean   @default(false)
+  // Cadastro feito pela própria loja (tela de login › "Cadastre sua Loja"): EM_ANALISE até o ADM aprovar.
+  situacaoCadastro  String    @default("ATIVO") // ATIVO | EM_ANALISE | RECUSADO
+  motivoRecusa      String?
   // Permissões da loja (ADM › Configurações › Permissões da loja), por loja:
   lojaPodeFinalizar          Boolean @default(false) // finalizar pedido pelo sistema da loja
   lojaPodeEditarComercio     Boolean @default(false) // editar os próprios dados (nome, logo, endereço de coleta)

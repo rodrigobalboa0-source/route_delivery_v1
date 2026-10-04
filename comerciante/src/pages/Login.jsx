@@ -1,5 +1,106 @@
 import { useState } from "react";
+import { api } from "../api";
 import { useAuth } from "../auth";
+
+const SEGMENTOS = ["Restaurante", "Lanchonete", "Pizzaria", "Hamburgueria", "Farmácia", "Mercado", "Padaria", "Pet shop", "Floricultura", "Loja de roupas", "Outro"];
+const soDigitos = v => String(v || "").replace(/\D/g, "");
+const mascaraTel = v => { const d = soDigitos(v).slice(0, 11); return d.length <= 10 ? d.replace(/(\d{2})(\d{0,4})(\d{0,4})/, (_, a, b, c) => [a && `(${a}`, a?.length === 2 && ") ", b, c && `-${c}`].filter(Boolean).join("")) : d.replace(/(\d{2})(\d{5})(\d{4})/, "($1) $2-$3"); };
+const mascaraDoc = (tipo, v) => { const d = soDigitos(v); return tipo === "CPF" ? d.slice(0, 11).replace(/(\d{3})(\d{3})(\d{3})(\d{0,2})/, "$1.$2.$3-$4").replace(/[.-]$/, "") : d.slice(0, 14).replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{0,2})/, "$1.$2.$3/$4-$5").replace(/[./-]$/, ""); };
+
+// "Cadastre sua Loja": a loja se cadastra sozinha; fica em análise até a equipe aprovar no ADM.
+function CadastroLoja({ onVoltar }) {
+  const [v, setV] = useState({ nomeFantasia: "", razaoSocial: "", segmento: "", tipoDocumento: "CNPJ", documento: "", nomeCompleto: "", telefone: "", email: "", senha: "", senha2: "", cep: "", rua: "", numero: "", complemento: "", bairro: "", cidade: "" });
+  const [erro, setErro] = useState(null);
+  const [enviando, setEnviando] = useState(false);
+  const [feito, setFeito] = useState(null);
+  const set = k => e => setV(x => ({ ...x, [k]: e.target.value }));
+
+  // CEP completo: preenche rua, bairro e cidade (ViaCEP).
+  async function buscarCep(cep) {
+    const d = soDigitos(cep);
+    if (d.length !== 8) return;
+    try {
+      const r = await fetch(`https://viacep.com.br/ws/${d}/json/`).then(x => x.json());
+      if (!r.erro) setV(x => ({ ...x, rua: x.rua || r.logradouro || "", bairro: x.bairro || r.bairro || "", cidade: x.cidade || (r.localidade ? `${r.localidade}${r.uf ? ` - ${r.uf}` : ""}` : "") }));
+    } catch { /* sem internet para o CEP: preenche à mão */ }
+  }
+
+  async function enviar(e) {
+    e.preventDefault();
+    setErro(null);
+    if (v.senha !== v.senha2) { setErro("As senhas não conferem."); return; }
+    setEnviando(true);
+    try {
+      const r = await api.post("/cadastro", {
+        nomeFantasia: v.nomeFantasia, razaoSocial: v.razaoSocial, segmento: v.segmento, tipoDocumento: v.tipoDocumento, documento: v.documento,
+        nomeCompleto: v.nomeCompleto, telefone: v.telefone, email: v.email, senha: v.senha,
+        endereco: { cep: v.cep, rua: v.rua, numero: v.numero, complemento: v.complemento, bairro: v.bairro, cidade: v.cidade },
+      });
+      setFeito(r.mensagem);
+    } catch (err) {
+      setErro(err.message);
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  if (feito) {
+    return (
+      <>
+        <h1>Cadastro enviado! ✓</h1>
+        <p className="subtitulo">{feito}</p>
+        <button type="button" className="btn btn-primario btn-bloco" onClick={onVoltar}>Voltar para o login</button>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <h1>Cadastre sua Loja</h1>
+      <p className="subtitulo">Preencha os dados da loja. A equipe Route Delivery confere e libera o seu acesso.</p>
+      <form onSubmit={enviar} className="form-acesso form-cadastro-loja">
+        <h3>Dados da loja</h3>
+        <label className="campo"><span className="campo-rotulo">Nome da loja *</span><input value={v.nomeFantasia} onChange={set("nomeFantasia")} required autoFocus placeholder="Como os clientes conhecem" /></label>
+        <label className="campo"><span className="campo-rotulo">Razão social</span><input value={v.razaoSocial} onChange={set("razaoSocial")} /></label>
+        <label className="campo"><span className="campo-rotulo">Segmento</span>
+          <select value={v.segmento} onChange={set("segmento")}><option value="">Escolha…</option>{SEGMENTOS.map(s => <option key={s}>{s}</option>)}</select>
+        </label>
+        <div className="linha-campos">
+          <label className="campo" style={{ flex: "0 0 96px" }}><span className="campo-rotulo">Documento</span>
+            <select value={v.tipoDocumento} onChange={e => setV(x => ({ ...x, tipoDocumento: e.target.value, documento: "" }))}><option>CNPJ</option><option>CPF</option></select>
+          </label>
+          <label className="campo" style={{ flex: 1 }}><span className="campo-rotulo">{v.tipoDocumento} *</span><input value={mascaraDoc(v.tipoDocumento, v.documento)} onChange={e => setV(x => ({ ...x, documento: soDigitos(e.target.value) }))} inputMode="numeric" required /></label>
+        </div>
+        <label className="campo"><span className="campo-rotulo">Nome do responsável *</span><input value={v.nomeCompleto} onChange={set("nomeCompleto")} required /></label>
+        <label className="campo"><span className="campo-rotulo">Telefone / WhatsApp *</span><input value={mascaraTel(v.telefone)} onChange={e => setV(x => ({ ...x, telefone: soDigitos(e.target.value) }))} inputMode="tel" required placeholder="(11) 98765-4321" /></label>
+
+        <h3>Endereço de coleta</h3>
+        <div className="linha-campos">
+          <label className="campo" style={{ flex: "0 0 130px" }}><span className="campo-rotulo">CEP</span><input value={v.cep} onChange={e => { set("cep")(e); buscarCep(e.target.value); }} inputMode="numeric" placeholder="00000-000" /></label>
+          <label className="campo" style={{ flex: 1 }}><span className="campo-rotulo">Rua *</span><input value={v.rua} onChange={set("rua")} required /></label>
+        </div>
+        <div className="linha-campos">
+          <label className="campo" style={{ flex: "0 0 110px" }}><span className="campo-rotulo">Número *</span><input value={v.numero} onChange={set("numero")} required /></label>
+          <label className="campo" style={{ flex: 1 }}><span className="campo-rotulo">Complemento</span><input value={v.complemento} onChange={set("complemento")} /></label>
+        </div>
+        <div className="linha-campos">
+          <label className="campo" style={{ flex: 1 }}><span className="campo-rotulo">Bairro *</span><input value={v.bairro} onChange={set("bairro")} required /></label>
+          <label className="campo" style={{ flex: 1 }}><span className="campo-rotulo">Cidade *</span><input value={v.cidade} onChange={set("cidade")} required /></label>
+        </div>
+
+        <h3>Acesso ao sistema</h3>
+        <label className="campo"><span className="campo-rotulo">E-mail *</span><input type="email" autoComplete="username" value={v.email} onChange={set("email")} required /></label>
+        <div className="linha-campos">
+          <label className="campo" style={{ flex: 1 }}><span className="campo-rotulo">Senha *</span><input type="password" autoComplete="new-password" minLength={6} value={v.senha} onChange={set("senha")} required placeholder="Mínimo 6 caracteres" /></label>
+          <label className="campo" style={{ flex: 1 }}><span className="campo-rotulo">Repita a senha *</span><input type="password" autoComplete="new-password" value={v.senha2} onChange={set("senha2")} required /></label>
+        </div>
+        {erro && <div className="erro-caixa" role="alert">{erro}</div>}
+        <button type="submit" className="btn btn-primario btn-bloco" disabled={enviando}>{enviando ? "Enviando…" : "Enviar cadastro"}</button>
+        <button type="button" className="link centro" onClick={onVoltar}>Já tenho cadastro — entrar</button>
+      </form>
+    </>
+  );
+}
 
 // Capa ilustrada: mapa de ruas estilizado, a loja, a rota e o motoboy a caminho do cliente.
 function CapaAcesso() {
@@ -72,6 +173,7 @@ export default function Login() {
   const [senha, setSenha] = useState("");
   const [erro, setErro] = useState(null);
   const [enviando, setEnviando] = useState(false);
+  const [cadastrando, setCadastrando] = useState(false);
 
   async function enviar(e) {
     e.preventDefault();
@@ -97,8 +199,9 @@ export default function Login() {
             <small>Sistema do comerciante</small>
           </div>
         </div>
+        {cadastrando ? <CadastroLoja onVoltar={() => setCadastrando(false)} /> : <>
         <h1>Entrar na sua loja</h1>
-        <p className="subtitulo">Use o e-mail e a senha que a Route Delivery cadastrou para o seu comércio.</p>
+        <p className="subtitulo">Use o e-mail e a senha da sua loja.</p>
         <form onSubmit={enviar} className="form-acesso">
           <label className="campo">
             <span className="campo-rotulo">E-mail</span>
@@ -114,6 +217,11 @@ export default function Login() {
           </button>
           <p className="apagado centro" style={{ fontSize: 12, margin: 0 }}>Esqueceu a senha? Fale com a equipe Route Delivery.</p>
         </form>
+        <div className="cadastre-loja">
+          <span>Ainda não trabalha com a gente?</span>
+          <button type="button" className="btn btn-laranja btn-bloco" onClick={() => setCadastrando(true)}>Cadastre sua Loja</button>
+        </div>
+        </>}
       </div>
     </div>
   );

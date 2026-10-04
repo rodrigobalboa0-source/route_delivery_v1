@@ -95,10 +95,11 @@ async function validarSenha(senha) {
 router.get(
   "/",
   asyncHandler(async (req, res) => {
-    const { busca, bloqueado } = req.query;
+    const { busca, bloqueado, situacao } = req.query;
     const where = {};
     if (bloqueado === "true") where.bloqueado = true;
-    if (bloqueado === "false") where.bloqueado = false;
+    if (bloqueado === "false") Object.assign(where, { bloqueado: false, situacaoCadastro: "ATIVO" });
+    if (["ATIVO", "EM_ANALISE", "RECUSADO"].includes(situacao)) where.situacaoCadastro = situacao;
     if (busca) {
       where.OR = [
         { nomeFantasia: { contains: busca, mode: "insensitive" } },
@@ -197,11 +198,13 @@ router.put(
 router.get(
   "/contagem",
   asyncHandler(async (req, res) => {
-    const [total, bloqueados] = await Promise.all([
+    const [total, bloqueados, emAnalise, ativos] = await Promise.all([
       prisma.comercio.count(),
       prisma.comercio.count({ where: { bloqueado: true } }),
+      prisma.comercio.count({ where: { situacaoCadastro: "EM_ANALISE" } }),
+      prisma.comercio.count({ where: { bloqueado: false, situacaoCadastro: "ATIVO" } }),
     ]);
-    res.json({ total, ativos: total - bloqueados, bloqueados });
+    res.json({ total, ativos, bloqueados, emAnalise });
   })
 );
 
@@ -390,6 +393,28 @@ router.patch(
     res.json(await prisma.comercio.update({ where: { id: req.params.id }, data: { bloqueado: true }, include: INCLUDE_PADRAO }));
   })
 );
+// PATCH /api/comercios/:id/cadastro { situacao: ATIVO|RECUSADO, motivo? } — aprova ou recusa a loja que se cadastrou sozinha
+router.patch(
+  "/:id/cadastro",
+  asyncHandler(async (req, res) => {
+    const situacao = req.body?.situacao;
+    if (!["ATIVO", "RECUSADO"].includes(situacao)) return res.status(400).json({ erro: "Escolha aprovar ou recusar." });
+    const motivo = String(req.body?.motivo || "").trim().slice(0, 300) || null;
+    if (situacao === "RECUSADO" && !motivo) return res.status(400).json({ erro: "Informe o motivo da recusa (a loja vê ao tentar entrar)." });
+    const c = await prisma.comercio.update({ where: { id: req.params.id }, data: { situacaoCadastro: situacao, motivoRecusa: situacao === "RECUSADO" ? motivo : null }, include: INCLUDE_PADRAO });
+    // Avisa a loja por e-mail (se o envio de e-mail estiver configurado).
+    if (c.email) {
+      const { enviarEmail, htmlSimples } = require("../services/email.service");
+      const titulo = situacao === "ATIVO" ? "Sua loja foi aprovada! ✓" : "Cadastro da loja não aprovado";
+      const texto = situacao === "ATIVO"
+        ? `Olá! O cadastro de ${c.nomeFantasia} na Route Delivery foi aprovado. Já dá para entrar no sistema do comerciante com o seu e-mail e senha.`
+        : `O cadastro de ${c.nomeFantasia} na Route Delivery não foi aprovado. Motivo: ${motivo}`;
+      require("../utils/segundoPlano").emSegundoPlano(() => enviarEmail({ para: c.email, assunto: titulo, texto, html: htmlSimples({ titulo, paragrafos: [texto] }) }), "E-mail cadastro loja");
+    }
+    res.json(c);
+  })
+);
+
 router.patch(
   "/:id/desbloquear",
   asyncHandler(async (req, res) => {

@@ -69,6 +69,45 @@ function AcessoSistema({ comercio, onAlterado, desabilitado }) {
   );
 }
 
+function SituacaoComercio({ c }) {
+  if (c.situacaoCadastro === "EM_ANALISE") return <Badge tom="aviso">Cadastro em análise</Badge>;
+  if (c.situacaoCadastro === "RECUSADO") return <Badge tom="critico">Cadastro recusado</Badge>;
+  return c.bloqueado ? <Badge tom="critico">Bloqueado</Badge> : <Badge tom="ok">Ativo</Badge>;
+}
+
+// Loja que se cadastrou pela tela de login: confere os dados e aprova (libera o login) ou recusa com motivo.
+function AprovarCadastro({ comercio, pode, onAlterado }) {
+  const [recusando, setRecusando] = useState(false);
+  const [motivo, setMotivo] = useState("");
+  const { executar, ocupado } = useAcao();
+  const e = comercio.enderecos.find(x => x.principal) || comercio.enderecos[0];
+  async function decidir(situacao) {
+    if (await executar(() => api.patch(`/comercios/${comercio.id}/cadastro`, { situacao, motivo }), situacao === "ATIVO" ? `${comercio.nomeFantasia} aprovada — a loja já pode entrar.` : "Cadastro recusado.")) {
+      setRecusando(false); onAlterado();
+    }
+  }
+  return (
+    <section className="bloco aviso-cadastro">
+      <h3>{comercio.situacaoCadastro === "EM_ANALISE" ? "Cadastro feito pela loja — aguardando aprovação" : "Cadastro recusado"}</h3>
+      {comercio.situacaoCadastro === "RECUSADO" && comercio.motivoRecusa && <p>Motivo: {comercio.motivoRecusa}</p>}
+      <p className="apagado">Confira os dados abaixo. Ao aprovar, a loja entra com o e-mail e a senha que cadastrou (e recebe um e-mail, se o envio estiver configurado).
+        {e && e.lat == null && <strong> O endereço de coleta ficou sem posição no mapa: ajuste em Editar cadastro antes de aprovar.</strong>}</p>
+      {pode && (recusando ? (
+        <div className="botoes">
+          <input value={motivo} onChange={ev => setMotivo(ev.target.value)} placeholder="Motivo da recusa (a loja vê ao tentar entrar)" style={{ flex: "1 1 260px" }} autoFocus />
+          <Botao variante="perigo" disabled={ocupado || !motivo.trim()} onClick={() => decidir("RECUSADO")}>Confirmar recusa</Botao>
+          <Botao variante="fantasma" onClick={() => setRecusando(false)}>Cancelar</Botao>
+        </div>
+      ) : (
+        <div className="botoes">
+          <Botao variante="primario" disabled={ocupado} onClick={() => decidir("ATIVO")}>✓ Aprovar loja</Botao>
+          {comercio.situacaoCadastro === "EM_ANALISE" && <Botao variante="perigo-leve" disabled={ocupado} onClick={() => setRecusando(true)}>Recusar</Botao>}
+        </div>
+      ))}
+    </section>
+  );
+}
+
 function DetalheComercio({ id, onFechar, onAlterado }) {
   const navegar = useNavigate();
   const { podeEditar } = useAuth();
@@ -87,7 +126,7 @@ function DetalheComercio({ id, onFechar, onAlterado }) {
   return (
     <Gaveta
       titulo={c?.nomeFantasia || "Comércio"}
-      subtitulo={c && (c.bloqueado ? <Badge tom="critico">Bloqueado</Badge> : <Badge tom="ok">Ativo</Badge>)}
+      subtitulo={c && <SituacaoComercio c={c} />}
       onFechar={onFechar}
     >
       <ErroCaixa erro={erro} />
@@ -107,6 +146,7 @@ function DetalheComercio({ id, onFechar, onAlterado }) {
                 <StatTile rotulo="Pedidos no total" valor={numero(c.estatisticas.totalPedidos)} />
                 <StatTile rotulo="Faturas em aberto" valor={moeda(c.estatisticas.faturasEmAberto)} tom={c.estatisticas.faturasEmAberto > 0 ? "aviso" : undefined} />
               </div>
+              {c.situacaoCadastro !== "ATIVO" && <AprovarCadastro comercio={c} pode={pode} onAlterado={alterado} />}
               <div className="botoes" style={{ marginBottom: 14 }}>
                 <Botao variante="primario" onClick={() => navegar(`/cadastros/comercios/${id}`)}>{pode ? "Editar cadastro" : "Ver cadastro completo"}</Botao>
               </div>
@@ -195,7 +235,7 @@ export default function Comercios() {
     return () => clearTimeout(t);
   }, [busca]);
 
-  const lista = useApi(`/comercios${qs({ busca: buscaAplicada, bloqueado: filtro })}`);
+  const lista = useApi(`/comercios${qs({ busca: buscaAplicada, ...(filtro === "analise" ? { situacao: "EM_ANALISE" } : { bloqueado: filtro }) })}`);
   const contagem = useApi("/comercios/contagem");
   const c = contagem.dados || {};
 
@@ -210,10 +250,11 @@ export default function Comercios() {
         {podeEditar("comercios") && <Botao variante="primario" onClick={() => navegar("/cadastros/comercios/novo")}>+ Novo cliente</Botao>}
       </Cabecalho>
 
-      <div className="grade-stats grade-stats-3">
+      <div className="grade-stats">
         <StatTile rotulo="Total" valor={numero(c.total)} ativo={filtro === ""} onClick={() => setFiltro("")} />
         <StatTile rotulo="Ativos" valor={numero(c.ativos)} ativo={filtro === "false"} onClick={() => setFiltro("false")} />
         <StatTile rotulo="Bloqueados" valor={numero(c.bloqueados)} tom={c.bloqueados > 0 ? "critico" : undefined} ativo={filtro === "true"} onClick={() => setFiltro("true")} />
+        <StatTile rotulo="Cadastros em análise" valor={numero(c.emAnalise)} detalhe="lojas que se cadastraram sozinhas" tom={c.emAnalise > 0 ? "aviso" : undefined} ativo={filtro === "analise"} onClick={() => setFiltro("analise")} />
       </div>
 
       <div className="filtros">
@@ -238,7 +279,7 @@ export default function Comercios() {
                           <div><strong>{x.nomeFantasia}</strong><div className="celula-sub">{x.telefone ? mascaraTelefone(x.telefone) : x.email || ""}</div></div>
                         </div>
                       </td>
-                      <td>{x.bloqueado ? <Badge tom="critico">Bloqueado</Badge> : <Badge tom="ok">Ativo</Badge>}</td>
+                      <td><SituacaoComercio c={x} /></td>
                       <td>{x.segmento || "—"}</td>
                       <td>
                         {e ? `${e.rua}${e.numero ? ", " + e.numero : ""}` : <span className="apagado">Sem endereço</span>}
