@@ -69,22 +69,41 @@ router.get(
       prisma.entregador.count({ where: { online: true } }),
       prisma.entregador.count({ where: { bloqueado: true } }),
     ]);
-    res.json({ emAnalise, ativos, inativos, online, bloqueados });
+    // ?cidade= (Operação por cidade): online só dos entregadores daquela cidade.
+    const cidade = String(req.query.cidade || "").trim();
+    const onlineCidade = cidade
+      ? (await filtrarPorCidade(await prisma.entregador.findMany({ where: { online: true }, select: { lat: true, lng: true, cidade: true } }), cidade)).length
+      : online;
+    res.json({ emAnalise, ativos, inativos, online: onlineCidade, bloqueados });
   })
 );
 
-// GET /api/entregadores/online — posições para o mapa do painel
+// Operação por cidade: entregador "da cidade" = está a até 30 km de alguma loja dela
+// (ou, sem posição, tem a cidade no cadastro).
+const RAIO_CIDADE_KM = 30;
+async function filtrarPorCidade(entregadores, cidade) {
+  if (!cidade) return entregadores;
+  const lojas = await prisma.comercioEndereco.findMany({
+    where: { cidade: { contains: cidade, mode: "insensitive" }, lat: { not: null } }, select: { lat: true, lng: true },
+  });
+  const { distanciaLinhaRetaKm } = require("../utils/geo");
+  const perto = e => e.lat != null && lojas.some(l => distanciaLinhaRetaKm({ lat: e.lat, lng: e.lng }, l) <= RAIO_CIDADE_KM);
+  const doCadastro = e => e.lat == null && String(e.cidade || "").toLowerCase().includes(cidade.toLowerCase());
+  return entregadores.filter(e => perto(e) || doCadastro(e));
+}
+
+// GET /api/entregadores/online?cidade= — posições para o mapa do painel
 router.get(
   "/online",
   asyncHandler(async (req, res) => {
     const entregadores = await prisma.entregador.findMany({
       where: { online: true, lat: { not: null }, lng: { not: null } },
       select: {
-        id: true, nomeCompleto: true, fotoUrl: true, veiculoTipo: true, lat: true, lng: true, localizacaoEm: true,
+        id: true, nomeCompleto: true, fotoUrl: true, veiculoTipo: true, lat: true, lng: true, localizacaoEm: true, cidade: true,
         pedidos: { where: { status: { in: COM_ENTREGADOR } }, select: { id: true, codigo: true } },
       },
     });
-    res.json(entregadores);
+    res.json(await filtrarPorCidade(entregadores, String(req.query.cidade || "").trim()));
   })
 );
 

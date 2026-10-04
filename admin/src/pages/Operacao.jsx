@@ -11,6 +11,8 @@ import DetalhePedido from "../components/DetalhePedido";
 import SeletorStatus from "../components/SeletorStatus";
 import { COM_ENTREGADOR, ORIGEM_PEDIDO, STATUS_PEDIDO, VEICULOS, moeda, numero, paraInputData, tempoRelativo } from "../utils/format";
 
+const CHAVE_CIDADE = "rd_adm_cidade_operacao";
+
 // Aba "Em aberto": tudo que ainda não terminou (nem entregue nem cancelado).
 const ABERTOS_LISTA = ["PREPARANDO", "PENDENTE", ...COM_ENTREGADOR];
 
@@ -156,8 +158,16 @@ export default function Operacao() {
   const aba = status === "ENTREGUE" ? "finalizados" : status === "CANCELADO" ? "cancelados" : (params.get("aba") || "abertos");
 
   const hoje = paraInputData(new Date());
-  const [cidadeDigitada, setCidadeDigitada] = useState("");
-  const [cidade, setCidade] = useState("");
+  // Operação por cidade: sempre uma cidade escolhida (lembrada neste navegador) — os pedidos não se misturam.
+  const { dados: cidades } = useApi("/pedidos/cidades");
+  const [cidadeSalva, setCidadeSalva] = useState(() => { try { return localStorage.getItem(CHAVE_CIDADE) || ""; } catch { return ""; } });
+  const cidade = cidades?.length ? (cidades.includes(cidadeSalva) ? cidadeSalva : cidades[0]) : "";
+  function escolherCidade(c) {
+    setCidadeSalva(c);
+    try { localStorage.setItem(CHAVE_CIDADE, c); } catch { /* sem armazenamento */ }
+    setComercioId("");
+    setSelecionados(new Set());
+  }
   const [comercioId, setComercioId] = useState("");
   const [origem, setOrigem] = useState("");
   const [desde, setDesde] = useState(hoje);
@@ -165,11 +175,6 @@ export default function Operacao() {
   const [selecionados, setSelecionados] = useState(new Set());
   const [atribuir, setAtribuir] = useState(null); // null | lista de pedidos alvo
   const { executar, ocupado } = useAcao();
-
-  useEffect(() => {
-    const t = setTimeout(() => setCidade(cidadeDigitada.trim()), 400);
-    return () => clearTimeout(t);
-  }, [cidadeDigitada]);
 
   // Datas vão sem fuso ("T00:00:00") para o servidor interpretar no horário local.
   // incluirAbertos: pedido ainda em aberto aparece mesmo que tenha sido criado antes do período escolhido.
@@ -180,13 +185,15 @@ export default function Operacao() {
   };
 
   const statusDaLista = status || { abertos: ABERTOS_LISTA.join(","), finalizados: "ENTREGUE", cancelados: "CANCELADO" }[aba];
-  const lista = useApi(`/pedidos${qs({ ...filtros, status: statusDaLista, limite: 500 })}`, { intervaloMs: 60000, aoVivo: ["pedidos"] });
-  const contagem = useApi(`/pedidos/contagem${qs(filtros)}`, { intervaloMs: 60000, aoVivo: ["pedidos"] });
-  const geral = useApi("/pedidos/contagem", { intervaloMs: 60000, aoVivo: ["pedidos"] }); // estado atual, sem filtros
-  const online = useApi("/entregadores/online", { intervaloMs: 60000, aoVivo: ["entregadores"] });
+  // Nada carrega antes de saber a cidade (evita mostrar todas as cidades misturadas por um instante).
+  const pronto = !!cidade || (cidades != null && cidades.length === 0); // nenhuma loja com cidade: mostra tudo
+  const lista = useApi(`/pedidos${qs({ ...filtros, status: statusDaLista, limite: 500 })}`, { intervaloMs: 60000, aoVivo: ["pedidos"], ativo: pronto });
+  const contagem = useApi(`/pedidos/contagem${qs(filtros)}`, { intervaloMs: 60000, aoVivo: ["pedidos"], ativo: pronto });
+  const geral = useApi(`/pedidos/contagem${qs({ cidade })}`, { intervaloMs: 60000, aoVivo: ["pedidos"], ativo: pronto }); // estado atual da cidade, sem os outros filtros
+  const online = useApi(`/entregadores/online${qs({ cidade })}`, { intervaloMs: 60000, aoVivo: ["entregadores"], ativo: pronto });
   // Pedidos em aberto no mapa (segue os filtros de loja, cidade e origem, mas não o de datas).
   const caminhoMapa = `/pedidos/mapa${qs({ comercioId, cidade, origem })}`;
-  const mapa = useApi(caminhoMapa, { intervaloMs: 60000, aoVivo: ["pedidos", "entregadores"] });
+  const mapa = useApi(caminhoMapa, { intervaloMs: 60000, aoVivo: ["pedidos", "entregadores"], ativo: pronto });
   const avisarNovo = useToast();
   const vistosNoMapa = useRef({ caminho: null, ids: null });
   useEffect(() => {
@@ -201,9 +208,10 @@ export default function Operacao() {
     vistosNoMapa.current = { caminho: caminhoMapa, ids };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapa.dados]);
-  const contagemEntregadores = useApi("/entregadores/contagem", { intervaloMs: 60000, aoVivo: ["entregadores"] });
-  const { dados: cidades } = useApi("/pedidos/cidades");
-  const { dados: comercios } = useApi("/comercios");
+  const contagemEntregadores = useApi(`/entregadores/contagem${qs({ cidade })}`, { intervaloMs: 60000, aoVivo: ["entregadores"], ativo: pronto });
+  const { dados: todosComercios } = useApi("/comercios");
+  // Só os comércios da cidade escolhida no filtro de comércio.
+  const comercios = (todosComercios || []).filter(x => x.enderecos?.some(e => (e.cidade || "").toLowerCase().includes(cidade.toLowerCase())));
 
   const pedidos = lista.dados || [];
   const c = contagem.dados || {};
@@ -276,15 +284,24 @@ export default function Operacao() {
   }
 
   function limparFiltros() {
-    setCidadeDigitada(""); setCidade(""); setComercioId(""); setOrigem(""); setDesde(hoje); setAte(hoje);
+    setComercioId(""); setOrigem(""); setDesde(hoje); setAte(hoje);
     mudarParam("status", "");
   }
 
-  const filtrosAtivos = cidade || comercioId || origem || status || desde !== hoje || ate !== hoje;
+  const filtrosAtivos = comercioId || origem || status || desde !== hoje || ate !== hoje;
 
   return (
     <div className="operacao">
-      <h1 className="op-titulo">Pedidos • Acompanhamento</h1>
+      <div className="op-topo">
+        <h1 className="op-titulo">Pedidos • Acompanhamento</h1>
+        <label className="op-cidade">
+          <span>Operação da cidade</span>
+          <select value={cidade} onChange={e => escolherCidade(e.target.value)} aria-label="Cidade da operação" disabled={!cidades?.length}>
+            {!cidades?.length && <option value="">Carregando…</option>}
+            {(cidades || []).map(x => <option key={x} value={x}>{x}</option>)}
+          </select>
+        </label>
+      </div>
 
       <section className="op-mapa">
         <MapaEntregadores entregadores={online.dados || []} pedidos={mapa.dados || []} carregado={mapa.dados != null && online.dados != null} altura="clamp(440px, 64vh, 820px)" onPedido={p => mudarParam("abrir", p.id)} />
@@ -327,17 +344,6 @@ export default function Operacao() {
       </section>
 
       <section className="op-filtros">
-        <label className="op-campo-busca">
-          <input
-            list="op-cidades"
-            placeholder="Cidade (Todas)"
-            aria-label="Cidade"
-            value={cidadeDigitada}
-            onChange={e => setCidadeDigitada(e.target.value)}
-          />
-          {Icone.lupa}
-          <datalist id="op-cidades">{(cidades || []).map(x => <option key={x} value={x} />)}</datalist>
-        </label>
         <select className="op-campo" value={comercioId} onChange={e => setComercioId(e.target.value)} aria-label="Comércio">
           <option value="">Comércio (Todos)</option>
           {(comercios || []).map(x => <option key={x.id} value={x.id}>{x.nomeFantasia}</option>)}
