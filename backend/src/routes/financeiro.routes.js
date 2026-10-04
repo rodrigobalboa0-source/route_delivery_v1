@@ -193,6 +193,7 @@ router.use(require("./financeiro/acertos.routes"));
 router.use(require("./financeiro/contasPagar.routes"));
 router.use(require("./financeiro/faturamento.routes"));
 router.use(require("./financeiro/creditos.routes"));
+router.use(require("./financeiro/saques.routes"));
 router.use(require("./financeiro/comissoesManuais.routes"));
 router.use(require("./financeiro/documentos.routes"));
 

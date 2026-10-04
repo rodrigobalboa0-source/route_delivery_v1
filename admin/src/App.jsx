@@ -29,6 +29,7 @@ import Acerto from "./pages/financeiro/Acerto";
 import ContasPagar from "./pages/financeiro/ContasPagar";
 import ContasReceber from "./pages/financeiro/ContasReceber";
 import Credito from "./pages/financeiro/Credito";
+import Saques from "./pages/financeiro/Saques";
 import Faturamento from "./pages/financeiro/Faturamento";
 import GerarNota from "./pages/financeiro/GerarNota";
 import GerarRecibo from "./pages/financeiro/GerarRecibo";
@@ -122,6 +123,7 @@ export default function App() {
           <Route path="contas-pagar" element={<ContasPagar />} />
           <Route path="contas-receber" element={<ContasReceber />} />
           <Route path="credito" element={<Credito />} />
+          <Route path="saques" element={<Saques />} />
           <Route path="faturamento" element={<Faturamento />} />
           <Route path="gerar-nota" element={<GerarNota />} />
           <Route path="gerar-recibo" element={<GerarRecibo />} />

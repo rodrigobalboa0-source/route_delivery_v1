@@ -20,28 +20,6 @@ function useCarregar(fn) {
   return { dados, erro, refresh: <RefreshControl refreshing={atualizando} onRefresh={puxar} tintColor={cor.texto2} /> };
 }
 
-// ---------- Ganhos ----------
-
-const buscarGanhos = () => api.get("/ganhos");
-
-// Carteira: só os ganhos de hoje (7 dias, mês, últimas entregas, comissões e regras de saque foram retirados a pedido do cliente).
-export function Carteira() {
-  const { dados: g, erro, refresh } = useCarregar(buscarGanhos);
-  return (
-    <ScrollView contentContainerStyle={st.tela} refreshControl={refresh}>
-      <Erro texto={erro} />
-      {g && (
-        <Cartao estilo={{ borderColor: cor.primaria }}>
-          <Text style={st.periodoTitulo}>Ganhos de hoje</Text>
-          <Text style={[st.grande, { fontSize: 30 }]}>{moeda(g.hoje.ganho)}</Text>
-          <Text style={st.periodoLinha}>{moeda(g.hoje.porEntregas)} pelas entregas · {moeda(g.hoje.comissoes)} em comissões</Text>
-          <Text style={st.periodoLinha}>{g.hoje.entregas} entrega(s) hoje · {km(g.hoje.distanciaKm || 0)} rodados nas entregas</Text>
-        </Cartao>
-      )}
-    </ScrollView>
-  );
-}
-
 // ---------- Mensagens (conversa com a equipe; ela responde pelo painel em Mensagens) ----------
 
 export function Mensagens() {
@@ -104,7 +82,7 @@ const DICAS = [
   ["map-pin", "Aceite uma corrida", "Em Disponíveis aparecem os pedidos prontos. Veja a loja, o destino e a distância e toque em Aceitar."],
   ["truck", "Siga as etapas", "Em Andamento: Cheguei na loja → Saí para entrega → Cheguei no cliente → Finalizar entrega. A equipe acompanha tudo no painel."],
   ["navigation", "Use a rota", "O botão Rota abre o Google Maps já com o destino. Você também pode ligar para a loja ou o cliente."],
-  ["credit-card", "Acompanhe seus ganhos", "O cartão Ganhos mostra o valor de hoje. Na Carteira ficam os ganhos da semana, do mês e as comissões."],
+  ["credit-card", "Acompanhe seus ganhos", "O cartão Ganhos mostra o valor de hoje. Na Carteira ficam o saldo, o extrato e o botão Retirar saldo (cadastre a sua conta bancária)."],
   ["message-square", "Precisa de ajuda?", "Use Suporte ou Mensagens para falar com a equipe da operação."],
 ];
 

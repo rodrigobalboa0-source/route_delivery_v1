@@ -15,7 +15,8 @@ import Entrada from "./src/telas/Entrada";
 import { registrarPush, useToqueNotificacao } from "./src/notificacoes";
 import { pararRastreioFundo } from "./src/localizacaoFundo"; // também registra a tarefa de localização em segundo plano
 import { ListaAndamento, ListaDisponiveis, PopupCorrida, useOperacao } from "./src/telas/Corridas";
-import { Carteira, Mensagens, Perfil, Promocoes, Treinamento } from "./src/telas/Outras";
+import { Mensagens, Perfil, Promocoes, Treinamento } from "./src/telas/Outras";
+import { Carteira } from "./src/telas/Carteira";
 import Ranking from "./src/telas/Ranking";
 
 const VERSAO = "v1.5.0";
@@ -238,7 +239,8 @@ function Principal({ entregador, setEntregador, onSair }) {
           </>
         ) : (
           <View style={{ flex: 1 }}>
-            <Text style={st.tituloTela}>{TITULOS[tela]}</Text>
+            {/* A Carteira tem o próprio cabeçalho ("Carteira / Extrato" + Retirar saldo). */}
+            {tela !== "carteira" && <Text style={st.tituloTela}>{TITULOS[tela]}</Text>}
             {tela === "disponiveis" && <ListaDisponiveis op={op} entregador={entregador} onAceitou={() => setTela("andamento")} />}
             {tela === "andamento" && <ListaAndamento op={op} />}
             {tela === "promocao" && <Promocoes />}

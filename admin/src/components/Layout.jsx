@@ -80,6 +80,7 @@ const SUBMENU_FINANCEIRO = [
   { para: "/financeiro/gerar-nota", rotulo: "Gerar Nota", icone: "documento" },
   { para: "/financeiro/gerar-recibo", rotulo: "Gerar Recibo", icone: "recibo" },
   { para: "/financeiro/comissao", rotulo: "Comissão", icone: "percentual" },
+  { para: "/financeiro/saques", rotulo: "Saques", icone: "saida" },
 ];
 
 // Ordem do menu definida pelo cliente — não reordenar.

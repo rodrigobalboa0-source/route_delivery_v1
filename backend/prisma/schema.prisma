@@ -316,6 +316,48 @@ model Entregador {
   comissoesManuais      ComissaoManual[]
   conversa              Conversa?
   bloqueiosLoja         ComercioEntregadorBloqueio[]
+  saques                SaqueEntregador[]
+  contaBancaria         ContaBancariaEntregador?
+}
+
+// Conta para receber os saques (cadastrada pelo entregador na Carteira, ao retirar o saldo).
+model ContaBancariaEntregador {
+  id            String     @id @default(cuid())
+  entregadorId  String     @unique
+  entregador    Entregador @relation(fields: [entregadorId], references: [id], onDelete: Cascade)
+  titular       String
+  documento     String     // CPF/CNPJ do titular (só números)
+  banco         String
+  agencia       String
+  conta         String
+  tipoConta     String     @default("CORRENTE") // CORRENTE | POUPANCA | PAGAMENTO
+  pixTipo       String?    // CPF | CNPJ | EMAIL | TELEFONE | ALEATORIA
+  pixChave      String?
+  updatedAt     DateTime   @updatedAt
+  createdAt     DateTime   @default(now())
+}
+
+// Saque do saldo da Carteira: o entregador pede no app; a equipe paga (ou recusa) em Financeiro › Saques.
+// Enquanto está em análise, o valor já sai do saldo (não dá para pedir duas vezes o mesmo dinheiro).
+model SaqueEntregador {
+  id            String     @id @default(cuid())
+  numero        Int        @unique @default(autoincrement())
+  entregadorId  String
+  entregador    Entregador @relation(fields: [entregadorId], references: [id], onDelete: Cascade)
+  tipo          TipoSaque  // NORMAL | RAPIDO
+  valor         Float
+  status        String     @default("PENDENTE") // PENDENTE | PAGO | RECUSADO
+  conta         Json       // cópia da conta bancária no momento do pedido
+  motivo        String?    // motivo da recusa
+  formaPagamento String?
+  observacao    String?
+  analisadoPor  String?
+  pagoEm        DateTime?
+  recusadoEm    DateTime?
+  createdAt     DateTime   @default(now())
+
+  @@index([entregadorId, createdAt])
+  @@index([status, createdAt])
 }
 
 // Mudanças do próprio entregador: cadastro, aprovação/inativação, bloqueio, online/offline.

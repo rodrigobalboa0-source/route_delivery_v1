@@ -1107,3 +1107,7 @@ code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-siz
   .menu-recolhido .menu .menu-icone { width: auto; font-size: 16px; }
 }
 @media (max-width: 900px) { .so-computador { display: none; } }
+
+/* Financeiro › Saques */
+.conta-saque { font-size: 13px; line-height: 1.45; }
+.conta-saque + .campo, form .conta-saque { margin-bottom: 12px; }

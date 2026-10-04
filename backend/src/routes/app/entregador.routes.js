@@ -800,6 +800,93 @@ router.get(
   })
 );
 
+// ---------- Carteira: saldo, extrato, conta bancária e saques ----------
+
+const carteira = require("../../services/carteira.service");
+const TIPOS_CONTA = ["CORRENTE", "POUPANCA", "PAGAMENTO"];
+const TIPOS_PIX = ["CPF", "CNPJ", "EMAIL", "TELEFONE", "ALEATORIA"];
+const SELECT_CONTA = { titular: true, documento: true, banco: true, agencia: true, conta: true, tipoConta: true, pixTipo: true, pixChave: true, updatedAt: true };
+
+function dadosConta(b = {}) {
+  const txt = (v, max = 80) => String(v ?? "").trim().slice(0, max);
+  const d = {
+    titular: txt(b.titular), documento: txt(b.documento).replace(/\D/g, ""), banco: txt(b.banco),
+    agencia: txt(b.agencia, 12), conta: txt(b.conta, 20), tipoConta: TIPOS_CONTA.includes(b.tipoConta) ? b.tipoConta : "CORRENTE",
+    pixTipo: TIPOS_PIX.includes(b.pixTipo) ? b.pixTipo : null, pixChave: txt(b.pixChave, 120) || null,
+  };
+  if (!d.titular) throw erroHttp(400, "Informe o nome do titular da conta.");
+  if (![11, 14].includes(d.documento.length)) throw erroHttp(400, "CPF ou CNPJ do titular inválido.");
+  if (!d.banco) throw erroHttp(400, "Informe o banco.");
+  if (!/^[\d-]{1,12}$/.test(d.agencia)) throw erroHttp(400, "Agência inválida (só números).");
+  if (!/^[\dXx-]{1,20}$/.test(d.conta)) throw erroHttp(400, "Número da conta inválido (números e dígito).");
+  if (!d.pixChave) d.pixTipo = null;
+  else if (!d.pixTipo) throw erroHttp(400, "Escolha o tipo da chave PIX.");
+  return d;
+}
+
+// GET /api/app/entregador/carteira — saldo, extrato completo, conta bancária e o que pode sacar hoje
+router.get(
+  "/carteira",
+  asyncHandler(async (req, res) => {
+    const hoje = carteira.hojeBrasilia();
+    const [{ saldo, movimentos }, conta, regras, feitos] = await Promise.all([
+      carteira.extrato(req.entregador.id),
+      prisma.contaBancariaEntregador.findUnique({ where: { entregadorId: req.entregador.id }, select: SELECT_CONTA }),
+      obterRegras(),
+      prisma.saqueEntregador.groupBy({ by: ["tipo"], where: { entregadorId: req.entregador.id, createdAt: { gte: hoje.inicio }, status: { not: "RECUSADO" } }, _count: true }),
+    ]);
+    const qtd = tipo => feitos.find(f => f.tipo === tipo)?._count || 0;
+    const saque = tipo => ({
+      limitePorSolicitacao: regras[tipo].limitePorSolicitacao, maxSolicitacoesDia: regras[tipo].maxSolicitacoesDia,
+      feitosHoje: qtd(tipo), ...carteira.situacaoRegra(regras[tipo], qtd(tipo), hoje),
+    });
+    res.json({ saldo, movimentos, conta, saques: { NORMAL: saque("NORMAL"), RAPIDO: saque("RAPIDO") } });
+  })
+);
+
+// PATCH /api/app/entregador/conta-bancaria — cadastra ou troca a conta para receber os saques
+router.patch(
+  "/conta-bancaria",
+  asyncHandler(async (req, res) => {
+    const data = dadosConta(req.body);
+    res.json(await prisma.contaBancariaEntregador.upsert({
+      where: { entregadorId: req.entregador.id }, create: { entregadorId: req.entregador.id, ...data }, update: data, select: SELECT_CONTA,
+    }));
+  })
+);
+
+// POST /api/app/entregador/saques { tipo: NORMAL|RAPIDO, valor } — pede o saque; o valor sai do saldo na hora
+// (em análise até a equipe pagar). Trava por entregador: dois pedidos ao mesmo tempo não sacam o mesmo dinheiro.
+router.post(
+  "/saques",
+  asyncHandler(async (req, res) => {
+    exigirAtivo(req);
+    const tipo = ["NORMAL", "RAPIDO"].includes(req.body?.tipo) ? req.body.tipo : null;
+    if (!tipo) throw erroHttp(400, "Escolha o tipo de saque.");
+    const valor = Math.round(Number(String(req.body?.valor ?? "").replace(",", ".")) * 100) / 100;
+    if (!Number.isFinite(valor) || valor <= 0) throw erroHttp(400, "Informe o valor do saque.");
+    const conta = await prisma.contaBancariaEntregador.findUnique({ where: { entregadorId: req.entregador.id }, select: SELECT_CONTA });
+    if (!conta) throw erroHttp(400, "Cadastre a conta bancária para receber o saque.");
+    const regra = (await obterRegras())[tipo];
+    if (regra.limitePorSolicitacao != null && valor > regra.limitePorSolicitacao + 1e-9) {
+      throw erroHttp(400, `O limite por saque é ${regra.limitePorSolicitacao.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}.`);
+    }
+    const hoje = carteira.hojeBrasilia();
+    const saque = await prisma.$transaction(async tx => {
+      await tx.$executeRawUnsafe("SELECT pg_advisory_xact_lock(hashtext($1))", `saque:${req.entregador.id}`);
+      const feitos = await tx.saqueEntregador.count({ where: { entregadorId: req.entregador.id, tipo, createdAt: { gte: hoje.inicio }, status: { not: "RECUSADO" } } });
+      const sit = carteira.situacaoRegra(regra, feitos, hoje);
+      if (!sit.pode) throw erroHttp(400, sit.motivo);
+      const { saldo } = await carteira.extrato(req.entregador.id, tx);
+      if (valor > saldo + 1e-9) throw erroHttp(400, `Saldo insuficiente (disponível: ${saldo.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}).`);
+      return tx.saqueEntregador.create({ data: { entregadorId: req.entregador.id, tipo, valor, conta } });
+    }, { timeout: 20000 });
+    const nome = carteira.ROTULO_SAQUE[tipo];
+    await prisma.notificacao.create({ data: { tipo: "financeiro", texto: `${req.entregador.nomeCompleto} pediu ${nome.toLowerCase()} de R$ ${valor.toFixed(2).replace(".", ",")}. Pague em Financeiro › Saques.` } }).catch(() => {});
+    res.status(201).json({ id: saque.id, numero: saque.numero, tipo, valor, status: saque.status });
+  })
+);
+
 // GET /api/app/entregador/ganhos — entregas concluídas hoje / 7 dias / mês.
 // `ganho` = comissão de cada entrega (mesma regra do Financeiro: tabela por faixas/percentual ou repasse fixo)
 //         + comissões lançadas/automáticas. É o valor do cartão "GANHOS" do app.
