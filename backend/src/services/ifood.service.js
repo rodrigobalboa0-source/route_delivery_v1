@@ -254,7 +254,7 @@ async function aoPedidoAlterado(evento) {
     const { calcularEntrega } = require("./pedidos.service");
     const destinoAprox = !novo.destino && cepBusca ? await require("../utils/geo").geocodificarEndereco(cepBusca).catch(() => null) : null;
     const c = await calcularEntrega({ comercioId: p.comercioId, endereco: novo.endereco, destino: novo.destino, destinoAprox, retorno: p.retorno }).catch(() => null);
-    if (c) Object.assign(data, { valor: c.valor, distanciaKm: c.distanciaKm, acrescimoRetorno: p.retorno ? c.acrescimoRetorno : null, latDestino: c.destino.lat, lngDestino: c.destino.lng });
+    if (c) Object.assign(data, { valor: c.valor, distanciaKm: c.distanciaKm, acrescimoRetorno: p.retorno ? c.acrescimoRetorno : null, acrescimoDinamico: c.acrescimoDinamico || null, regrasDinamicas: c.acrescimoDinamico ? c.descricaoDinamica : null, latDestino: c.destino.lat, lngDestino: c.destino.lng });
     else if (novo.destino) Object.assign(data, { latDestino: novo.destino.lat, lngDestino: novo.destino.lng, distanciaKm: null });
   }
   const tipos = Array.isArray(evento.metadata?.changes) ? evento.metadata.changes.map(x => x.type || x).join(", ") : "";

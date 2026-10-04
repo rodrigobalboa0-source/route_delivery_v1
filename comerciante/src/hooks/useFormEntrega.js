@@ -99,12 +99,14 @@ export function useFormEntrega({ vazio, onPrevia = () => {} }) {
   return { v, setV, mudar, escolherEndereco, aplicarCliente, calcular, calculo, cliente, retorno, setRetorno, veiculo, setVeiculo, destino, limpar, corpo, executar, ocupado };
 }
 
-// "✓ 3,2 km · R$ 14,40 (taxa R$ 12,00 + retorno 20% R$ 2,40)"
+// "✓ 3,2 km · R$ 17,28 (taxa R$ 12,00 + retorno 20% R$ 2,40 + preço dinâmico R$ 2,88 — Chuva (1,2x))"
 export function textoValor(calculo) {
   if (!calculo) return null;
   const base = `${Number(calculo.distanciaKm).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} km`;
-  const extra = calculo.acrescimoRetorno > 0
-    ? ` (taxa ${moeda(calculo.valorBase)} + retorno ${calculo.retornoPercentual}% ${moeda(calculo.acrescimoRetorno)})`
-    : "";
-  return { base, valor: moeda(calculo.valor), extra };
+  const partes = [
+    calculo.acrescimoRetorno > 0 && `retorno ${calculo.retornoPercentual}% ${moeda(calculo.acrescimoRetorno)}`,
+    calculo.acrescimoDinamico > 0 && `preço dinâmico ${moeda(calculo.acrescimoDinamico)} — ${calculo.descricaoDinamica}`,
+  ].filter(Boolean);
+  const extra = partes.length ? ` (taxa ${moeda(calculo.valorBase)} + ${partes.join(" + ")})` : "";
+  return { base, valor: moeda(calculo.valor), extra, dinamico: calculo.acrescimoDinamico > 0 ? calculo.descricaoDinamica : null };
 }

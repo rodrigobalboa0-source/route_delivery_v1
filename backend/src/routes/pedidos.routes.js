@@ -245,11 +245,16 @@ router.put(
     // Retorno ligado/desligado sem mexer no valor: recalcula a taxa (o app do entregador atualiza sozinho).
     let logRetorno = null;
     if (data.retorno !== undefined) {
-      const atualP = await prisma.pedido.findUnique({ where: { id: req.params.id }, select: { valor: true, retorno: true, acrescimoRetorno: true } });
+      const atualP = await prisma.pedido.findUnique({ where: { id: req.params.id }, select: { valor: true, retorno: true, acrescimoRetorno: true, acrescimoDinamico: true } });
       const valorMudou = data.valor !== undefined && atualP && data.valor !== atualP.valor;
       const novo = atualP && !valorMudou ? await recalcularRetorno(atualP, data.retorno) : null;
       if (novo) { data.valor = novo.valor; data.acrescimoRetorno = novo.acrescimoRetorno; logRetorno = novo.texto; }
       else if (valorMudou && !data.retorno) data.acrescimoRetorno = null;
+    }
+    // Valor digitado à mão pelo ADM: deixa de ter acréscimo de preço dinâmico separado.
+    if (data.valor !== undefined && data.retorno === undefined) {
+      const antes = await prisma.pedido.findUnique({ where: { id: req.params.id }, select: { valor: true } });
+      if (antes && data.valor !== antes.valor) Object.assign(data, { acrescimoDinamico: null, regrasDinamicas: null });
     }
     // Endereço mudou: a posição antiga no mapa não vale mais (o mapa localiza de novo).
     if (data.endereco !== undefined) {

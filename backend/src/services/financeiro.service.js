@@ -16,13 +16,19 @@ const km = v => `${String(v).replace(".", ",")} km`;
 //   5. comércio SEM tabela e entregador SEM repasse fixo -> tabela padrão da categoria do veículo
 //      (a primeira tabela de comissão cadastrada para Moto/Bike/Carro) — ver tabelaDo / comTabelaPadrao.
 // Entrega com retorno: soma o adicional do retorno (ver adicionalRetorno).
+// Preço dinâmico do entregador (regras gravadas no pedido): somado ao ganho na hora (oferta, carteira, acerto).
 function comissaoDoPedido(p) {
   if (p.acertoId && p.comissaoEntregador != null) return { valor: p.comissaoEntregador, regra: "Valor do acerto", tipo: "ACERTADO" };
-  const base = comissaoBase(p);
-  if (!p.retorno) return base;
-  const extra = adicionalRetorno(p, base.valor);
-  if (!extra.valor) return base;
-  return { ...base, valor: r2(base.valor + extra.valor), regra: `${base.regra} + ${extra.regra}`, adicionalRetorno: extra.valor };
+  let r = comissaoBase(p);
+  if (p.retorno) {
+    const extra = adicionalRetorno(p, r.valor);
+    if (extra.valor) r = { ...r, valor: r2(r.valor + extra.valor), regra: `${r.regra} + ${extra.regra}`, adicionalRetorno: extra.valor };
+  }
+  if (r.tipo !== "SEM_REGRA" && Array.isArray(p.dinamicoEntregador) && p.dinamicoEntregador.length) {
+    const bonus = require("./precoDinamico.service").bonusEntregador(r.valor, p.dinamicoEntregador);
+    if (bonus.valor) r = { ...r, valor: r2(r.valor + bonus.valor), regra: `${r.regra} + preço dinâmico (${bonus.descricao})`, bonusDinamico: bonus.valor };
+  }
+  return r;
 }
 
 // Adicional do entregador numa entrega com retorno à loja, conforme a tabela de comissão do comércio
@@ -69,8 +75,9 @@ function comissaoPelaTabela(p) {
     return { valor: 0, regra: "Entrega sem km calculado para a tabela por faixas", tipo: "SEM_REGRA" };
   }
   if (t && t.percentual != null) {
-    // % sobre a taxa sem o acréscimo do retorno (o retorno é pago à parte, sem contar duas vezes).
-    const pct = r2((((p.valor || 0) - (p.acrescimoRetorno || 0)) * t.percentual) / 100);
+    // % sobre a taxa sem o acréscimo do retorno (o retorno é pago à parte, sem contar duas vezes)
+    // e sem o preço dinâmico da loja (o entregador tem o próprio preço dinâmico).
+    const pct = r2((((p.valor || 0) - (p.acrescimoRetorno || 0) - (p.acrescimoDinamico || 0)) * t.percentual) / 100);
     const minimo = t.valorMinimo || 0;
     return {
       valor: r2(Math.max(pct, minimo)),

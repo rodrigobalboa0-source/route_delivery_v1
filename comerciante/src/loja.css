@@ -379,3 +379,6 @@ input[type="datetime-local"], input[type="date"] { color-scheme: dark; }
 .abas-com-acoes { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .abas-com-acoes > .baixar-grupo { margin-bottom: 10px; }
 @media (max-width: 760px) { .creditos-cartoes { grid-template-columns: 1fr; } }
+
+/* Preço dinâmico ativo no cálculo da entrega */
+.selo-dinamico { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 999px; background: rgba(245, 165, 36, 0.16); color: var(--aviso, #f5a524); font-size: 12px; font-weight: 700; }

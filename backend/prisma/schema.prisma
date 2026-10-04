@@ -563,6 +563,11 @@ model Pedido {
   // Entrega com retorno: o entregador volta à loja depois (maquininha, troco, devolução de mercadoria).
   retorno         Boolean      @default(false)
   acrescimoRetorno Float?      // quanto do "valor" é o acréscimo do retorno (Configurações › % do retorno)
+  // Preço dinâmico (Cadastros › Preço dinâmico): quanto do "valor" é o acréscimo cobrado da loja, e quais regras.
+  acrescimoDinamico Float?
+  regrasDinamicas   String?
+  // Preço dinâmico do entregador valendo para este pedido ([{ nome, tipoAplicacao, valor }]): somado ao ganho dele.
+  dinamicoEntregador Json?
   // Agendamento: o pedido fica "Criado" e é liberado sozinho para os entregadores neste horário.
   agendadoPara    DateTime?
   latDestino      Float?

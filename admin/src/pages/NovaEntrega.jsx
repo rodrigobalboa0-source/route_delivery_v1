@@ -145,7 +145,13 @@ export default function NovaEntrega() {
           {calculo && (
             <span className="sucesso-inline">
               ✓ {km(calculo.distanciaKm)} de percurso · {moeda(calculo.valor)}
-              {calculo.acrescimoRetorno > 0 && <span className="apagado"> (taxa {moeda(calculo.valorBase)} + retorno {calculo.retornoPercentual}% {moeda(calculo.acrescimoRetorno)})</span>}
+              {(calculo.acrescimoRetorno > 0 || calculo.acrescimoDinamico > 0) && (
+                <span className="apagado">
+                  {" "}(taxa {moeda(calculo.valorBase)}
+                  {calculo.acrescimoRetorno > 0 && <> + retorno {calculo.retornoPercentual}% {moeda(calculo.acrescimoRetorno)}</>}
+                  {calculo.acrescimoDinamico > 0 && <> + <strong style={{ color: "var(--aviso)" }}>preço dinâmico {moeda(calculo.acrescimoDinamico)}</strong> — {calculo.descricaoDinamica}</>})
+                </span>
+              )}
               {calculo.fonte && <span className="apagado"> · {calculo.fonte === "google" ? "Google Maps" : "OpenStreetMap"}</span>}
             </span>
           )}

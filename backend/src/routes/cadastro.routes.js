@@ -81,9 +81,28 @@ const avisarAoLigar = tipo => (regra, anterior) => {
   if (!regra.ativo || anterior?.ativo) return;
   require("../utils/segundoPlano").emSegundoPlano(() => require("../services/push.service").avisarTaxaDinamica(regra, tipo), "Push taxa dinâmica");
 };
+// Preço dinâmico do entregador mudou: as entregas abertas recebem (ou perdem) o bônus na hora.
+const aplicarNoEntregador = tipo => async () => {
+  if (tipo !== "entregador") return;
+  const n = await require("../services/precoDinamico.service").aplicarEntregadorNasAbertas();
+  if (n) console.log(`[preço dinâmico] ${n} entrega(s) aberta(s) atualizada(s)`);
+};
 const opcoesRegraPreco = (tipoPadrao, tipo) => ({
-  orderBy: { nome: "asc" }, beforeCreate: validarRegraPreco(tipoPadrao), beforeUpdate: validarRegraPreco(tipoPadrao), afterSave: avisarAoLigar(tipo),
+  orderBy: { nome: "asc" }, beforeCreate: validarRegraPreco(tipoPadrao), beforeUpdate: validarRegraPreco(tipoPadrao),
+  afterSave: async (regra, anterior) => { avisarAoLigar(tipo)(regra, anterior); await aplicarNoEntregador(tipo)(); },
+  afterDelete: aplicarNoEntregador(tipo),
 });
+// PATCH /:chave/:id/ativo { ativo } — liga/desliga a regra direto da lista (sem abrir a edição).
+const alternarRegra = (modelo, tipo) => async (req, res) => {
+  const anterior = await prisma[modelo].findUnique({ where: { id: req.params.id } });
+  if (!anterior) return res.status(404).json({ erro: "Regra não encontrada." });
+  const regra = await prisma[modelo].update({ where: { id: req.params.id }, data: { ativo: !!req.body?.ativo } });
+  avisarAoLigar(tipo)(regra, anterior);
+  await aplicarNoEntregador(tipo)();
+  res.json(regra);
+};
+router.patch("/preco-dinamico-demanda/:id/ativo", asyncHandler(alternarRegra("precoDinamicoDemanda", "demanda")));
+router.patch("/preco-dinamico-entregador/:id/ativo", asyncHandler(alternarRegra("precoDinamicoEntregador", "entregador")));
 router.use("/preco-dinamico-demanda", createCrudRouter("precoDinamicoDemanda", opcoesRegraPreco("MULTIPLICADOR", "demanda")));
 router.use("/preco-dinamico-entregador", createCrudRouter("precoDinamicoEntregador", opcoesRegraPreco("VALOR_FIXO", "entregador")));
 router.use("/servicos-opcionais", createCrudRouter("servicoOpcional"));

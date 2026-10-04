@@ -17,6 +17,7 @@ const CAMPOS_AUTOMATICOS = ["id", "createdAt", "updatedAt", "atualizadoEm"];
  *   - orderBy: campo/objeto de ordenação padrão
  *   - beforeCreate / beforeUpdate: hooks assíncronos para transformar o body antes de salvar
  *   - afterSave(registro, anterior): chamado depois de criar (anterior = null) ou editar
+ *   - afterDelete(registro): chamado depois de excluir
  */
 function createCrudRouter(modelName, options = {}) {
   const router = express.Router();
@@ -71,7 +72,8 @@ function createCrudRouter(modelName, options = {}) {
   router.delete(
     "/:id",
     asyncHandler(async (req, res) => {
-      await model.delete({ where: { id: req.params.id } });
+      const apagado = await model.delete({ where: { id: req.params.id } });
+      if (options.afterDelete) await options.afterDelete(apagado);
       res.status(204).send();
     })
   );

@@ -1115,3 +1115,6 @@ code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-siz
 /* Acerto de Entregadores: calendários de início e fim */
 .filtro-data { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 13px; }
 .tabela tfoot td { border-top: 2px solid var(--borda-forte, var(--borda)); }
+
+/* Cadastros: chave liga/desliga na lista */
+.chave-situacao { display: inline-flex; align-items: center; padding-top: 0; gap: 10px; position: relative; cursor: pointer; }

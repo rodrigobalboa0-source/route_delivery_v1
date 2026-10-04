@@ -32,7 +32,17 @@ function regraPrecoDinamico(tipoPadrao) {
       { rotulo: "Regra", valor: r => <strong>{r.nome}</strong> },
       { rotulo: "Aplicação", valor: r => TIPO_APLICACAO[r.tipoAplicacao] },
       { rotulo: "Valor", valor: formatarRegra, num: true },
-      { rotulo: "Situação", valor: r => (r.ativo ? <Badge tom="ok">● Ativa</Badge> : <Badge tom="apagado">Inativa</Badge>) },
+      {
+        rotulo: "Situação",
+        valor: (r, ctx) => (
+          <label className="campo-switch chave-situacao" title={r.ativo ? "Desativar a regra" : "Ativar a regra"}>
+            <input type="checkbox" role="switch" checked={!!r.ativo} disabled={!ctx?.pode || ctx?.ocupado}
+              onChange={e => ctx?.alternarAtivo(r, e.target.checked)} aria-label={`${r.ativo ? "Desativar" : "Ativar"} ${r.nome}`} />
+            <span className="interruptor" aria-hidden="true" />
+            <span>{r.ativo ? <Badge tom="ok">● Ativa</Badge> : <Badge tom="apagado">Inativa</Badge>}</span>
+          </label>
+        ),
+      },
     ],
   };
 }
@@ -212,12 +222,12 @@ const CADASTROS = [
   },
   {
     chave: "preco-dinamico-demanda", titulo: "Preço dinâmico (demanda)", area: "precificacao",
-    descricao: "Regras que aumentam o valor cobrado da entrega. Cadastro de referência — ainda não é aplicado automaticamente no cálculo das entregas.",
+    descricao: "Regras que aumentam o valor cobrado da loja em cada entrega. Ativa, entra na hora no cálculo das entregas lançadas pelo ADM e pela loja (multiplicadores sobre a taxa; valores fixos somados). Use a chave da coluna Situação para ligar e desligar.",
     ...regraPrecoDinamico("MULTIPLICADOR"),
   },
   {
     chave: "preco-dinamico-entregador", titulo: "Preço dinâmico entregador", area: "precificacao",
-    descricao: "Regras que aumentam o ganho do entregador. Cadastro de referência — ainda não é aplicado automaticamente aos repasses.",
+    descricao: "Regras que aumentam o ganho do entregador em cada entrega. Ativa, vale na hora: entra nas entregas abertas e nas novas, aparece no app (oferta e carteira) e no acerto. Desativada, sai das entregas ainda não aceitas. Use a chave da coluna Situação para ligar e desligar.",
     ...regraPrecoDinamico("VALOR_FIXO"),
   },
   {
@@ -384,6 +394,14 @@ function ListaCadastro({ def, pode }) {
     }
   }
 
+  // Liga/desliga direto na lista (ex.: preço dinâmico), sem abrir a edição.
+  async function alternarAtivo(r, ativo) {
+    if (await executar(() => api.patch(`/cadastro/${def.chave}/${r.id}/ativo`, { ativo }), `${r.nome}: regra ${ativo ? "ativada — já vale para as próximas entregas" : "desativada"}.`)) {
+      recarregar({ silencioso: true });
+    }
+  }
+  const ctx = { pode, ocupado, alternarAtivo };
+
   return (
     <section className="cartao">
       <div className="cartao-topo">
@@ -404,7 +422,7 @@ function ListaCadastro({ def, pode }) {
             <tbody>
               {dados.map(r => (
                 <tr key={r.id}>
-                  {def.colunas.map(c => <td key={c.rotulo} className={c.num ? "num" : ""}>{c.valor(r)}</td>)}
+                  {def.colunas.map(c => <td key={c.rotulo} className={c.num ? "num" : ""}>{c.valor(r, ctx)}</td>)}
                   {pode && (
                     <td className="acoes-celula">
                       <Botao pequeno variante="fantasma" onClick={() => setEditando({ registro: r, valores: valoresPara(r) })}>Editar</Botao>

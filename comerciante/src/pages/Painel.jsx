@@ -47,7 +47,12 @@ export function AvisoCliente({ cliente }) {
 export function ResumoValor({ calculo }) {
   const t = textoValor(calculo);
   if (!t) return null;
-  return <>✓ {t.base} · <strong>{t.valor}</strong>{t.extra && <span className="apagado">{t.extra}</span>}</>;
+  return (
+    <>
+      ✓ {t.base} · <strong>{t.valor}</strong>{t.extra && <span className="apagado">{t.extra}</span>}
+      {t.dinamico && <span className="selo-dinamico" title="Preço dinâmico ativo agora (ex.: chuva, horário de pico)">⚡ Preço dinâmico</span>}
+    </>
+  );
 }
 
 function CriarRapido({ onPrevia, onCriado, retornoPercentual, comCodigo }) {

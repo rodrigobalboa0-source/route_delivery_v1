@@ -128,6 +128,7 @@ export default function DetalhePedido({ id, onFechar }) {
             <dd>
               {moeda(pedido.valor)}
               {pedido.acrescimoRetorno > 0 && <span className="apagado"> (inclui retorno +{moeda(pedido.acrescimoRetorno)})</span>}
+              {pedido.acrescimoDinamico > 0 && <div className="celula-sub">⚡ inclui preço dinâmico +{moeda(pedido.acrescimoDinamico)} — {pedido.regrasDinamicas}</div>}
             </dd>
             <dt>Distância</dt><dd>{km(pedido.distanciaKm)}</dd>
             {pedido.codigoConfirmacao && (

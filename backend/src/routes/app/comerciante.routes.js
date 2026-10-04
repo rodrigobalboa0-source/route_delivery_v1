@@ -359,6 +359,7 @@ router.put(
       const c = await calcularEntrega({ comercioId: req.comercio.id, endereco, destino: b.destino, destinoAprox: b.destinoAprox, retorno });
       Object.assign(data, {
         endereco, retorno, valor: c.valor, acrescimoRetorno: retorno ? c.acrescimoRetorno : null, distanciaKm: c.distanciaKm,
+        acrescimoDinamico: c.acrescimoDinamico || null, regrasDinamicas: c.acrescimoDinamico ? c.descricaoDinamica : null,
         latDestino: c.destino?.lat ?? null, lngDestino: c.destino?.lng ?? null,
       });
       logs.push(`Endereço alterado pela loja: taxa recalculada para ${c.valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} (${c.distanciaKm} km).`);

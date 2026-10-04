@@ -155,7 +155,12 @@ export default function DetalhePedido({ id, onFechar, onAlterado }) {
               </dd>
             </>}
             {pedido.aguardandoRotaAte && <><dt>Rota</dt><dd><span className="apagado">⏳ Roteirização automática: esperando outros pedidos (até {dataHora(pedido.aguardandoRotaAte)})</span></dd></>}
-            <dt>Valor</dt><dd>{moeda(pedido.valor)}</dd>
+            <dt>Valor</dt>
+            <dd>
+              {moeda(pedido.valor)}
+              {pedido.acrescimoDinamico > 0 && <div className="celula-sub">⚡ inclui preço dinâmico +{moeda(pedido.acrescimoDinamico)} — {pedido.regrasDinamicas}</div>}
+              {Array.isArray(pedido.dinamicoEntregador) && pedido.dinamicoEntregador.length > 0 && <div className="celula-sub">Entregador com preço dinâmico: {pedido.dinamicoEntregador.map(r => r.nome).join(", ")}</div>}
+            </dd>
             <dt>Distância</dt><dd>{km(pedido.distanciaKm)}</dd>
             <dt>Pagamento</dt><dd>{pedido.formaPagamento || "—"}</dd>
             <dt>Prazo</dt><dd>{pedido.prazoDesejado || "—"}</dd>

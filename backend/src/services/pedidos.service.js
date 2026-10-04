@@ -93,14 +93,16 @@ async function salvarCliente(comercioId, { telefone, nome, endereco, complemento
 async function recalcularRetorno(atual, retorno) {
   if (atual.valor == null || !!atual.retorno === !!retorno) return null;
   const r2 = v => Math.round(v * 100) / 100;
-  const base = r2((atual.valor || 0) - (atual.acrescimoRetorno || 0));
+  // O acréscimo do preço dinâmico (se houver) continua o mesmo; o retorno é sobre a taxa sem ele.
+  const dinamico = atual.acrescimoDinamico || 0;
+  const base = r2((atual.valor || 0) - (atual.acrescimoRetorno || 0) - dinamico);
   const brl = v => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
   if (retorno) {
     const pct = await percentualRetorno();
     const acrescimo = r2((base * pct) / 100);
-    return { valor: r2(base + acrescimo), acrescimoRetorno: acrescimo, texto: `Retorno ligado: taxa de ${brl(atual.valor)} para ${brl(base + acrescimo)} (+${pct}%).` };
+    return { valor: r2(base + acrescimo + dinamico), acrescimoRetorno: acrescimo, texto: `Retorno ligado: taxa de ${brl(atual.valor)} para ${brl(base + acrescimo + dinamico)} (+${pct}%).` };
   }
-  return { valor: base, acrescimoRetorno: null, texto: `Retorno retirado: taxa de ${brl(atual.valor)} para ${brl(base)}.` };
+  return { valor: r2(base + dinamico), acrescimoRetorno: null, texto: `Retorno retirado: taxa de ${brl(atual.valor)} para ${brl(base + dinamico)}.` };
 }
 
 async function percentualRetorno() {
@@ -146,12 +148,17 @@ async function calcularEntrega({ comercioId, endereco, veiculo = "MOTO", destino
     : calcularValorEntrega({ distanciaKm, precificacaoPadrao, tabelaPrecoKm: modal?.tabelaPrecoKm })).toFixed(2));
   const pct = retorno ? await percentualRetorno() : 0;
   const acrescimoRetorno = retorno ? Number((valorBase * pct / 100).toFixed(2)) : 0;
+  // Preço dinâmico da demanda ativo agora (ex.: Chuva 1,2x): sobre a taxa da entrega.
+  const dinamico = await require("./precoDinamico.service").calcularDemanda(valorBase);
 
   return {
     distanciaKm: Number(distanciaKm.toFixed(2)),
-    valor: Number((valorBase + acrescimoRetorno).toFixed(2)),
+    valor: Number((valorBase + acrescimoRetorno + dinamico.acrescimo).toFixed(2)),
     valorBase,
     acrescimoRetorno,
+    acrescimoDinamico: dinamico.acrescimo,
+    regrasDinamicas: dinamico.regras,
+    descricaoDinamica: dinamico.descricao,
     retornoPercentual: retorno ? pct : null,
     destino,
     calculadoPorPercurso: true,
@@ -192,6 +199,8 @@ async function criarPedido(dados, origem, autor = { autorTipo: "SISTEMA", autorN
 
   const codigo = await gerarCodigoPedido();
   const comCodigo = /^\d{4}$/.test(dados.codigoConfirmacao || "");
+  const dinamicoLoja = !valorManual && calculo?.acrescimoDinamico > 0;
+  const dinamicoEntregador = await require("./precoDinamico.service").snapshotEntregador();
   const pedido = await prisma.pedido.create({
     data: {
       codigo,
@@ -211,6 +220,9 @@ async function criarPedido(dados, origem, autor = { autorTipo: "SISTEMA", autorN
       origem,
       distanciaKm: calculo?.distanciaKm ?? null,
       valor: valorManual ? Number(dados.valor) : calculo?.valor ?? null,
+      acrescimoDinamico: dinamicoLoja ? calculo.acrescimoDinamico : null,
+      regrasDinamicas: dinamicoLoja ? calculo.descricaoDinamica : null,
+      ...(dinamicoEntregador ? { dinamicoEntregador } : {}),
       latDestino: destino?.lat ?? null,
       lngDestino: destino?.lng ?? null,
       ...nf,
@@ -227,6 +239,8 @@ async function criarPedido(dados, origem, autor = { autorTipo: "SISTEMA", autorN
         ...(retorno ? [{ texto: calculo?.acrescimoRetorno && !valorManual
           ? `Entrega com retorno à loja (+${calculo.retornoPercentual}% na taxa: ${calculo.acrescimoRetorno.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}).`
           : "Entrega com retorno à loja." }] : []),
+        ...(dinamicoLoja ? [{ texto: `Preço dinâmico: ${calculo.descricaoDinamica} = +${calculo.acrescimoDinamico.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} na taxa.` }] : []),
+        ...(dinamicoEntregador ? [{ texto: `Preço dinâmico do entregador valendo: ${dinamicoEntregador.map(r => `${r.nome} ${require("./precoDinamico.service").textoRegra(r)}`).join(" + ")}.` }] : []),
       ] },
       historicoStatus: { create: [{ de: null, para: "PREPARANDO", autorTipo: autor.autorTipo, autorNome: autor.autorNome }] },
     },
