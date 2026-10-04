@@ -263,9 +263,12 @@ router.get(
       },
     });
     localizarPendentes(pedidos);
-    const loja = await prisma.comercioEndereco.findFirst({ where: { comercioId: req.comercio.id, principal: true }, select: { lat: true, lng: true, rua: true, numero: true } });
+    const loja = await prisma.comercioEndereco.findFirst({ where: { comercioId: req.comercio.id, principal: true }, select: { lat: true, lng: true, rua: true, numero: true, bairro: true } });
     res.json({
-      loja: { nome: req.comercio.nomeFantasia, lat: loja?.lat ?? null, lng: loja?.lng ?? null },
+      loja: {
+        nome: req.comercio.nomeFantasia, lat: loja?.lat ?? null, lng: loja?.lng ?? null,
+        endereco: loja ? [[loja.rua, loja.numero].filter(Boolean).join(", "), loja.bairro].filter(Boolean).join(" · ") : null,
+      },
       pedidos: pedidos.map(p => ({
         id: p.id, codigo: p.codigo, status: p.status, clienteNome: p.clienteNome, clienteTelefone: p.clienteTelefone,
         endereco: p.endereco, complemento: p.complemento, retorno: p.retorno, agendadoPara: p.agendadoPara, valor: p.valor,

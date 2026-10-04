@@ -130,11 +130,21 @@ function EmAberto({ pedidos, carregado, onAbrir, onPronto, ocupado, onAlterado }
   const [filtros, setFiltros] = useState([]);
   const [filtroAberto, setFiltroAberto] = useState(false);
   const [compacto, setCompacto] = useState(false);
+  const [selecionados, setSelecionados] = useState(new Set());
   const q = busca.trim().toLowerCase();
   const lista = pedidos.filter(p =>
     (!filtros.length || filtros.some(f => casaFiltro(p, f))) &&
     (!q || [p.codigo, p.clienteNome, p.clienteTelefone, p.endereco, p.entregador?.nomeCompleto].some(x => x && x.toLowerCase().includes(q)))
   );
+  // Seleção (como na Operação do ADM): ação em lote "marcar como pronto" para os pedidos ainda em preparo.
+  const marcados = lista.filter(p => selecionados.has(p.id));
+  const todosMarcados = lista.length > 0 && marcados.length === lista.length;
+  const prontosParaMarcar = marcados.filter(p => p.status === "PREPARANDO");
+  const alternar = id => setSelecionados(s => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  async function marcarProntos() {
+    for (const p of prontosParaMarcar) await onPronto(p);
+    setSelecionados(new Set());
+  }
 
   return (
     <section className="painel-bloco em-aberto">
@@ -166,6 +176,13 @@ function EmAberto({ pedidos, carregado, onAbrir, onPronto, ocupado, onAlterado }
             </div>
           )}
         </div>
+        {marcados.length > 0 && (
+          <span className="lote-acoes">
+            <span className="apagado">{marcados.length} selecionado(s)</span>
+            {prontosParaMarcar.length > 0 && <Botao pequeno variante="primario" disabled={ocupado} onClick={marcarProntos}>Marcar {prontosParaMarcar.length} como pronto</Botao>}
+            <Botao pequeno variante="fantasma" onClick={() => setSelecionados(new Set())}>Limpar</Botao>
+          </span>
+        )}
         <button type="button" className={`botao-icone sem-borda ${compacto ? "ativo" : ""}`} onClick={() => setCompacto(c => !c)} aria-pressed={compacto} aria-label="Lista compacta" title="Lista compacta">
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16M15 4v16" /></svg>
         </button>
@@ -176,18 +193,30 @@ function EmAberto({ pedidos, carregado, onAbrir, onPronto, ocupado, onAlterado }
           <table className={`tabela tabela-aberto ${compacto ? "tabela-compacta" : ""}`}>
             <thead>
               <tr>
-                <th>Pedido</th><th>Cliente</th><th>Status</th><th>Pedido pronto</th><th>Entregador</th><th className="num">Valor</th><th className="num">Ações</th>
+                <th className="col-check" onClick={e => e.stopPropagation()}>
+                  <input type="checkbox" checked={todosMarcados} aria-label="Selecionar todos"
+                    onChange={() => setSelecionados(todosMarcados ? new Set() : new Set(lista.map(p => p.id)))} />
+                </th>
+                <th>Nº Pedido</th><th>Comércio</th><th>Cliente</th><th>Coleta</th><th>Entrega</th><th className="num">Taxa</th>
+                <th>Status</th><th>Pedido pronto</th><th>Entregador</th><th className="num">Ações</th>
               </tr>
             </thead>
             <tbody>
               {lista.map(p => (
-                <tr key={p.id} className="linha-clicavel" onClick={() => onAbrir(p.id)}>
+                <tr key={p.id} className={`linha-clicavel ${selecionados.has(p.id) ? "linha-selecionada" : ""}`} onClick={() => onAbrir(p.id)}>
+                  <td className="col-check" onClick={e => e.stopPropagation()}>
+                    <input type="checkbox" checked={selecionados.has(p.id)} onChange={() => alternar(p.id)} aria-label={`Selecionar ${p.codigo}`} />
+                  </td>
                   <td><strong>{p.codigo}</strong>{!compacto && <div className="celula-sub">{tempoRelativo(p.createdAt)}</div>}</td>
+                  <td>{p.loja?.nome || "—"}</td>
                   <td>
                     {p.clienteNome}
                     {p.retorno && <span className="selo-retorno" title="Com retorno à loja">↩ retorno</span>}
-                    {!compacto && <div className="celula-sub">{p.endereco}{p.complemento ? ` · ${p.complemento}` : ""}</div>}
+                    {!compacto && p.clienteTelefone && <div className="celula-sub">{p.clienteTelefone}</div>}
                   </td>
+                  <td className="col-endereco">{p.loja?.endereco || <span className="apagado">—</span>}</td>
+                  <td className="col-endereco">{p.endereco}{!compacto && p.complemento && <div className="celula-sub">{p.complemento}</div>}</td>
+                  <td className="num">{moeda(p.valor)}</td>
                   <td>
                     <BadgeMapa mapa={STATUS_PEDIDO} valor={p.status} />
                     {p.agendadoPara && p.status === "PREPARANDO" && <div className="celula-sub">⏰ {dataHora(p.agendadoPara)}</div>}
@@ -198,7 +227,6 @@ function EmAberto({ pedidos, carregado, onAbrir, onPronto, ocupado, onAlterado }
                       : <span className="apagado">✓ {p.prontoEm ? dataHora(p.prontoEm) : "Pronto"}</span>}
                   </td>
                   <td>{p.entregador ? `🏍 ${p.entregador.nomeCompleto}` : <span className="apagado">{p.status === "PENDENTE" ? "Procurando…" : "—"}</span>}</td>
-                  <td className="num">{moeda(p.valor)}</td>
                   <td className="num" onClick={e => e.stopPropagation()}>
                     <AcoesPedido pedido={p} onDetalhes={() => onAbrir(p.id)} onAlterado={onAlterado} />
                   </td>

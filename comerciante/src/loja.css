@@ -382,3 +382,10 @@ input[type="datetime-local"], input[type="date"] { color-scheme: dark; }
 
 /* Preço dinâmico ativo no cálculo da entrega */
 .selo-dinamico { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 999px; background: rgba(245, 165, 36, 0.16); color: var(--aviso, #f5a524); font-size: 12px; font-weight: 700; }
+
+/* Entregas em aberto: colunas iguais às da Operação do ADM */
+.tabela-aberto .col-check { width: 34px; text-align: center; }
+.tabela-aberto .col-check input { width: 16px; height: 16px; cursor: pointer; }
+.tabela-aberto .col-endereco { max-width: 230px; white-space: normal; }
+.tabela-aberto tr.linha-selecionada td { background: var(--primaria-suave, rgba(61, 139, 253, 0.12)); }
+.lote-acoes { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; }
